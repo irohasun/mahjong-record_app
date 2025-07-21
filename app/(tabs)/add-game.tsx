@@ -161,7 +161,7 @@ export default function AddGameScreen() {
     <ScrollView style={styles.container}>
       {/* ヘッダー */}
       <View style={styles.header}>
-        <Text style={styles.title}>記録票</Text>
+        <Text style={styles.title}>対局記録</Text>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
           <Save size={20} color="#FFF" />
           <Text style={styles.saveButtonText}>保存</Text>
