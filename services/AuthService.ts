@@ -77,6 +77,25 @@ export class AuthService {
     }
     
     try {
+      // Check if Supabase is properly configured before attempting authentication
+      if (!isSupabaseConfigured) {
+        return {
+          id: 'dummy-user',
+          aud: '',
+          role: '',
+          email: '',
+          email_confirmed_at: '',
+          phone: '',
+          confirmed_at: '',
+          last_sign_in_at: '',
+          app_metadata: {},
+          user_metadata: {},
+          identities: [],
+          created_at: '',
+          updated_at: ''
+        };
+      }
+
       const { data, error } = await supabase.auth.signInAnonymously();
 
       // エラーがある場合は直接ハンドリング（throwしない）
