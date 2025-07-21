@@ -337,4 +337,17 @@ const styles = StyleSheet.create({
     color: '#FF6B35',
     fontWeight: '600',
   },
+  debugButton: {
+    backgroundColor: '#E5E5EA',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  debugButtonText: {
+    fontSize: 12,
+    color: '#6D6D70',
+    fontWeight: '500',
+  },
 });
