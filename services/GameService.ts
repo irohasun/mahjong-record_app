@@ -263,12 +263,12 @@ export class GameService {
           games!inner (
             account_id,
             rules,
-            date
+            game_date:date
           )
         `)
         .eq('games.account_id', accountId)
         .eq('is_main_account', true)
-        .order('games.date', { ascending: false });
+        .order('game_date', { ascending: false });
 
       if (error) {
         throw error;
@@ -359,13 +359,13 @@ export class GameService {
           final_score,
           games!inner (
             account_id,
-            date,
+            game_date:date,
             rules
           )
         `)
         .eq('games.account_id', accountId)
         .eq('is_main_account', true)
-        .order('games.date', { ascending: true });
+        .order('game_date', { ascending: true });
 
       if (error) {
         throw error;
@@ -374,7 +374,7 @@ export class GameService {
       // 期間でフィルタリング
       const now = new Date();
       const filteredData = playerRecords.filter(record => {
-        const gameDate = new Date(record.games.date);
+        const gameDate = new Date(record.games.game_date);
         switch (period) {
           case 'month':
             return gameDate.getMonth() === now.getMonth() && gameDate.getFullYear() === now.getFullYear();
