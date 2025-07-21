@@ -6,6 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
+import { AuthService } from '@/services/AuthService';
 import { AdModal } from '@/components/AdModal';
 
 export default function AddGameScreen() {
@@ -79,7 +80,12 @@ export default function AddGameScreen() {
     }
 
     try {
-      const account = await AccountService.getAccount();
+      const user = await AuthService.getCurrentUser();
+      
+      if (!user) {
+        Alert.alert('エラー', 'ログインが必要です');
+        return;
+      }
       
       // スコアデータを変換
       const playersData = players.map((name, index) => ({
@@ -100,7 +106,7 @@ export default function AddGameScreen() {
       });
 
       const gameRecord = {
-        accountId: account.accountId,
+        accountId: user.id,
         date: gameDate.toISOString(),
         location: '',
         gameType: '東南戦' as const,

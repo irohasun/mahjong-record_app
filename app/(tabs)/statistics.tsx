@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from
 import { TrendingUp, Trophy, Calendar, Target } from 'lucide-react-native';
 import { GameService } from '@/services/GameService';
 import { AccountService } from '@/services/AccountService';
+import { AuthService } from '@/services/AuthService';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -17,9 +18,14 @@ export default function StatisticsScreen() {
 
   const loadStatistics = async () => {
     try {
-      const account = await AccountService.getAccount();
-      const statsData = await GameService.getPlayerStats(account.accountId);
-      const chartData = await GameService.getChartData(account.accountId, selectedPeriod);
+      const user = await AuthService.getCurrentUser();
+      
+      if (!user) {
+        return;
+      }
+      
+      const statsData = await GameService.getPlayerStats(user.id);
+      const chartData = await GameService.getChartData(user.id, selectedPeriod);
       
       setStats(statsData);
       setChartData(chartData);

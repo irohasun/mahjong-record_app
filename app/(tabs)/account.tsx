@@ -4,6 +4,7 @@ import { User, Settings, Star, Download, Upload, Shield, Info } from 'lucide-rea
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
 import { GameService } from '@/services/GameService';
+import { AuthService } from '@/services/AuthService';
 import { PremiumModal } from '@/components/PremiumModal';
 
 export default function AccountScreen() {
@@ -19,8 +20,14 @@ export default function AccountScreen() {
 
   const loadAccountData = async () => {
     try {
+      const user = await AuthService.getCurrentUser();
+      
+      if (!user) {
+        return;
+      }
+      
       const accountData = await AccountService.getAccount();
-      const statsData = await GameService.getPlayerStats(accountData.accountId);
+      const statsData = await GameService.getPlayerStats(user.id);
       setAccount(accountData);
       setStats(statsData);
       setNewUsername(accountData.username);
@@ -47,7 +54,14 @@ export default function AccountScreen() {
 
   const handleExportData = async () => {
     try {
-      const data = await GameService.exportData(account.accountId);
+      const user = await AuthService.getCurrentUser();
+      
+      if (!user) {
+        Alert.alert('エラー', 'ログインが必要です');
+        return;
+      }
+      
+      const data = await GameService.exportData(user.id);
       Alert.alert('エクスポート完了', 'データをエクスポートしました');
     } catch (error) {
       Alert.alert('エラー', 'データのエクスポートに失敗しました');
@@ -65,7 +79,14 @@ export default function AccountScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await GameService.resetData(account.accountId);
+              const user = await AuthService.getCurrentUser();
+              
+              if (!user) {
+                Alert.alert('エラー', 'ログインが必要です');
+                return;
+              }
+              
+              await GameService.resetData(user.id);
               loadAccountData();
               Alert.alert('完了', 'データをリセットしました');
             } catch (error) {

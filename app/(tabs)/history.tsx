@@ -4,6 +4,7 @@ import { Calendar, MapPin, Users, CreditCard as Edit2, Trash2, Plus } from 'luci
 import { useRouter } from 'expo-router';
 import { GameService } from '@/services/GameService';
 import { AccountService } from '@/services/AccountService';
+import { AuthService } from '@/services/AuthService';
 import { GameRecord } from '@/types/GameRecord';
 
 export default function HistoryScreen() {
@@ -129,8 +130,14 @@ export default function HistoryScreen() {
 
   const loadGames = async () => {
     try {
-      const account = await AccountService.getAccount();
-      const allGames = await GameService.getAllGames(account.accountId);
+      const user = await AuthService.getCurrentUser();
+      
+      if (!user) {
+        setGames([dummyGame, dummyGame2]);
+        return;
+      }
+      
+      const allGames = await GameService.getAllGames(user.id);
       // ダミーデータを先頭に追加
       setGames([dummyGame, dummyGame2, ...allGames]);
     } catch (error) {
