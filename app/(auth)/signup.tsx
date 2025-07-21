@@ -17,17 +17,26 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     if (!email.trim() || !password.trim() || !confirmPassword.trim() || !username.trim()) {
-      Alert.alert('入力エラー', 'すべての項目を入力してください');
+      Alert.alert(
+        '❌ 入力エラー', 
+        'すべての項目を入力してください\n\n• メールアドレス\n• パスワード\n• パスワード確認\n• ユーザー名'
+      );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('入力エラー', 'パスワードが一致しません');
+      Alert.alert(
+        '❌ 入力エラー', 
+        'パスワードが一致しません\n\nパスワードとパスワード確認欄に同じ内容を入力してください'
+      );
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('入力エラー', 'パスワードは6文字以上で入力してください');
+      Alert.alert(
+        '❌ 入力エラー', 
+        'パスワードは6文字以上で入力してください\n\n現在の文字数: ' + password.length + '文字'
+      );
       return;
     }
 
@@ -42,17 +51,54 @@ export default function SignupScreen() {
       
       console.log('Signup completed successfully:', result);
       
-      // 登録成功時は直接アプリ内部にリダイレクト
       Alert.alert(
-        '登録完了',
-        'アカウントが作成されました。アプリを開始します。',
+        '✅ 登録完了！',
+        `おめでとうございます！\n\nアカウントが正常に作成されました：\n\n📧 メール: ${email.trim()}\n👤 ユーザー名: ${username.trim()}\n\nアプリの利用を開始できます。`,
         [
-          { text: 'OK', onPress: () => router.replace('/(tabs)/history') }
+          { 
+            text: '🎉 アプリを開始', 
+            onPress: () => router.replace('/(tabs)/history'),
+            style: 'default'
+          }
         ]
       );
     } catch (error) {
       console.error('Signup error:', error);
-      Alert.alert('登録エラー', error instanceof Error ? error.message : 'アカウント作成に失敗しました');
+      
+      let errorTitle = '❌ 登録エラー';
+      let errorMessage = 'アカウント作成に失敗しました';
+      
+      if (error instanceof Error) {
+        // エラーメッセージを詳細に分析
+        if (error.message.includes('Email address is invalid')) {
+          errorTitle = '📧 メールアドレスエラー';
+          errorMessage = 'メールアドレスの形式が正しくありません\n\n正しい形式：example@example.com';
+        } else if (error.message.includes('Password should be at least')) {
+          errorTitle = '🔒 パスワードエラー';
+          errorMessage = 'パスワードは6文字以上で入力してください';
+        } else if (error.message.includes('User already registered')) {
+          errorTitle = '👤 アカウント重複エラー';
+          errorMessage = `このメールアドレスは既に登録されています\n\n📧 ${email.trim()}\n\nログイン画面から既存アカウントでログインしてください`;
+        } else if (error.message.includes('Supabase')) {
+          errorTitle = '🔧 システムエラー';
+          errorMessage = 'データベース接続でエラーが発生しました\n\nしばらく時間をおいてから再度お試しください';
+        } else {
+          errorMessage = `エラー詳細：\n${error.message}\n\n問題が続く場合は、入力内容を確認してください`;
+        }
+      }
+      
+      Alert.alert(
+        errorTitle,
+        errorMessage,
+        [
+          { text: '🔄 再試行', style: 'default' },
+          { 
+            text: '📝 ログイン画面へ', 
+            onPress: () => router.replace('/(auth)/login'),
+            style: 'cancel'
+          }
+        ]
+      );
     } finally {
       setLoading(false);
     }

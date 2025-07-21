@@ -14,16 +14,63 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('入力エラー', 'メールアドレスとパスワードを入力してください');
+      Alert.alert(
+        '❌ 入力エラー', 
+        'ログインに必要な情報を入力してください\n\n• メールアドレス\n• パスワード'
+      );
       return;
     }
 
     setLoading(true);
     try {
+      console.log('Starting login process for:', email.trim());
       await signIn(email.trim(), password);
-      router.replace('/(tabs)/history');
+      console.log('Login successful, redirecting to app');
+      
+      Alert.alert(
+        '✅ ログイン成功！',
+        `おかえりなさい！\n\n📧 ${email.trim()}\n\nアプリにログインしました。`,
+        [
+          { 
+            text: '📱 アプリを開く', 
+            onPress: () => router.replace('/(tabs)/history'),
+            style: 'default'
+          }
+        ]
+      );
     } catch (error) {
-      Alert.alert('ログインエラー', error instanceof Error ? error.message : 'ログインに失敗しました');
+      console.error('Login error:', error);
+      
+      let errorTitle = '❌ ログインエラー';
+      let errorMessage = 'ログインに失敗しました';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Invalid login credentials')) {
+          errorTitle = '🔐 認証エラー';
+          errorMessage = 'メールアドレスまたはパスワードが正しくありません\n\n• 入力内容を再確認してください\n• パスワードを忘れた場合は「パスワードを忘れた方」をタップ';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorTitle = '📧 メール確認エラー';
+          errorMessage = 'アカウントが確認されていません\n\n登録時に送信された確認メールから\nアカウントを有効化してください';
+        } else if (error.message.includes('Too many requests')) {
+          errorTitle = '⏰ アクセス制限';
+          errorMessage = 'ログイン試行回数が上限に達しました\n\nしばらく時間をおいてから再度お試しください';
+        } else {
+          errorMessage = `エラー詳細：\n${error.message}`;
+        }
+      }
+      
+      Alert.alert(
+        errorTitle,
+        errorMessage,
+        [
+          { text: '🔄 再試行', style: 'default' },
+          { 
+            text: '🔑 パスワードリセット', 
+            onPress: () => router.push('/(auth)/forgot-password'),
+            style: 'cancel'
+          }
+        ]
+      );
     } finally {
       setLoading(false);
     }
@@ -32,10 +79,27 @@ export default function LoginScreen() {
   const handleGuestLogin = async () => {
     setLoading(true);
     try {
+      console.log('Starting guest login process');
       await signInAnonymously();
-      router.replace('/(tabs)/history');
+      console.log('Guest login successful');
+      
+      Alert.alert(
+        '👤 ゲストログイン完了',
+        'ゲストとしてアプリを利用できます\n\n⚠️ 注意：データは一時的に保存されます\nアカウント作成をお勧めします',
+        [
+          { 
+            text: '📱 アプリを開始', 
+            onPress: () => router.replace('/(tabs)/history'),
+            style: 'default'
+          }
+        ]
+      );
     } catch (error) {
-      Alert.alert('ゲストログインエラー', 'ゲストログインに失敗しました');
+      console.error('Guest login error:', error);
+      Alert.alert(
+        '❌ ゲストログインエラー', 
+        'ゲストログインに失敗しました\n\nネットワーク接続を確認して\n再度お試しください'
+      );
     } finally {
       setLoading(false);
     }
