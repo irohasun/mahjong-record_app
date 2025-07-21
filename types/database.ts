@@ -18,17 +18,6 @@ export interface Database {
           purchase_date: string | null
           monthly_game_count: number
           last_reset_date: string
-          email: string | null
-          email_verified: boolean
-          avatar_url: string | null
-          phone: string | null
-          date_of_birth: string | null
-          preferred_language: string
-          timezone: string
-          last_login_at: string | null
-          status: string
-          metadata: Json
-          updated_at: string
         }
         Insert: {
           id?: string
@@ -38,17 +27,6 @@ export interface Database {
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
-          email?: string | null
-          email_verified?: boolean
-          avatar_url?: string | null
-          phone?: string | null
-          date_of_birth?: string | null
-          preferred_language?: string
-          timezone?: string
-          last_login_at?: string | null
-          status?: string
-          metadata?: Json
-          updated_at?: string
         }
         Update: {
           id?: string
@@ -58,17 +36,6 @@ export interface Database {
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
-          email?: string | null
-          email_verified?: boolean
-          avatar_url?: string | null
-          phone?: string | null
-          date_of_birth?: string | null
-          preferred_language?: string
-          timezone?: string
-          last_login_at?: string | null
-          status?: string
-          metadata?: Json
-          updated_at?: string
         }
       }
       games: {
@@ -220,107 +187,12 @@ export interface Database {
           taken_at?: string
         }
       }
-      user_profiles: {
-        Row: {
-          id: string
-          user_id: string
-          display_name: string | null
-          bio: string | null
-          location: string | null
-          website: string | null
-          social_links: Json
-          preferences: Json
-          privacy_settings: Json
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          display_name?: string | null
-          bio?: string | null
-          location?: string | null
-          website?: string | null
-          social_links?: Json
-          preferences?: Json
-          privacy_settings?: Json
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          display_name?: string | null
-          bio?: string | null
-          location?: string | null
-          website?: string | null
-          social_links?: Json
-          preferences?: Json
-          privacy_settings?: Json
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      user_roles: {
-        Row: {
-          id: string
-          name: string
-          description: string | null
-          permissions: string[]
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          description?: string | null
-          permissions?: string[]
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          description?: string | null
-          permissions?: string[]
-          created_at?: string
-        }
-      }
-      user_role_assignments: {
-        Row: {
-          id: string
-          user_id: string
-          role_id: string
-          assigned_by: string | null
-          assigned_at: string
-          expires_at: string | null
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          role_id: string
-          assigned_by?: string | null
-          assigned_at?: string
-          expires_at?: string | null
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          role_id?: string
-          assigned_by?: string | null
-          assigned_at?: string
-          expires_at?: string | null
-        }
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      get_user_permissions: {
-        Args: {
-          user_id: string
-        }
-        Returns: string[]
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never

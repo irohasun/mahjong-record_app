@@ -5,17 +5,14 @@ import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
-import { useRouter } from 'expo-router';
 import { PremiumModal } from '@/components/PremiumModal';
 
 export default function AccountScreen() {
-  const router = useRouter();
   const [account, setAccount] = useState<any>(null);
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [stats, setStats] = useState<any>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
-  const [isAnonymous, setIsAnonymous] = useState(false);
 
   useEffect(() => {
     loadAccountData();
@@ -25,12 +22,15 @@ export default function AccountScreen() {
     try {
       let user = await AuthService.getCurrentUser();
       
+      // ユーザーが認証されていない場合は匿名認証を行う
       if (!user) {
-        router.replace('/(auth)/login');
-        return;
+        await AuthService.signInAnonymously();
+        user = await AuthService.getCurrentUser();
+        
+        if (!user) {
+          return;
+        }
       }
-      
-      setIsAnonymous(user.id === 'dummy-user-id' || user.is_anonymous === true);
       
       const accountData = await AccountService.getAccount();
       const statsData = await GameService.getPlayerStats(user.id);
@@ -40,28 +40,6 @@ export default function AccountScreen() {
     } catch (error) {
       console.error('Failed to load account data:', error);
     }
-  };
-
-  const handleLogout = async () => {
-    Alert.alert(
-      'ログアウト',
-      'ログアウトしますか？',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        { 
-          text: 'ログアウト', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AuthService.signOut();
-              router.replace('/(auth)/login');
-            } catch (error) {
-              Alert.alert('エラー', 'ログアウトに失敗しました');
-            }
-          }
-        }
-      ]
-    );
   };
 
   const handleUsernameChange = async () => {
@@ -216,24 +194,6 @@ export default function AccountScreen() {
         </View>
       </View>
 
-      {isAnonymous && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>アカウント</Text>
-          <View style={styles.anonymousWarning}>
-            <Text style={styles.anonymousWarningTitle}>ゲストモードで利用中</Text>
-            <Text style={styles.anonymousWarningText}>
-              アカウントを作成してデータを永続的に保存しましょう
-            </Text>
-            <TouchableOpacity 
-              style={styles.createAccountButton}
-              onPress={() => router.push('/(auth)/signup')}
-            >
-              <Text style={styles.createAccountButtonText}>アカウント作成</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>プラン管理</Text>
         
@@ -284,18 +244,6 @@ export default function AccountScreen() {
         >
           <Shield size={20} color="#EF4444" />
           <Text style={[styles.actionButtonText, styles.dangerText]}>データリセット</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.section}>
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.logoutButton]} 
-          onPress={handleLogout}
-        >
-          <User size={20} color="#EF4444" />
-          <Text style={[styles.actionButtonText, styles.logoutText]}>
-            {isAnonymous ? 'ログイン画面へ' : 'ログアウト'}
-          </Text>
         </TouchableOpacity>
       </View>
 
@@ -541,44 +489,6 @@ const styles = StyleSheet.create({
     borderColor: '#EF4444',
   },
   dangerText: {
-    color: '#EF4444',
-  },
-  anonymousWarning: {
-    backgroundColor: '#FFF5E6',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FFD700',
-  },
-  anonymousWarningTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 8,
-  },
-  anonymousWarningText: {
-    fontSize: 14,
-    color: '#6D6D70',
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  createAccountButton: {
-    backgroundColor: '#FF6B35',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  createAccountButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-  },
-  logoutText: {
     color: '#EF4444',
   },
 });

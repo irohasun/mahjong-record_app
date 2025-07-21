@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { SignUpData } from '@/types/auth';
 
 // Storage key for tracking if anonymous auth is disabled
 const ANONYMOUS_AUTH_DISABLED_KEY = 'anonymousAuthDisabled';
@@ -34,46 +33,25 @@ const saveAnonymousAuthDisabled = (disabled: boolean) => {
 initializeAuthState();
 
 export class AuthService {
-  static async signUp(email: string, password: string, metadata?: Record<string, any>) {
+  static async signUp(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
     try {
-      if (!isSupabaseConfigured) {
-        console.warn('Supabase not configured, using local mode');
-        // ローカル開発用のダミーレスポンス
-        return {
-          user: {
-            id: `user_${Date.now()}`,
-            email: email,
-            created_at: new Date().toISOString(),
-          },
-          session: {
-            access_token: 'dummy-token',
-            user: {
-              id: `user_${Date.now()}`,
-              email: email,
-            }
-          }
-        };
-      }
-      
-      console.log('AuthService: Starting Supabase signup');
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: metadata || {},
-        },
       });
 
       if (error) {
-        console.error('Supabase signup error:', error);
-        throw new Error(`サインアップエラー: ${error.message}`);
+        throw error;
       }
 
-      console.log('AuthService: Supabase signup successful:', data);
       return data;
     } catch (error) {
       console.error('Failed to sign up:', error);
-      throw error instanceof Error ? error : new Error('アカウント作成に失敗しました');
+      throw new Error('アカウント作成に失敗しました');
     }
   }
 
@@ -83,32 +61,19 @@ export class AuthService {
     }
     
     try {
-      console.log('AuthService: Attempting login for email:', email);
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
-        console.error('Supabase auth error:', error);
-        
-        // Provide more specific error messages
-        if (error.message === 'Invalid login credentials') {
-          throw new Error('メールアドレスまたはパスワードが正しくありません。アカウントが存在しない可能性があります。');
-        } else if (error.message.includes('Email not confirmed')) {
-          throw new Error('メールアドレスが確認されていません。確認メールをチェックしてください。');
-        } else if (error.message.includes('too many requests')) {
-          throw new Error('ログイン試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。');
-        }
         throw error;
       }
 
-      console.log('AuthService: Login successful for user:', data.user?.id);
       return data;
     } catch (error) {
       console.error('Failed to sign in:', error);
-      throw error instanceof Error ? error : new Error('ログインに失敗しました');
+      throw new Error('ログインに失敗しました');
     }
   }
 
@@ -241,102 +206,6 @@ export class AuthService {
     } catch (error) {
       console.error('Failed to reset password:', error);
       throw new Error('パスワードリセットに失敗しました');
-    }
-  }
-
-  static async changePassword(newPassword: string) {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabaseが設定されていません');
-    }
-    
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.error('Failed to change password:', error);
-      throw new Error('パスワード変更に失敗しました');
-    }
-  }
-
-  static async updateEmail(newEmail: string) {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabaseが設定されていません');
-    }
-    
-    try {
-      const { error } = await supabase.auth.updateUser({
-        email: newEmail
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.error('Failed to update email:', error);
-      throw new Error('メールアドレス変更に失敗しました');
-    }
-  }
-
-  static async refreshSession() {
-    if (!isSupabaseConfigured) {
-      return null;
-    }
-    
-    try {
-      const { data, error } = await supabase.auth.refreshSession();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Failed to refresh session:', error);
-      return null;
-    }
-  }
-
-  static async getSession() {
-    if (!isSupabaseConfigured) {
-      return null;
-    }
-    
-    try {
-      const { data, error } = await supabase.auth.getSession();
-
-      if (error) {
-        throw error;
-      }
-
-      return data.session;
-    } catch (error) {
-      console.error('Failed to get session:', error);
-      return null;
-    }
-  }
-
-  static async resendConfirmation(email: string) {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabaseが設定されていません');
-    }
-    
-    try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email,
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.error('Failed to resend confirmation:', error);
-      throw new Error('確認メールの再送信に失敗しました');
     }
   }
 }
