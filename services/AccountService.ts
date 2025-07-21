@@ -68,6 +68,34 @@ export class AccountService {
     }
   }
 
+  static async createAccount(userId: string, username: string): Promise<Account> {
+    try {
+      const newAccount: AccountInsert = {
+        id: userId,
+        username: username,
+        created_at: new Date().toISOString(),
+        is_premium: false,
+        monthly_game_count: 0,
+        last_reset_date: new Date().toISOString(),
+      };
+
+      const { data: createdAccount, error } = await supabase
+        .from('accounts')
+        .insert(newAccount)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return createdAccount;
+    } catch (error) {
+      console.error('Failed to create account:', error);
+      throw new Error('アカウント作成に失敗しました');
+    }
+  }
+
   static async updateUsername(username: string): Promise<void> {
     try {
       const { data: { user } } = await supabase.auth.getUser();

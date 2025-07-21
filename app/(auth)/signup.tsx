@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { Mail, Lock, Eye, EyeOff, User, ArrowLeft } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AuthService } from '@/services/AuthService';
+import { AccountService } from '@/services/AccountService';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -31,7 +32,17 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      await AuthService.signUp(email.trim(), password);
+      const authResult = await AuthService.signUp(email.trim(), password);
+      
+      if (authResult.user) {
+        // Supabase の accounts テーブルにユーザーデータを作成
+        try {
+          await AccountService.createAccount(authResult.user.id, 'プレイヤー');
+        } catch (accountError) {
+          console.log('Account creation will be handled on first login');
+        }
+      }
+      
       Alert.alert(
         '登録完了',
         'アカウントが作成されました。ログインしてください。',
