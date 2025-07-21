@@ -108,6 +108,11 @@ export class GameService {
 
   static async getAllGames(accountId: string): Promise<GameRecord[]> {
     try {
+      // ダミーユーザーの場合は空配列を返す
+      if (accountId === 'dummy-user-id') {
+        return [];
+      }
+
       const { data: games, error: gamesError } = await supabase
         .from('games')
         .select(`
@@ -163,6 +168,11 @@ export class GameService {
 
   static async getRecentGames(accountId: string, limit: number = 5): Promise<GameRecord[]> {
     try {
+      // ダミーユーザーの場合は空配列を返す
+      if (accountId === 'dummy-user-id') {
+        return [];
+      }
+
       const { data: games, error } = await supabase
         .from('games')
         .select(`
@@ -219,6 +229,33 @@ export class GameService {
 
   static async getPlayerStats(accountId: string): Promise<PlayerStats> {
     try {
+      // ダミーユーザーの場合はデフォルト統計を返す
+      if (accountId === 'dummy-user-id') {
+        return {
+          totalGames: 0,
+          totalHanchans: 0,
+          averageRank: 0,
+          averageScore: 0,
+          averageFinalPoints: 0,
+          firstPlaceRate: 0,
+          topTwoRate: 0,
+          avoidLastRate: 0,
+          highestScore: 0,
+          lowestScore: 0,
+          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
+          chipStats: {
+            totalChipsWon: 0,
+            averageChipsPerGame: 0,
+            bestChipGame: 0,
+          },
+          pointStats: {
+            averagePointChange: 0,
+            totalPointChange: 0,
+            positiveGameRate: 0,
+          },
+        };
+      }
+
       const { data: playerRecords, error } = await supabase
         .from('player_records')
         .select(`
@@ -311,6 +348,11 @@ export class GameService {
 
   static async getChartData(accountId: string, period: 'month' | 'year' | 'all') {
     try {
+      // ダミーユーザーの場合は空のチャートデータを返す
+      if (accountId === 'dummy-user-id') {
+        return { labels: [], scores: [] };
+      }
+
       const { data: playerRecords, error } = await supabase
         .from('player_records')
         .select(`
@@ -355,6 +397,11 @@ export class GameService {
 
   static async exportData(accountId: string): Promise<string> {
     try {
+      // ダミーユーザーの場合は空のJSONを返す
+      if (accountId === 'dummy-user-id') {
+        return JSON.stringify([], null, 2);
+      }
+
       const games = await this.getAllGames(accountId);
       return JSON.stringify(games, null, 2);
     } catch (error) {
@@ -365,6 +412,11 @@ export class GameService {
 
   static async resetData(accountId: string): Promise<void> {
     try {
+      // ダミーユーザーの場合は何もしない
+      if (accountId === 'dummy-user-id') {
+        return;
+      }
+
       const { error } = await supabase
         .from('games')
         .delete()

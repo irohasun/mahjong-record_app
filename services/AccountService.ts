@@ -14,6 +14,19 @@ export class AccountService {
         throw new Error('認証されていません');
       }
 
+      // ダミーユーザーの場合はデフォルトアカウントを返す
+      if (user.id === 'dummy-user-id') {
+        return {
+          id: 'dummy-user-id',
+          username: 'プレイヤー',
+          created_at: new Date().toISOString(),
+          is_premium: false,
+          monthly_game_count: 0,
+          last_reset_date: new Date().toISOString(),
+          purchase_date: null,
+        };
+      }
+
       const { data: account, error } = await supabase
         .from('accounts')
         .select('*')
@@ -63,6 +76,11 @@ export class AccountService {
         throw new Error('認証されていません');
       }
 
+      // ダミーユーザーの場合は何もしない
+      if (user.id === 'dummy-user-id') {
+        return;
+      }
+
       const { error } = await supabase
         .from('accounts')
         .update({ username })
@@ -83,6 +101,11 @@ export class AccountService {
       
       if (!user) {
         throw new Error('認証されていません');
+      }
+
+      // ダミーユーザーの場合は何もしない
+      if (user.id === 'dummy-user-id') {
+        return;
       }
 
       const updateData: AccountUpdate = {
@@ -109,6 +132,13 @@ export class AccountService {
 
   static async incrementMonthlyGameCount(): Promise<void> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // ダミーユーザーの場合は何もしない
+      if (user?.id === 'dummy-user-id') {
+        return;
+      }
+
       const account = await this.getAccount();
       
       // 月が変わったかチェック
@@ -142,6 +172,13 @@ export class AccountService {
 
   static async getMonthlyGameCount(): Promise<number> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // ダミーユーザーの場合は0を返す
+      if (user?.id === 'dummy-user-id') {
+        return 0;
+      }
+
       const account = await this.getAccount();
       
       // 月が変わったかチェック
@@ -165,6 +202,11 @@ export class AccountService {
       
       if (!user) {
         throw new Error('認証されていません');
+      }
+
+      // ダミーユーザーの場合は何もしない
+      if (user.id === 'dummy-user-id') {
+        return;
       }
 
       const { error } = await supabase
