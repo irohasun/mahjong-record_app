@@ -60,6 +60,10 @@ export class AuthService {
 
       return user;
     } catch (error) {
+      // Don't log "Auth session missing!" as it's expected when not authenticated
+      if (error instanceof Error && error.message === 'Auth session missing!') {
+        return null;
+      }
       console.error('Failed to get current user:', error);
       return null;
     }
