@@ -30,7 +30,6 @@ export default function TabLayout() {
           fontWeight: '600',
         },
       }}>
-      />
       <Tabs.Screen
         name="statistics"
         options={{
