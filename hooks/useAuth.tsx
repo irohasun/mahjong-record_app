@@ -32,6 +32,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     );
       
+      // フォールバック: 基本的なユーザー情報のみ設定
+      console.log('useAuth: Using fallback user data for:', userId);
+      setUser({
+        id: userId,
+        monthly_game_count: 0,
+        profile: null,
+        permissions: ['read_own_data', 'write_own_data'],
+      }
+      )
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const getInitialSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadUserData(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error getting initial session:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadUserData = async (userId: string) => {
     try {
