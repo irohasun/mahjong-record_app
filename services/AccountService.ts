@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
+import { EnhancedAccount } from '@/types/auth';
 
 type Account = Database['public']['Tables']['accounts']['Row'];
 type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
@@ -93,6 +94,120 @@ export class AccountService {
     } catch (error) {
       console.error('Failed to create account:', error);
       throw new Error('アカウント作成に失敗しました');
+    }
+  }
+
+  static async getEnhancedAccount(userId: string): Promise<EnhancedAccount> {
+    try {
+      if (userId === 'dummy-user-id') {
+        return {
+          id: 'dummy-user-id',
+          username: 'プレイヤー',
+          email: null,
+          email_verified: false,
+          avatar_url: null,
+          phone: null,
+          date_of_birth: null,
+          preferred_language: 'ja',
+          timezone: 'Asia/Tokyo',
+          last_login_at: null,
+          status: 'active',
+          metadata: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_premium: false,
+          purchase_date: null,
+          monthly_game_count: 0,
+          last_reset_date: new Date().toISOString(),
+        };
+      }
+
+      const { data: account, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return account as EnhancedAccount;
+    } catch (error) {
+      console.error('Failed to get enhanced account:', error);
+      throw new Error('アカウント情報の取得に失敗しました');
+    }
+  }
+
+  static async updateAccount(userId: string, updates: Partial<EnhancedAccount>): Promise<EnhancedAccount> {
+    try {
+      if (userId === 'dummy-user-id') {
+        // Return dummy data for guest users
+        return this.getEnhancedAccount(userId);
+      }
+
+      const { data: updatedAccount, error } = await supabase
+        .from('accounts')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return updatedAccount as EnhancedAccount;
+    } catch (error) {
+      console.error('Failed to update account:', error);
+      throw new Error('アカウント情報の更新に失敗しました');
+    }
+  }
+
+  static async updateLastLogin(userId: string): Promise<void> {
+    try {
+      if (userId === 'dummy-user-id') {
+        return;
+      }
+
+      const { error } = await supabase
+        .from('accounts')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Failed to update last login:', error);
+      // Don't throw error for this operation
+    }
+  }
+
+  static async deleteAccount(userId: string): Promise<void> {
+    try {
+      if (userId === 'dummy-user-id') {
+        return;
+      }
+
+      // Soft delete by updating status
+      const { error } = await supabase
+        .from('accounts')
+        .update({
+          status: 'deleted',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      throw new Error('アカウントの削除に失敗しました');
     }
   }
 

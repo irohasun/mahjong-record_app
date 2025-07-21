@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Mail, Lock, Eye, EyeOff, UserPlus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { AuthService } from '@/services/AuthService';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { signIn, signInAnonymously } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +20,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      await AuthService.signIn(email.trim(), password);
+      await signIn(email.trim(), password);
       router.replace('/(tabs)/history');
     } catch (error) {
       Alert.alert('ログインエラー', error instanceof Error ? error.message : 'ログインに失敗しました');
@@ -31,7 +32,7 @@ export default function LoginScreen() {
   const handleGuestLogin = async () => {
     setLoading(true);
     try {
-      await AuthService.signInAnonymously();
+      await signInAnonymously();
       router.replace('/(tabs)/history');
     } catch (error) {
       Alert.alert('ゲストログインエラー', 'ゲストログインに失敗しました');

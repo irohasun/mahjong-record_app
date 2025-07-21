@@ -2,20 +2,21 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Mail, Lock, Eye, EyeOff, User, ArrowLeft } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { AuthService } from '@/services/AuthService';
-import { AccountService } from '@/services/AccountService';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function SignupScreen() {
   const router = useRouter();
+  const { signUp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+    if (!email.trim() || !password.trim() || !confirmPassword.trim() || !username.trim()) {
       Alert.alert('入力エラー', 'すべての項目を入力してください');
       return;
     }
@@ -32,20 +33,14 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      const authResult = await AuthService.signUp(email.trim(), password);
-      
-      if (authResult.user) {
-        // Supabase の accounts テーブルにユーザーデータを作成
-        try {
-          await AccountService.createAccount(authResult.user.id, 'プレイヤー');
-        } catch (accountError) {
-          console.log('Account creation will be handled on first login');
-        }
-      }
+      await signUp(email.trim(), password, {
+        username: username.trim(),
+        display_name: username.trim(),
+      });
       
       Alert.alert(
         '登録完了',
-        'アカウントが作成されました。ログインしてください。',
+        'アカウントが作成されました。メールを確認してアカウントを有効化してください。',
         [
           { text: 'OK', onPress: () => router.replace('/(auth)/login') }
         ]
@@ -75,6 +70,20 @@ export default function SignupScreen() {
         </View>
 
         <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <View style={styles.inputIcon}>
+              <User size={20} color="#6D6D70" />
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="ユーザー名"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
           <View style={styles.inputContainer}>
             <View style={styles.inputIcon}>
               <Mail size={20} color="#6D6D70" />

@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Mail, ArrowLeft, Send } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { AuthService } from '@/services/AuthService';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const { resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -17,7 +18,7 @@ export default function ForgotPasswordScreen() {
 
     setLoading(true);
     try {
-      await AuthService.resetPassword(email.trim());
+      await resetPassword(email.trim());
       Alert.alert(
         'リセットメール送信',
         'パスワードリセット用のメールを送信しました。メールをご確認ください。',

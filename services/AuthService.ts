@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { SignUpData } from '@/types/auth';
 
 // Storage key for tracking if anonymous auth is disabled
 const ANONYMOUS_AUTH_DISABLED_KEY = 'anonymousAuthDisabled';
@@ -33,7 +34,7 @@ const saveAnonymousAuthDisabled = (disabled: boolean) => {
 initializeAuthState();
 
 export class AuthService {
-  static async signUp(email: string, password: string) {
+  static async signUp(email: string, password: string, metadata?: Record<string, any>) {
     if (!isSupabaseConfigured) {
       throw new Error('Supabaseが設定されていません');
     }
@@ -42,6 +43,9 @@ export class AuthService {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: metadata || {},
+        },
       });
 
       if (error) {
@@ -206,6 +210,102 @@ export class AuthService {
     } catch (error) {
       console.error('Failed to reset password:', error);
       throw new Error('パスワードリセットに失敗しました');
+    }
+  }
+
+  static async changePassword(newPassword: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Failed to change password:', error);
+      throw new Error('パスワード変更に失敗しました');
+    }
+  }
+
+  static async updateEmail(newEmail: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        email: newEmail
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Failed to update email:', error);
+      throw new Error('メールアドレス変更に失敗しました');
+    }
+  }
+
+  static async refreshSession() {
+    if (!isSupabaseConfigured) {
+      return null;
+    }
+    
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Failed to refresh session:', error);
+      return null;
+    }
+  }
+
+  static async getSession() {
+    if (!isSupabaseConfigured) {
+      return null;
+    }
+    
+    try {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        throw error;
+      }
+
+      return data.session;
+    } catch (error) {
+      console.error('Failed to get session:', error);
+      return null;
+    }
+  }
+
+  static async resendConfirmation(email: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Failed to resend confirmation:', error);
+      throw new Error('確認メールの再送信に失敗しました');
     }
   }
 }

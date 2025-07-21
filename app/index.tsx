@@ -1,32 +1,15 @@
 import React from 'react';
 import { Redirect } from 'expo-router';
-import { AuthService } from '@/services/AuthService';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function RootIndex() {
-  const [loading, setLoading] = React.useState(true);
-  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-
-  React.useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      const user = await AuthService.getCurrentUser();
-      setIsAuthenticated(!!user);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { user, loading } = useAuth();
 
   if (loading) {
     return null; // または読み込み画面
   }
 
-  if (isAuthenticated) {
+  if (user) {
     return <Redirect href="/(tabs)/history" />;
   }
 
