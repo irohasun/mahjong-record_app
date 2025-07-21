@@ -1,1 +1,0 @@
-mahjong-record_app

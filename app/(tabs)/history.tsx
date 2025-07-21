@@ -143,7 +143,8 @@ export default function HistoryScreen() {
   };
 
   const handleEditGame = (game: GameRecord) => {
-    router.push(`/(tabs)/edit-game?gameId=${game.id}`);
+    // 編集画面への遷移（今後実装）
+    Alert.alert('編集機能', 'この機能は今後実装予定です');
   };
 
   const handleDeleteGame = (gameId: string) => {
