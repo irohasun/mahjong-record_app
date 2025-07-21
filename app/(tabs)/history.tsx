@@ -134,8 +134,13 @@ export default function HistoryScreen() {
       
       // ユーザーが認証されていない場合は匿名認証を行う
       if (!user) {
-        await AuthService.signInAnonymously();
+        const authResult = await AuthService.signInAnonymously();
         user = await AuthService.getCurrentUser();
+        
+        if (!user && authResult?.user) {
+          // Supabaseが設定されていない場合はダミーユーザーを使用
+          user = authResult.user;
+        }
         
         if (!user) {
           setGames([dummyGame, dummyGame2]);
@@ -143,11 +148,16 @@ export default function HistoryScreen() {
         }
       }
       
-      const allGames = await GameService.getAllGames(user.id);
-      // ダミーデータを先頭に追加
-      setGames([dummyGame, dummyGame2, ...allGames]);
+      // ダミーユーザーの場合はダミーデータのみ表示
+      if (user.id === 'dummy-user-id') {
+        setGames([dummyGame, dummyGame2]);
+      } else {
+        const allGames = await GameService.getAllGames(user.id);
+        // ダミーデータを先頭に追加
+        setGames([dummyGame, dummyGame2, ...allGames]);
+      }
     } catch (error) {
-      console.error('Failed to load games:', error);
+      // ネットワークエラーなどの場合はログを出さずにダミーデータを表示
       // エラーが発生してもダミーデータは表示
       setGames([dummyGame, dummyGame2]);
     } finally {

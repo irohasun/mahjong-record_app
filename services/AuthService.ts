@@ -1,7 +1,12 @@
 import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 export class AuthService {
   static async signUp(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -20,6 +25,10 @@ export class AuthService {
   }
 
   static async signIn(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -38,6 +47,10 @@ export class AuthService {
   }
 
   static async signOut() {
+    if (!isSupabaseConfigured) {
+      return; // サイレントに成功とする
+    }
+    
     try {
       const { error } = await supabase.auth.signOut();
 
@@ -51,6 +64,18 @@ export class AuthService {
   }
 
   static async signInAnonymously() {
+    if (!isSupabaseConfigured) {
+      // Supabaseが設定されていない場合はダミーユーザーを返す
+      return {
+        user: {
+          id: 'dummy-user-id',
+          email: null,
+          is_anonymous: true
+        },
+        session: null
+      };
+    }
+    
     try {
       const { data, error } = await supabase.auth.signInAnonymously();
 
@@ -61,11 +86,23 @@ export class AuthService {
       return data;
     } catch (error) {
       console.error('Failed to sign in anonymously:', error);
-      throw new Error('匿名ログインに失敗しました');
+      // ネットワークエラーの場合はダミーユーザーを返す
+      return {
+        user: {
+          id: 'dummy-user-id',
+          email: null,
+          is_anonymous: true
+        },
+        session: null
+      };
     }
   }
 
   static async getCurrentUser() {
+    if (!isSupabaseConfigured) {
+      return null;
+    }
+    
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
 
@@ -85,6 +122,10 @@ export class AuthService {
   }
 
   static async resetPassword(email: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
 
