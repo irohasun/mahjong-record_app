@@ -94,6 +94,7 @@ export interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string, metadata?: Record<string, any>) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInAnonymously: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updateAccount: (updates: Partial<EnhancedAccount>) => Promise<void>;
