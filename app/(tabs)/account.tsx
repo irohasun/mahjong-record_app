@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
-import { User, Settings, Star, Download, Upload, Shield, Info } from 'lucide-react-native';
+import { User, Settings, Star, Download, Upload, Shield, Info, LogOut, Mail } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
 import { GameService } from '@/services/GameService';
@@ -8,11 +9,13 @@ import { AuthService } from '@/services/AuthService';
 import { PremiumModal } from '@/components/PremiumModal';
 
 export default function AccountScreen() {
+  const router = useRouter();
   const [account, setAccount] = useState<any>(null);
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [stats, setStats] = useState<any>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     loadAccountData();
@@ -32,6 +35,7 @@ export default function AccountScreen() {
         }
       }
       
+      setUser(user);
       const accountData = await AccountService.getAccount();
       const statsData = await GameService.getPlayerStats(user.id);
       setAccount(accountData);
@@ -104,6 +108,30 @@ export default function AccountScreen() {
     );
   };
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'ログアウト',
+      'ログアウトしますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { 
+          text: 'ログアウト', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AuthService.signOut();
+              router.replace('/(auth)/sign-in');
+            } catch (error) {
+              Alert.alert('エラー', 'ログアウトに失敗しました');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const isAnonymousUser = user?.id === 'dummy-user-id' || user?.is_anonymous;
+
   const InfoCard = ({ title, value, icon: Icon }: any) => (
     <View style={styles.infoCard}>
       <View style={styles.infoIcon}>
@@ -134,6 +162,48 @@ export default function AccountScreen() {
             {account.isPremium ? 'プレミアム' : 'フリー'}
           </Text>
         </View>
+      </View>
+
+      {/* 認証情報セクション */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>認証情報</Text>
+        
+        {isAnonymousUser ? (
+          <View style={styles.anonymousWarning}>
+            <Info size={20} color="#F59E0B" />
+            <View style={styles.anonymousWarningContent}>
+              <Text style={styles.anonymousWarningTitle}>
+                ゲストアカウントを使用中
+              </Text>
+              <Text style={styles.anonymousWarningText}>
+                データの永続保存のため、アカウント登録をおすすめします
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.emailInfo}>
+            <Mail size={20} color="#FF6B35" />
+            <View style={styles.emailContent}>
+              <Text style={styles.emailLabel}>メールアドレス</Text>
+              <Text style={styles.emailValue}>{user?.email || 'なし'}</Text>
+              {user?.email_confirmed_at ? (
+                <Text style={styles.verifiedText}>✓ 確認済み</Text>
+              ) : (
+                <Text style={styles.unverifiedText}>未確認</Text>
+              )}
+            </View>
+          </View>
+        )}
+        
+        {!isAnonymousUser && (
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+          >
+            <LogOut size={20} color="#EF4444" />
+            <Text style={styles.signOutButtonText}>ログアウト</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -489,6 +559,80 @@ const styles = StyleSheet.create({
     borderColor: '#EF4444',
   },
   dangerText: {
+    color: '#EF4444',
+  },
+  anonymousWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  anonymousWarningContent: {
+    flex: 1,
+  },
+  anonymousWarningTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  anonymousWarningText: {
+    fontSize: 14,
+    color: '#B45309',
+    lineHeight: 20,
+  },
+  emailInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  emailContent: {
+    flex: 1,
+  },
+  emailLabel: {
+    fontSize: 12,
+    color: '#6D6D70',
+    fontWeight: '500',
+  },
+  emailValue: {
+    fontSize: 16,
+    color: '#1C1C1E',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  verifiedText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  unverifiedText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    gap: 12,
+  },
+  signOutButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#EF4444',
   },
 });
