@@ -32,45 +32,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     );
       
-      // フォールバック: 基本的なユーザー情報のみ設定
-      console.log('useAuth: Using fallback user data for:', userId);
-      setUser({
-        id: userId,
-        username: 'プレイヤー',
-        email: null,
-        email_verified: false,
-        avatar_url: null,
-        phone: null,
-        date_of_birth: null,
-        preferred_language: 'ja',
-        timezone: 'Asia/Tokyo',
-        last_login_at: null,
-        status: 'active',
-        metadata: {},
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_premium: false,
-        purchase_date: null,
-        monthly_game_count: 0,
-        last_reset_date: new Date().toISOString(),
-        profile: null,
-        permissions: ['read_own_data', 'write_own_data'],
-      });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const getInitialSession = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await loadUserData(session.user.id);
-      }
-    } catch (error) {
-      console.error('Error getting initial session:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadUserData = async (userId: string) => {
     try {
