@@ -90,6 +90,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const result = await AuthService.signUp(email, password, metadata);
       
+      // サインアップ成功後、明示的にaccountsテーブルにレコードを作成
+      if (result.user) {
+        try {
+          await AccountService.createAccount(result.user.id, metadata?.username || 'プレイヤー');
+        } catch (accountError) {
+          console.log('Account creation after signup:', accountError);
+          // アカウント作成エラーは致命的ではないので続行
+        }
+      }
+      
       if (result.user && !result.session) {
         // Email confirmation required
         throw new Error('確認メールを送信しました。メールを確認してアカウントを有効化してください。');

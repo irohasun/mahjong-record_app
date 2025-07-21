@@ -71,6 +71,22 @@ export class AccountService {
 
   static async createAccount(userId: string, username: string): Promise<Account> {
     try {
+      // ダミーユーザーの場合はダミーアカウントを返す
+      if (userId.startsWith('user_') || userId === 'dummy-user-id') {
+        console.log('Creating local account for user:', userId);
+        return {
+          id: userId,
+          username: username,
+          created_at: new Date().toISOString(),
+          is_premium: false,
+          monthly_game_count: 0,
+          last_reset_date: new Date().toISOString(),
+          purchase_date: null,
+        };
+      }
+
+      console.log('Creating Supabase account for user:', userId);
+      
       const newAccount: AccountInsert = {
         id: userId,
         username: username,
@@ -87,9 +103,11 @@ export class AccountService {
         .single();
 
       if (error) {
+        console.error('Account creation error:', error);
         throw error;
       }
 
+      console.log('Account created successfully:', createdAccount);
       return createdAccount;
     } catch (error) {
       console.error('Failed to create account:', error);

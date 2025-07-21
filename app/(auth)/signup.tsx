@@ -33,19 +33,22 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
+      console.log('Starting signup process...');
       await signUp(email.trim(), password, {
         username: username.trim(),
         display_name: username.trim(),
       });
       
+      console.log('Signup completed successfully');
       Alert.alert(
         '登録完了',
-        'アカウントが作成されました。メールを確認してアカウントを有効化してください。',
+        'アカウントが作成されました。',
         [
           { text: 'OK', onPress: () => router.replace('/(auth)/login') }
         ]
       );
     } catch (error) {
+      console.error('Signup error:', error);
       Alert.alert('登録エラー', error instanceof Error ? error.message : 'アカウント作成に失敗しました');
     } finally {
       setLoading(false);
