@@ -85,8 +85,17 @@ export class AuthService {
 
       return data;
     } catch (error) {
-      console.error('Failed to sign in anonymously:', error);
-      // ネットワークエラーの場合はダミーユーザーを返す
+      // 匿名認証が無効化されている場合は静かにダミーユーザーを返す
+      if (error instanceof Error && 
+          (error.message.includes('Anonymous sign-ins are disabled') || 
+           error.message.includes('anonymous_provider_disabled'))) {
+        // 匿名認証が無効な場合はログを出さずにダミーユーザーを返す
+      } else {
+        // その他のエラーの場合のみログを出力
+        console.error('Failed to sign in anonymously:', error);
+      }
+      
+      // いずれの場合もダミーユーザーを返す
       return {
         user: {
           id: 'dummy-user-id',
