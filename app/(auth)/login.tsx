@@ -248,6 +248,6 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     fontSize: 14,
     color: '#8E8E93',
-    textDecoration: 'underline',
+    textDecorationLine: 'underline',
   },
 });

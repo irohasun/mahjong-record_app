@@ -184,6 +184,6 @@ const styles = StyleSheet.create({
   backToLoginText: {
     fontSize: 14,
     color: '#8E8E93',
-    textDecoration: 'underline',
+    textDecorationLine: 'underline',
   },
 });
