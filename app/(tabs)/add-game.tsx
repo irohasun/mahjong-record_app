@@ -12,7 +12,6 @@ export default function AddGameScreen() {
   const router = useRouter();
   
   const [gameDate, setGameDate] = useState(new Date());
-  const [gameNumber, setGameNumber] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [hanchanCount, setHanchanCount] = useState(3); // 初期は3半荘まで
@@ -116,7 +115,7 @@ export default function AddGameScreen() {
         rounds: [], // 簡略化のため空にしておく
         finalRiichiSticks: 0,
         finalHonba: 0,
-        memo: `ゲーム番号: ${gameNumber}`,
+        memo: '',
         gameEndCondition: 'normal' as const,
       };
 
@@ -179,17 +178,6 @@ export default function AddGameScreen() {
             {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
           </Text>
         </TouchableOpacity>
-        
-        <View style={styles.gameNumberContainer}>
-          <Text style={styles.gameNumberLabel}>No</Text>
-          <TextInput
-            style={styles.gameNumberInput}
-            value={gameNumber}
-            onChangeText={setGameNumber}
-            placeholder="1"
-            keyboardType="numeric"
-          />
-        </View>
       </View>
 
       {/* スコア表 */}
@@ -348,26 +336,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#1C1C1E',
-  },
-  gameNumberContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  gameNumberLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
-  gameNumberInput: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    fontSize: 18,
-    fontWeight: '600',
-    minWidth: 60,
-    textAlign: 'center',
   },
   playersSection: {
     backgroundColor: '#FFF',
