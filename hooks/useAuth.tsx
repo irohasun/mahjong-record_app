@@ -31,7 +31,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
     );
-
+      
+      // フォールバック: 基本的なユーザー情報のみ設定
+      console.log('useAuth: Using fallback user data for:', userId);
+      setUser({
+        id: userId,
+        username: 'プレイヤー',
+        email: null,
+        email_verified: false,
+        avatar_url: null,
+        phone: null,
+        date_of_birth: null,
+        preferred_language: 'ja',
+        timezone: 'Asia/Tokyo',
+        last_login_at: null,
+        status: 'active',
+        metadata: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_premium: false,
+        purchase_date: null,
+        monthly_game_count: 0,
+        last_reset_date: new Date().toISOString(),
+        profile: null,
+        permissions: ['read_own_data', 'write_own_data'],
+      });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -64,13 +88,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log('Profile not found, will be created on first update');
         setProfile(null);
       }
-
-      // Load permissions
-      const userPermissions = await ProfileService.getUserPermissions(userId);
-      setPermissions(userPermissions);
-
+      
+      // アカウント情報を最初に取得
+      const account = await AccountService.getEnhancedAccount(userId);
+      console.log('useAuth: Account loaded:', account);
+      
+      // プロフィールと権限は失敗しても続行
+      let profile = null;
+      let permissions: string[] = [];
+      
+      try {
+        profile = await ProfileService.getProfile(userId);
+        console.log('useAuth: Profile loaded:', profile);
+      } catch (error) {
+        console.warn('useAuth: Failed to load profile, using fallback:', error);
+        profile = null;
+      }
+      
+      try {
+        permissions = await ProfileService.getUserPermissions(userId);
+        console.log('useAuth: Permissions loaded:', permissions);
+      } catch (error) {
+        console.warn('useAuth: Failed to load permissions, using fallback:', error);
+        permissions = ['read_own_data', 'write_own_data'];
+      }
       // Update last login
       await AccountService.updateLastLogin(userId);
+      console.log('useAuth: Last login updated for:', userId);
     } catch (error) {
       console.error('Error loading user data:', error);
       clearUserData();

@@ -159,16 +159,45 @@ export class AccountService {
         .from('accounts')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (error) {
+      if (error && error.code !== 'PGRST116') {
         throw error;
+      }
+
+      if (!account) {
+        // アカウントが存在しない場合は作成
+        console.log('AccountService: Account not found, creating new account for user:', userId);
+        const newAccount = await this.createAccount(userId, 'プレイヤー');
+        return newAccount as EnhancedAccount;
       }
 
       return account as EnhancedAccount;
     } catch (error) {
       console.error('Failed to get enhanced account:', error);
-      throw new Error('アカウント情報の取得に失敗しました');
+      
+      // フォールバック: デフォルトアカウントを返す
+      console.log('AccountService: Returning fallback account for user:', userId);
+      return {
+        id: userId,
+        username: 'プレイヤー',
+        email: null,
+        email_verified: false,
+        avatar_url: null,
+        phone: null,
+        date_of_birth: null,
+        preferred_language: 'ja',
+        timezone: 'Asia/Tokyo',
+        last_login_at: null,
+        status: 'active',
+        metadata: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_premium: false,
+        purchase_date: null,
+        monthly_game_count: 0,
+        last_reset_date: new Date().toISOString(),
+      };
     }
   }
 
