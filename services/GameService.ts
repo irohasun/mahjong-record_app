@@ -10,6 +10,8 @@ type PlayerRecordInsert = Database['public']['Tables']['player_records']['Insert
 type RoundRecord = Database['public']['Tables']['round_records']['Row'];
 type RoundRecordInsert = Database['public']['Tables']['round_records']['Insert'];
 
+import { MockDataService } from './MockDataService';
+
 export class GameService {
   static async addGame(gameData: Omit<GameRecord, 'id'>): Promise<GameRecord> {
     try {
@@ -110,7 +112,7 @@ export class GameService {
     try {
       // ダミーユーザーの場合は空配列を返す
       if (accountId === 'dummy-user-id') {
-        return [];
+        return MockDataService.generateMockGameRecords();
       }
 
       const { data: games, error: gamesError } = await supabase
@@ -170,7 +172,7 @@ export class GameService {
     try {
       // ダミーユーザーの場合は空配列を返す
       if (accountId === 'dummy-user-id') {
-        return [];
+        return MockDataService.generateMockGameRecords().slice(0, limit);
       }
 
       const { data: games, error } = await supabase
@@ -231,29 +233,7 @@ export class GameService {
     try {
       // ダミーユーザーの場合はデフォルト統計を返す
       if (accountId === 'dummy-user-id') {
-        return {
-          totalGames: 0,
-          totalHanchans: 0,
-          averageRank: 0,
-          averageScore: 0,
-          averageFinalPoints: 0,
-          firstPlaceRate: 0,
-          topTwoRate: 0,
-          avoidLastRate: 0,
-          highestScore: 0,
-          lowestScore: 0,
-          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
-          chipStats: {
-            totalChipsWon: 0,
-            averageChipsPerGame: 0,
-            bestChipGame: 0,
-          },
-          pointStats: {
-            averagePointChange: 0,
-            totalPointChange: 0,
-            positiveGameRate: 0,
-          },
-        };
+        return MockDataService.generateMockPlayerStats();
       }
 
       const { data: playerRecords, error } = await supabase
@@ -350,7 +330,7 @@ export class GameService {
     try {
       // ダミーユーザーの場合は空のチャートデータを返す
       if (accountId === 'dummy-user-id') {
-        return { labels: [], scores: [] };
+        return MockDataService.generateChartData(period);
       }
 
       const { data: playerRecords, error } = await supabase

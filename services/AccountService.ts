@@ -5,6 +5,8 @@ type Account = Database['public']['Tables']['accounts']['Row'];
 type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
 type AccountUpdate = Database['public']['Tables']['accounts']['Update'];
 
+import { MockDataService } from './MockDataService';
+
 export class AccountService {
   static async getAccount(): Promise<Account> {
     try {
@@ -16,14 +18,15 @@ export class AccountService {
 
       // ダミーユーザーの場合はデフォルトアカウントを返す
       if (user.id === 'dummy-user-id') {
+        const mockAccount = MockDataService.generateMockAccount();
         return {
           id: 'dummy-user-id',
-          username: 'プレイヤー',
-          created_at: new Date().toISOString(),
-          is_premium: false,
-          monthly_game_count: 0,
-          last_reset_date: new Date().toISOString(),
-          purchase_date: null,
+          username: mockAccount.username,
+          created_at: mockAccount.createdDate,
+          is_premium: mockAccount.isPremium,
+          monthly_game_count: mockAccount.monthlyGameCount,
+          last_reset_date: mockAccount.lastResetDate,
+          purchase_date: mockAccount.purchaseDate,
         };
       }
 
