@@ -33,18 +33,21 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      console.log('Starting signup process...');
-      await signUp(email.trim(), password, {
+      console.log('Starting signup process with:', { email: email.trim(), username: username.trim() });
+      
+      const result = await signUp(email.trim(), password, {
         username: username.trim(),
         display_name: username.trim(),
       });
       
-      console.log('Signup completed successfully');
+      console.log('Signup completed successfully:', result);
+      
+      // 登録成功時は直接アプリ内部にリダイレクト
       Alert.alert(
         '登録完了',
-        'アカウントが作成されました。',
+        'アカウントが作成されました。アプリを開始します。',
         [
-          { text: 'OK', onPress: () => router.replace('/(auth)/login') }
+          { text: 'OK', onPress: () => router.replace('/(tabs)/history') }
         ]
       );
     } catch (error) {

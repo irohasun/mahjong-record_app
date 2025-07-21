@@ -88,23 +88,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signUp = async (email: string, password: string, metadata?: Record<string, any>) => {
     try {
-      const result = await AuthService.signUp(email, password, metadata);
+      console.log('useAuth: Starting signup with metadata:', metadata);
+      const authResult = await AuthService.signUp(email, password, metadata);
+      console.log('useAuth: Auth signup result:', authResult);
       
       // サインアップ成功後、明示的にaccountsテーブルにレコードを作成
-      if (result.user) {
+      if (authResult.user) {
         try {
-          await AccountService.createAccount(result.user.id, metadata?.username || 'プレイヤー');
+          console.log('useAuth: Creating account for user:', authResult.user.id);
+          const account = await AccountService.createAccount(authResult.user.id, metadata?.username || 'プレイヤー');
+          console.log('useAuth: Account created:', account);
+          
+          // アカウント作成後、ユーザーデータを読み込み
+          if (authResult.session) {
+            console.log('useAuth: Loading user data after signup');
+            await loadUserData(authResult.user.id);
+          }
         } catch (accountError) {
-          console.log('Account creation after signup:', accountError);
+          console.error('useAuth: Account creation failed:', accountError);
           // アカウント作成エラーは致命的ではないので続行
         }
       }
       
-      if (result.user && !result.session) {
+      if (authResult.user && !authResult.session) {
         // Email confirmation required
         throw new Error('確認メールを送信しました。メールを確認してアカウントを有効化してください。');
       }
+      
+      return authResult;
     } catch (error) {
+      console.error('useAuth: Signup failed:', error);
       throw error;
     }
   };

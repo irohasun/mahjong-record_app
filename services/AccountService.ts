@@ -73,7 +73,7 @@ export class AccountService {
     try {
       // ダミーユーザーの場合はダミーアカウントを返す
       if (userId.startsWith('user_') || userId === 'dummy-user-id') {
-        console.log('Creating local account for user:', userId);
+        console.log('AccountService: Creating local account for user:', userId);
         return {
           id: userId,
           username: username,
@@ -85,15 +85,13 @@ export class AccountService {
         };
       }
 
-      console.log('Creating Supabase account for user:', userId);
+      console.log('AccountService: Creating Supabase account for user:', userId, 'with username:', username);
       
       const newAccount: AccountInsert = {
         id: userId,
         username: username,
-        created_at: new Date().toISOString(),
         is_premium: false,
         monthly_game_count: 0,
-        last_reset_date: new Date().toISOString(),
       };
 
       const { data: createdAccount, error } = await supabase
@@ -103,15 +101,32 @@ export class AccountService {
         .single();
 
       if (error) {
-        console.error('Account creation error:', error);
+        console.error('AccountService: Account creation error:', error);
+        
+        // もしアカウントが既に存在する場合は、既存のアカウントを取得
+        if (error.code === '23505') { // unique_violation
+          console.log('AccountService: Account already exists, fetching existing account');
+          const { data: existingAccount, error: fetchError } = await supabase
+            .from('accounts')
+            .select('*')
+            .eq('id', userId)
+            .single();
+            
+          if (fetchError) {
+            throw fetchError;
+          }
+          
+          return existingAccount;
+        }
+        
         throw error;
       }
 
-      console.log('Account created successfully:', createdAccount);
+      console.log('AccountService: Account created successfully:', createdAccount);
       return createdAccount;
     } catch (error) {
-      console.error('Failed to create account:', error);
-      throw new Error('アカウント作成に失敗しました');
+      console.error('AccountService: Failed to create account:', error);
+      throw error instanceof Error ? error : new Error('アカウント作成に失敗しました');
     }
   }
 

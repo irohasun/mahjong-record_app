@@ -35,39 +35,45 @@ initializeAuthState();
 
 export class AuthService {
   static async signUp(email: string, password: string, metadata?: Record<string, any>) {
-    if (!isSupabaseConfigured) {
-      console.warn('Supabase not configured, using local mode');
-      // ローカル開発用のダミーレスポンス
-      return {
-        user: {
-          id: `user_${Date.now()}`,
-          email: email,
-          created_at: new Date().toISOString(),
-        },
-        session: null
-      };
-    }
-    
     try {
+      if (!isSupabaseConfigured) {
+        console.warn('Supabase not configured, using local mode');
+        // ローカル開発用のダミーレスポンス
+        return {
+          user: {
+            id: `user_${Date.now()}`,
+            email: email,
+            created_at: new Date().toISOString(),
+          },
+          session: {
+            access_token: 'dummy-token',
+            user: {
+              id: `user_${Date.now()}`,
+              email: email,
+            }
+          }
+        };
+      }
+      
+      console.log('AuthService: Starting Supabase signup');
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: metadata || {},
-          emailRedirectTo: undefined, // メール確認を無効化
         },
       });
 
       if (error) {
         console.error('Supabase signup error:', error);
-        throw error;
+        throw new Error(`サインアップエラー: ${error.message}`);
       }
 
-      console.log('Signup successful:', data);
+      console.log('AuthService: Supabase signup successful:', data);
       return data;
     } catch (error) {
       console.error('Failed to sign up:', error);
-      throw new Error('アカウント作成に失敗しました');
+      throw error instanceof Error ? error : new Error('アカウント作成に失敗しました');
     }
   }
 
