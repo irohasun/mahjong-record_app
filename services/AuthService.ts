@@ -1,6 +1,37 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
+// Storage key for tracking if anonymous auth is disabled
+const ANONYMOUS_AUTH_DISABLED_KEY = 'anonymousAuthDisabled';
+
+// Flag to track if anonymous auth is disabled
+let anonymousAuthDisabled = false;
+
+// Initialize the flag from storage
+const initializeAuthState = () => {
+  try {
+    const stored = localStorage.getItem(ANONYMOUS_AUTH_DISABLED_KEY);
+    anonymousAuthDisabled = stored === 'true';
+  } catch (error) {
+    // Ignore localStorage errors, default to false
+    anonymousAuthDisabled = false;
+  }
+};
+
+// Save the flag to storage
+const saveAnonymousAuthDisabled = (disabled: boolean) => {
+  try {
+    localStorage.setItem(ANONYMOUS_AUTH_DISABLED_KEY, disabled.toString());
+    anonymousAuthDisabled = disabled;
+  } catch (error) {
+    // Ignore localStorage errors
+    anonymousAuthDisabled = disabled;
+  }
+};
+
+// Initialize on module load
+initializeAuthState();
+
 export class AuthService {
   static async signUp(email: string, password: string) {
     if (!isSupabaseConfigured) {
@@ -64,7 +95,7 @@ export class AuthService {
   }
 
   static async signInAnonymously() {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || anonymousAuthDisabled) {
       // Supabaseが設定されていない場合はダミーユーザーを返す
       return {
         user: {
@@ -103,6 +134,8 @@ export class AuthService {
         // 匿名認証が無効化されている場合は静かにダミーユーザーを返す
         if (error.message.includes('Anonymous sign-ins are disabled') || 
             error.message.includes('anonymous_provider_disabled')) {
+          // Set flag to prevent future attempts and persist it
+          saveAnonymousAuthDisabled(true);
           // 匿名認証が無効な場合はログを出さずにダミーユーザーを返す
         } else {
           // その他のエラーの場合のみログを出力
@@ -137,7 +170,7 @@ export class AuthService {
   }
 
   static async getCurrentUser() {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || anonymousAuthDisabled) {
       return null;
     }
     
