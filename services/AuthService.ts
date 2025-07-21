@@ -83,19 +83,32 @@ export class AuthService {
     }
     
     try {
+      console.log('AuthService: Attempting login for email:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
+        console.error('Supabase auth error:', error);
+        
+        // Provide more specific error messages
+        if (error.message === 'Invalid login credentials') {
+          throw new Error('メールアドレスまたはパスワードが正しくありません。アカウントが存在しない可能性があります。');
+        } else if (error.message.includes('Email not confirmed')) {
+          throw new Error('メールアドレスが確認されていません。確認メールをチェックしてください。');
+        } else if (error.message.includes('too many requests')) {
+          throw new Error('ログイン試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。');
+        }
         throw error;
       }
 
+      console.log('AuthService: Login successful for user:', data.user?.id);
       return data;
     } catch (error) {
       console.error('Failed to sign in:', error);
-      throw new Error('ログインに失敗しました');
+      throw error instanceof Error ? error : new Error('ログインに失敗しました');
     }
   }
 

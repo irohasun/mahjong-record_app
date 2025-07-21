@@ -45,9 +45,15 @@ export default function LoginScreen() {
       let errorMessage = 'ログインに失敗しました';
       
       if (error instanceof Error) {
-        if (error.message.includes('Invalid login credentials')) {
-          errorTitle = '🔐 認証エラー';
-          errorMessage = 'メールアドレスまたはパスワードが正しくありません\n\n• 入力内容を再確認してください\n• パスワードを忘れた場合は「パスワードを忘れた方」をタップ';
+        if (error.message.includes('メールアドレスまたはパスワードが正しくありません')) {
+          errorTitle = '🔐 ログイン情報エラー';
+          errorMessage = 'ログインできませんでした\n\n考えられる原因：\n• メールアドレスまたはパスワードが間違っている\n• アカウントがまだ作成されていない\n• メールアドレスが確認されていない\n\n解決方法：\n• 入力内容を確認してください\n• アカウントを持っていない場合は新規登録してください';
+        } else if (error.message.includes('メールアドレスが確認されていません')) {
+          errorTitle = '📧 メール確認エラー';
+          errorMessage = 'アカウントが確認されていません\n\n登録時に送信された確認メールから\nアカウントを有効化してください';
+        } else if (error.message.includes('ログイン試行回数が上限に達しました')) {
+          errorTitle = '⏰ アクセス制限';
+          errorMessage = 'ログイン試行回数が上限に達しました\n\nしばらく時間をおいてから再度お試しください';
         } else if (error.message.includes('Email not confirmed')) {
           errorTitle = '📧 メール確認エラー';
           errorMessage = 'アカウントが確認されていません\n\n登録時に送信された確認メールから\nアカウントを有効化してください';
@@ -55,7 +61,7 @@ export default function LoginScreen() {
           errorTitle = '⏰ アクセス制限';
           errorMessage = 'ログイン試行回数が上限に達しました\n\nしばらく時間をおいてから再度お試しください';
         } else {
-          errorMessage = `エラー詳細：\n${error.message}`;
+          errorMessage = `予期しないエラーが発生しました\n\nエラー詳細：\n${error.message}\n\n解決方法：\n• アカウントがない場合は新規登録してください\n• Supabase設定を確認してください`;
         }
       }
       
@@ -64,6 +70,11 @@ export default function LoginScreen() {
         errorMessage,
         [
           { text: '🔄 再試行', style: 'default' },
+          { 
+            text: '👤 新規登録', 
+            onPress: () => router.push('/(auth)/signup'),
+            style: 'cancel'
+          },
           { 
             text: '🔑 パスワードリセット', 
             onPress: () => router.push('/(auth)/forgot-password'),
