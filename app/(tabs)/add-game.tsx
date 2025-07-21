@@ -134,11 +134,16 @@ export default function AddGameScreen() {
       await GameService.addGame(gameRecord);
       await MonetizationService.incrementGameCount();
       
-      Alert.alert('保存完了', '対局記録を保存しました', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      Alert.alert(
+        '保存完了', 
+        '対局記録を保存しました。履歴画面で確認できます。', 
+        [
+          { text: 'OK', onPress: () => router.back() }
+        ]
+      );
       
     } catch (error) {
+      console.error('Save game error:', error);
       Alert.alert('エラー', '保存に失敗しました');
     }
   };

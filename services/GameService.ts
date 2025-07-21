@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { GameRecord, PlayerStats, ChipCalculator } from '@/types/GameRecord';
 
@@ -16,6 +17,15 @@ export class GameService {
       
       if (!user) {
         throw new Error('認証されていません');
+      }
+
+      // Supabaseが設定されていない場合やダミーユーザーの場合はローカル保存として扱う
+      if (!isSupabaseConfigured || user.id === 'dummy-user-id') {
+        const dummyId = `dummy-game-${Date.now()}`;
+        return {
+          ...gameData,
+          id: dummyId,
+        };
       }
 
       // ゲーム記録を挿入
