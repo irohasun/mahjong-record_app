@@ -176,7 +176,7 @@ export default function AddGameScreen() {
         >
           <Calendar size={16} color="#6D6D70" />
           <Text style={styles.dateText}>
-            {gameDate.getMonth() + 1}月{gameDate.getDate()}日
+            {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
           </Text>
         </TouchableOpacity>
         
