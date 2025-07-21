@@ -130,11 +130,17 @@ export default function HistoryScreen() {
 
   const loadGames = async () => {
     try {
-      const user = await AuthService.getCurrentUser();
+      let user = await AuthService.getCurrentUser();
       
+      // ユーザーが認証されていない場合は匿名認証を行う
       if (!user) {
-        setGames([dummyGame, dummyGame2]);
-        return;
+        await AuthService.signInAnonymously();
+        user = await AuthService.getCurrentUser();
+        
+        if (!user) {
+          setGames([dummyGame, dummyGame2]);
+          return;
+        }
       }
       
       const allGames = await GameService.getAllGames(user.id);

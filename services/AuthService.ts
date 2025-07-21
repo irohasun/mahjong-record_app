@@ -50,6 +50,21 @@ export class AuthService {
     }
   }
 
+  static async signInAnonymously() {
+    try {
+      const { data, error } = await supabase.auth.signInAnonymously();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Failed to sign in anonymously:', error);
+      throw new Error('匿名ログインに失敗しました');
+    }
+  }
+
   static async getCurrentUser() {
     try {
       const { data: { user }, error } = await supabase.auth.getUser();

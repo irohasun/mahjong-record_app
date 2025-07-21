@@ -18,10 +18,16 @@ export default function StatisticsScreen() {
 
   const loadStatistics = async () => {
     try {
-      const user = await AuthService.getCurrentUser();
+      let user = await AuthService.getCurrentUser();
       
+      // ユーザーが認証されていない場合は匿名認証を行う
       if (!user) {
-        return;
+        await AuthService.signInAnonymously();
+        user = await AuthService.getCurrentUser();
+        
+        if (!user) {
+          return;
+        }
       }
       
       const statsData = await GameService.getPlayerStats(user.id);

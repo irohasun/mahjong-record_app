@@ -80,11 +80,17 @@ export default function AddGameScreen() {
     }
 
     try {
-      const user = await AuthService.getCurrentUser();
+      let user = await AuthService.getCurrentUser();
       
+      // ユーザーが認証されていない場合は匿名認証を行う
       if (!user) {
-        Alert.alert('エラー', 'ログインが必要です');
-        return;
+        await AuthService.signInAnonymously();
+        user = await AuthService.getCurrentUser();
+        
+        if (!user) {
+          Alert.alert('エラー', '認証に失敗しました');
+          return;
+        }
       }
       
       // スコアデータを変換
