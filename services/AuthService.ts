@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Storage key for tracking if anonymous auth is disabled
 const ANONYMOUS_AUTH_DISABLED_KEY = 'anonymousAuthDisabled';
+const AUTH_STATE_KEY = 'authState';
 
 // Flag to track if anonymous auth is disabled
 let anonymousAuthDisabled = false;
@@ -33,6 +35,12 @@ const saveAnonymousAuthDisabled = (disabled: boolean) => {
 initializeAuthState();
 
 export class AuthService {
+  /**
+   * メールアドレスとパスワードでユーザー登録
+   * @param email メールアドレス
+   * @param password パスワード
+   * @returns ユーザー情報
+   */
   static async signUp(email: string, password: string) {
     if (!isSupabaseConfigured) {
       throw new Error('Supabaseが設定されていません');
@@ -42,19 +50,38 @@ export class AuthService {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: undefined, // メール確認後のリダイレクト先（オプション）
+        }
       });
 
       if (error) {
-        throw error;
+        // Supabaseのエラーメッセージを日本語に変換
+        const message = this.translateAuthError(error.message);
+        throw new Error(message);
+      }
+
+      // 認証状態をローカルに保存
+      if (data.user) {
+        await this.saveAuthState(data.user, data.session);
       }
 
       return data;
     } catch (error) {
       console.error('Failed to sign up:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error('アカウント作成に失敗しました');
     }
   }
 
+  /**
+   * メールアドレスとパスワードでログイン
+   * @param email メールアドレス  
+   * @param password パスワード
+   * @returns ユーザー情報
+   */
   static async signIn(email: string, password: string) {
     if (!isSupabaseConfigured) {
       throw new Error('Supabaseが設定されていません');
@@ -67,19 +94,33 @@ export class AuthService {
       });
 
       if (error) {
-        throw error;
+        const message = this.translateAuthError(error.message);
+        throw new Error(message);
+      }
+
+      // 認証状態をローカルに保存
+      if (data.user) {
+        await this.saveAuthState(data.user, data.session);
       }
 
       return data;
     } catch (error) {
       console.error('Failed to sign in:', error);
-      throw new Error('ログインに失敗しました');
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('アカウント作成に失敗しました');
     }
   }
 
+  /**
+   * ログアウト
+   */
   static async signOut() {
     if (!isSupabaseConfigured) {
-      return; // サイレントに成功とする
+      // ローカル認証状態をクリア
+      await this.clearAuthState();
+      return;
     }
     
     try {
@@ -88,8 +129,13 @@ export class AuthService {
       if (error) {
         throw error;
       }
+
+      // ローカル認証状態をクリア
+      await this.clearAuthState();
     } catch (error) {
       console.error('Failed to sign out:', error);
+      // エラーが発生してもローカル状態はクリア
+      await this.clearAuthState();
       throw new Error('ログアウトに失敗しました');
     }
   }
@@ -169,15 +215,24 @@ export class AuthService {
     }
   }
 
+  /**
+   * 現在のユーザー情報を取得
+   * @returns ユーザー情報またはnull
+   */
   static async getCurrentUser() {
     if (!isSupabaseConfigured || anonymousAuthDisabled) {
-      return null;
+      // ローカル認証状態を確認
+      return await this.getLocalAuthState();
     }
     
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
 
       if (error) {
+        // セッションエラーの場合はローカル状態もクリア
+        if (error.message === 'Auth session missing!') {
+          await this.clearAuthState();
+        }
         throw error;
       }
 
@@ -192,20 +247,134 @@ export class AuthService {
     }
   }
 
+  /**
+   * パスワードリセットメール送信
+   * @param email メールアドレス
+   */
   static async resetPassword(email: string) {
     if (!isSupabaseConfigured) {
       throw new Error('Supabaseが設定されていません');
     }
     
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: undefined, // パスワードリセット後のリダイレクト先（オプション）
+      });
 
       if (error) {
-        throw error;
+        const message = this.translateAuthError(error.message);
+        throw new Error(message);
       }
     } catch (error) {
       console.error('Failed to reset password:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error('パスワードリセットに失敗しました');
     }
   }
+
+  /**
+   * メールアドレス確認状態をチェック
+   * @returns 確認済みかどうか
+   */
+  static async isEmailVerified(): Promise<boolean> {
+    try {
+      const user = await this.getCurrentUser();
+      return user?.email_confirmed_at != null;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * 認証状態を監視するリスナーを設定
+   * @param callback 認証状態変更時のコールバック
+   * @returns リスナーを削除する関数
+   */
+  static onAuthStateChange(callback: (user: any) => void) {
+    if (!isSupabaseConfigured) {
+      return () => {}; // 何もしない関数を返す
+    }
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          await this.saveAuthState(session.user, session);
+        } else {
+          await this.clearAuthState();
+        }
+        callback(session?.user || null);
+      }
+    );
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }
+
+  // プライベートメソッド
+
+  /**
+   * 認証状態をローカルストレージに保存
+   */
+  private static async saveAuthState(user: any, session: any) {
+    try {
+      const authState = {
+        user,
+        session,
+        timestamp: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem(AUTH_STATE_KEY, JSON.stringify(authState));
+    } catch (error) {
+      console.error('Failed to save auth state:', error);
+    }
+  }
+
+  /**
+   * ローカルストレージから認証状態を取得
+   */
+  private static async getLocalAuthState() {
+    try {
+      const authStateStr = await AsyncStorage.getItem(AUTH_STATE_KEY);
+      if (!authStateStr) return null;
+      
+      const authState = JSON.parse(authStateStr);
+      return authState.user;
+    } catch (error) {
+      console.error('Failed to get local auth state:', error);
+      return null;
+    }
+  }
+
+  /**
+   * ローカル認証状態をクリア
+   */
+  private static async clearAuthState() {
+    try {
+      await AsyncStorage.removeItem(AUTH_STATE_KEY);
+    } catch (error) {
+      console.error('Failed to clear auth state:', error);
+    }
+  }
+
+  /**
+   * Supabaseのエラーメッセージを日本語に翻訳
+   */
+  private static translateAuthError(errorMessage: string): string {
+    const errorMap: { [key: string]: string } = {
+      'Invalid login credentials': 'メールアドレスまたはパスワードが正しくありません',
+      'Email not confirmed': 'メールアドレスの確認が完了していません',
+      'User already registered': 'このメールアドレスは既に登録されています',
+      'Password should be at least 6 characters': 'パスワードは6文字以上で入力してください',
+      'Invalid email': 'メールアドレスの形式が正しくありません',
+      'User not found': 'ユーザーが見つかりません',
+      'Too many requests': 'リクエストが多すぎます。しばらく待ってから再度お試しください',
+      'Email rate limit exceeded': 'メール送信の制限に達しました。しばらく待ってから再度お試しください',
+    };
+
+    return errorMap[errorMessage] || errorMessage;
+  }
+
+  // 既存の匿名認証関連メソッドはそのまま維持
 }
