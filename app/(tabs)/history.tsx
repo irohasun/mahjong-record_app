@@ -12,118 +12,6 @@ export default function HistoryScreen() {
   const [games, setGames] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ダミーデータ（表示テスト用）
-  const dummyGame: GameRecord = {
-    id: 'dummy-game-001',
-    accountId: 'dummy-account',
-    date: new Date().toISOString(),
-    location: '雀荘ドラゴン',
-    gameType: '東南戦',
-    rules: {
-      startingPoints: 25000,
-      uma: '+15 +5 -5 -15',
-      oka: 5000,
-      riichiStick: 1000,
-      honbaValue: 300,
-    },
-    players: [
-      {
-        name: '自分',
-        finalScore: 28400,
-        rank: 2,
-        isMainAccount: true,
-        startingPosition: 'East'
-      },
-      {
-        name: '田中',
-        finalScore: 35900,
-        rank: 1,
-        isMainAccount: false,
-        startingPosition: 'South'
-      },
-      {
-        name: '佐藤',
-        finalScore: 18200,
-        rank: 4,
-        isMainAccount: false,
-        startingPosition: 'West'
-      },
-      {
-        name: '鈴木',
-        finalScore: 22500,
-        rank: 3,
-        isMainAccount: false,
-        startingPosition: 'North'
-      }
-    ],
-    rounds: [],
-    hanchanResults: [
-      { round: 1, rank: 3, scoreChange: -2100 },
-      { round: 2, rank: 1, scoreChange: +8400 },
-      { round: 3, rank: 2, scoreChange: +1200 },
-      { round: 4, rank: 4, scoreChange: -4100 }
-    ],
-    finalRiichiSticks: 0,
-    finalHonba: 0,
-    memo: '4半荘実施。後半に調子を取り戻した。',
-    gameEndCondition: 'normal'
-  };
-
-  // 2つ目のダミーデータ
-  const dummyGame2: GameRecord = {
-    id: 'dummy-game-002',
-    accountId: 'dummy-account',
-    date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 昨日
-    location: 'フリー対局',
-    gameType: '東風戦',
-    rules: {
-      startingPoints: 25000,
-      uma: '+10 +5 -5 -10',
-      oka: 3000,
-      riichiStick: 1000,
-      honbaValue: 300,
-    },
-    players: [
-      {
-        name: '自分',
-        finalScore: 31200,
-        rank: 1,
-        isMainAccount: true,
-        startingPosition: 'East'
-      },
-      {
-        name: '山田',
-        finalScore: 24800,
-        rank: 2,
-        isMainAccount: false,
-        startingPosition: 'South'
-      },
-      {
-        name: '佐々木',
-        finalScore: 23600,
-        rank: 3,
-        isMainAccount: false,
-        startingPosition: 'West'
-      },
-      {
-        name: '高橋',
-        finalScore: 20400,
-        rank: 4,
-        isMainAccount: false,
-        startingPosition: 'North'
-      }
-    ],
-    rounds: [],
-    hanchanResults: [
-      { round: 1, rank: 2, scoreChange: +3400 },
-      { round: 2, rank: 1, scoreChange: +2800 }
-    ],
-    finalRiichiSticks: 0,
-    finalHonba: 0,
-    memo: '東風戦2回。安定した戦績。',
-    gameEndCondition: 'normal'
-  };
-
   useEffect(() => {
     loadGames();
   }, []);
@@ -144,20 +32,14 @@ export default function HistoryScreen() {
         }
       }
       
-      // ダミーユーザーの場合はダミーデータのみ表示
-      if (!user || user.id === 'dummy-user-id') {
-        setGames([dummyGame, dummyGame2]);
-      } else {
-        const allGames = await GameService.getAllGames(user.id);
-        // ダミーデータを先頭に追加
-        setGames([dummyGame, dummyGame2, ...allGames]);
-      }
+      const allGames = await GameService.getAllGames(user.id);
+      setGames(allGames);
     } catch (error) {
-      // 予期しないエラーの場合のみログ出力し、ダミーデータを表示
+      // 予期しないエラーの場合のみログ出力
       if (error instanceof Error && !error.message.includes('匿名ログインに失敗しました')) {
         console.error('Failed to load games:', error);
       }
-      setGames([dummyGame, dummyGame2]);
+      setGames([]);
     } finally {
       setLoading(false);
     }
