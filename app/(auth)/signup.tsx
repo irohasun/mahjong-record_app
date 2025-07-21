@@ -16,7 +16,11 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
+    console.log('🚀 handleSignup function called');
+    console.log('📝 Current form data:', { email, password, confirmPassword, username });
+    
     if (!email.trim() || !password.trim() || !confirmPassword.trim() || !username.trim()) {
+      console.log('❌ Validation failed: missing fields');
       Alert.alert(
         '❌ 入力エラー', 
         'すべての項目を入力してください\n\n• メールアドレス\n• パスワード\n• パスワード確認\n• ユーザー名'
@@ -25,6 +29,7 @@ export default function SignupScreen() {
     }
 
     if (password !== confirmPassword) {
+      console.log('❌ Validation failed: passwords do not match');
       Alert.alert(
         '❌ 入力エラー', 
         'パスワードが一致しません\n\nパスワードとパスワード確認欄に同じ内容を入力してください'
@@ -33,6 +38,7 @@ export default function SignupScreen() {
     }
 
     if (password.length < 6) {
+      console.log('❌ Validation failed: password too short');
       Alert.alert(
         '❌ 入力エラー', 
         'パスワードは6文字以上で入力してください\n\n現在の文字数: ' + password.length + '文字'
@@ -40,6 +46,7 @@ export default function SignupScreen() {
       return;
     }
 
+    console.log('✅ Validation passed, starting signup process');
     setLoading(true);
     try {
       console.log('Starting signup process with:', { email: email.trim(), username: username.trim() });
