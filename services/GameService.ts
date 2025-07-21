@@ -268,7 +268,7 @@ export class GameService {
         `)
         .eq('games.account_id', accountId)
         .eq('is_main_account', true)
-        .order('game_date', { ascending: false });
+        .order('games.game_date', { ascending: false });
 
       if (error) {
         throw error;
