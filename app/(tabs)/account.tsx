@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, RefreshControl } from 'react-native';
 import { User, Settings, Star, Download, Upload, Shield, Info, LogOut, Mail } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
@@ -16,9 +16,15 @@ export default function AccountScreen() {
   const [stats, setStats] = useState<any>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadAccountData();
+  }, []);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    loadAccountData().finally(() => setRefreshing(false));
   }, []);
 
   const loadAccountData = async () => {
@@ -153,179 +159,191 @@ export default function AccountScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>アカウント</Text>
-        <View style={styles.planBadge}>
-          <Star size={16} color={account.isPremium ? '#FFD700' : '#8E8E93'} />
-          <Text style={styles.planText}>
-            {account.isPremium ? 'プレミアム' : 'フリー'}
-          </Text>
-        </View>
-      </View>
-
-      {/* 認証情報セクション */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>認証情報</Text>
-        
-        {isAnonymousUser ? (
-          <View style={styles.anonymousWarning}>
-            <Info size={20} color="#F59E0B" />
-            <View style={styles.anonymousWarningContent}>
-              <Text style={styles.anonymousWarningTitle}>
-                ゲストアカウントを使用中
-              </Text>
-              <Text style={styles.anonymousWarningText}>
-                データの永続保存のため、アカウント登録をおすすめします
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.emailInfo}>
-            <Mail size={20} color="#FF6B35" />
-            <View style={styles.emailContent}>
-              <Text style={styles.emailLabel}>メールアドレス</Text>
-              <Text style={styles.emailValue}>{user?.email || 'なし'}</Text>
-              {user?.email_confirmed_at ? (
-                <Text style={styles.verifiedText}>✓ 確認済み</Text>
-              ) : (
-                <Text style={styles.unverifiedText}>未確認</Text>
-              )}
-            </View>
-          </View>
-        )}
-        
-        {!isAnonymousUser && (
-          <TouchableOpacity 
-            style={styles.signOutButton}
-            onPress={handleSignOut}
-          >
-            <LogOut size={20} color="#EF4444" />
-            <Text style={styles.signOutButtonText}>ログアウト</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>基本情報</Text>
-        
-        <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <User size={32} color="#FF6B35" />
-          </View>
-          <View style={styles.userDetails}>
-            {editing ? (
-              <View style={styles.editingRow}>
-                <TextInput
-                  style={styles.usernameInput}
-                  value={newUsername}
-                  onChangeText={setNewUsername}
-                  placeholder="ユーザー名"
-                />
-                <TouchableOpacity 
-                  style={styles.saveButton}
-                  onPress={handleUsernameChange}
-                >
-                  <Text style={styles.saveButtonText}>保存</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.usernameRow}>
-                <Text style={styles.username}>{account.username}</Text>
-                <TouchableOpacity 
-                  style={styles.editButton}
-                  onPress={() => setEditing(true)}
-                >
-                  <Text style={styles.editButtonText}>編集</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            <Text style={styles.accountId}>ID: {typeof account.accountId === 'string' ? account.accountId.slice(0, 8) : ''}...</Text>
-            <Text style={styles.createdDate}>
-              作成日: {new Date(account.createdDate).toLocaleDateString('ja-JP')}
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
+      <ScrollView 
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#FF6B35']}
+            tintColor="#FF6B35"
+          />
+        }
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>アカウント</Text>
+          <View style={styles.planBadge}>
+            <Star size={16} color={account.isPremium ? '#FFD700' : '#8E8E93'} />
+            <Text style={styles.planText}>
+              {account.isPremium ? 'プレミアム' : 'フリー'}
             </Text>
           </View>
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>統計情報</Text>
-        <View style={styles.statsGrid}>
-          <InfoCard 
-            title="総対局数" 
-            value={stats?.totalGames || 0} 
-            icon={Settings}
-          />
-          <InfoCard 
-            title="平均順位" 
-            value={stats?.averageRank?.toFixed(2) || '-'} 
-            icon={Info}
-          />
+        {/* 認証情報セクション */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>認証情報</Text>
+          
+          {isAnonymousUser ? (
+            <View style={styles.anonymousWarning}>
+              <Info size={20} color="#F59E0B" />
+              <View style={styles.anonymousWarningContent}>
+                <Text style={styles.anonymousWarningTitle}>
+                  ゲストアカウントを使用中
+                </Text>
+                <Text style={styles.anonymousWarningText}>
+                  データの永続保存のため、アカウント登録をおすすめします
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emailInfo}>
+              <Mail size={20} color="#FF6B35" />
+              <View style={styles.emailContent}>
+                <Text style={styles.emailLabel}>メールアドレス</Text>
+                <Text style={styles.emailValue}>{user?.email || 'なし'}</Text>
+                {user?.email_confirmed_at ? (
+                  <Text style={styles.verifiedText}>✓ 確認済み</Text>
+                ) : (
+                  <Text style={styles.unverifiedText}>未確認</Text>
+                )}
+              </View>
+            </View>
+          )}
+          
+          {!isAnonymousUser && (
+            <TouchableOpacity 
+              style={styles.signOutButton}
+              onPress={handleSignOut}
+            >
+              <LogOut size={20} color="#EF4444" />
+              <Text style={styles.signOutButtonText}>ログアウト</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>プラン管理</Text>
-        
-        {!account.isPremium ? (
-          <TouchableOpacity 
-            style={styles.premiumButton}
-            onPress={() => setShowPremiumModal(true)}
-          >
-            <Star size={20} color="#FFD700" />
-            <Text style={styles.premiumButtonText}>プレミアムにアップグレード</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.premiumStatus}>
-            <Star size={20} color="#FFD700" />
-            <Text style={styles.premiumStatusText}>プレミアムプランを利用中</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>基本情報</Text>
+          
+          <View style={styles.userInfo}>
+            <View style={styles.avatar}>
+              <User size={32} color="#FF6B35" />
+            </View>
+            <View style={styles.userDetails}>
+              {editing ? (
+                <View style={styles.editingRow}>
+                  <TextInput
+                    style={styles.usernameInput}
+                    value={newUsername}
+                    onChangeText={setNewUsername}
+                    placeholder="ユーザー名"
+                  />
+                  <TouchableOpacity 
+                    style={styles.saveButton}
+                    onPress={handleUsernameChange}
+                  >
+                    <Text style={styles.saveButtonText}>保存</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.usernameRow}>
+                  <Text style={styles.username}>{account.username}</Text>
+                  <TouchableOpacity 
+                    style={styles.editButton}
+                    onPress={() => setEditing(true)}
+                  >
+                    <Text style={styles.editButtonText}>編集</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              <Text style={styles.accountId}>ID: {typeof account.accountId === 'string' ? account.accountId.slice(0, 8) : ''}...</Text>
+              <Text style={styles.createdDate}>
+                作成日: {new Date(account.createdDate).toLocaleDateString('ja-JP')}
+              </Text>
+            </View>
           </View>
-        )}
-
-        <View style={styles.planDetails}>
-          <Text style={styles.planDetailsTitle}>
-            {account.isPremium ? 'プレミアム特典' : 'フリープラン制限'}
-          </Text>
-          <Text style={styles.planDetailsText}>
-            {account.isPremium 
-              ? '• 無制限の対局記録\n• 広告なし\n• 高度な統計分析\n• データエクスポート'
-              : '• 月間3対局まで\n• 広告表示あり\n• 基本統計のみ'
-            }
-          </Text>
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>データ管理</Text>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleExportData}>
-          <Download size={20} color="#3B82F6" />
-          <Text style={styles.actionButtonText}>データエクスポート</Text>
-        </TouchableOpacity>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>統計情報</Text>
+          <View style={styles.statsGrid}>
+            <InfoCard 
+              title="総対局数" 
+              value={stats?.totalGames || 0} 
+              icon={Settings}
+            />
+            <InfoCard 
+              title="平均順位" 
+              value={stats?.averageRank?.toFixed(2) || '-'} 
+              icon={Info}
+            />
+          </View>
+        </View>
 
-        <TouchableOpacity style={styles.actionButton}>
-          <Upload size={20} color="#10B981" />
-          <Text style={styles.actionButtonText}>データインポート</Text>
-        </TouchableOpacity>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>プラン管理</Text>
+          
+          {!account.isPremium ? (
+            <TouchableOpacity 
+              style={styles.premiumButton}
+              onPress={() => setShowPremiumModal(true)}
+            >
+              <Star size={20} color="#FFD700" />
+              <Text style={styles.premiumButtonText}>プレミアムにアップグレード</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.premiumStatus}>
+              <Star size={20} color="#FFD700" />
+              <Text style={styles.premiumStatusText}>プレミアムプランを利用中</Text>
+            </View>
+          )}
 
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.dangerButton]} 
-          onPress={handleResetData}
-        >
-          <Shield size={20} color="#EF4444" />
-          <Text style={[styles.actionButtonText, styles.dangerText]}>データリセット</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.planDetails}>
+            <Text style={styles.planDetailsTitle}>
+              {account.isPremium ? 'プレミアム特典' : 'フリープラン制限'}
+            </Text>
+            <Text style={styles.planDetailsText}>
+              {account.isPremium 
+                ? '• 無制限の対局記録\n• 広告なし\n• 高度な統計分析\n• データエクスポート'
+                : '• 月間3対局まで\n• 広告表示あり\n• 基本統計のみ'
+              }
+            </Text>
+          </View>
+        </View>
 
-      <PremiumModal
-        visible={showPremiumModal}
-        onClose={() => setShowPremiumModal(false)}
-        onPurchase={() => {
-          setShowPremiumModal(false);
-          loadAccountData();
-        }}
-      />
-    </ScrollView>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>データ管理</Text>
+          
+          <TouchableOpacity style={styles.actionButton} onPress={handleExportData}>
+            <Download size={20} color="#3B82F6" />
+            <Text style={styles.actionButtonText}>データエクスポート</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton}>
+            <Upload size={20} color="#10B981" />
+            <Text style={styles.actionButtonText}>データインポート</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.dangerButton]} 
+            onPress={handleResetData}
+          >
+            <Shield size={20} color="#EF4444" />
+            <Text style={[styles.actionButtonText, styles.dangerText]}>データリセット</Text>
+          </TouchableOpacity>
+        </View>
+
+        <PremiumModal
+          visible={showPremiumModal}
+          onClose={() => setShowPremiumModal(false)}
+          onPurchase={() => {
+            setShowPremiumModal(false);
+            loadAccountData();
+          }}
+        />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -349,7 +367,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 40,
     paddingBottom: 20,
     backgroundColor: '#FFF',
   },

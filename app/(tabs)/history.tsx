@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, SafeAreaView } from 'react-native';
 import { Calendar, MapPin, Users, CreditCard as Edit2, Trash2, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { GameService } from '@/services/GameService';
@@ -11,9 +11,15 @@ export default function HistoryScreen() {
   const router = useRouter();
   const [games, setGames] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadGames();
+  }, []);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    loadGames().finally(() => setRefreshing(false));
   }, []);
 
   const loadGames = async () => {
@@ -169,7 +175,7 @@ export default function HistoryScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.title}>対局履歴</Text>
@@ -196,10 +202,18 @@ export default function HistoryScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView 
-          style={styles.gamesList} 
+        <ScrollView
+          style={styles.gamesList}
+          contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#FF6B35']}
+              tintColor="#FF6B35"
+            />
+          }
         >
           {games.map((game) => (
             <GameCard key={game.id} game={game} />
@@ -207,7 +221,7 @@ export default function HistoryScreen() {
           <View style={styles.bottomPadding} />
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
