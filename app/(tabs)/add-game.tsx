@@ -74,10 +74,6 @@ export default function AddGameScreen() {
   };
 
   const handleSave = async () => {
-    if (players.some((name, index) => index !== 0 && !name.trim())) {
-      Alert.alert('入力エラー', 'すべてのプレイヤー名を入力してください');
-      return;
-    }
     try {
       let user = await AuthService.getCurrentUser();
       if (!user) {
@@ -89,7 +85,7 @@ export default function AddGameScreen() {
         }
       }
       const playersData = players.map((name, index) => ({
-        name: name || `プレイヤー${index + 1}`,
+        name: index === 0 ? '自分' : `プレイヤー${index + 1}`,
         finalScore: 25000 + calculateSubtotal(index),
         rank: 1,
         isMainAccount: index === 0,
@@ -126,6 +122,12 @@ export default function AddGameScreen() {
       console.error('Save game error:', error);
       Alert.alert('エラー', '保存に失敗しました');
     }
+  };
+
+  // プレイヤーカラーを取得する関数
+  const getPlayerColor = (playerIndex: number) => {
+    const colors = ['#FF6B35', '#3B82F6', '#10B981', '#F59E0B'];
+    return colors[playerIndex];
   };
 
   const ScoreCell = ({ hanchanIndex, playerIndex, value, onChangeText }: { hanchanIndex: number; playerIndex: number; value: string; onChangeText: (text: string) => void; }) => (
@@ -185,36 +187,25 @@ export default function AddGameScreen() {
         </View>
 
         {/* プレイヤー名入力欄 */}
-        <View style={styles.playersCard}>
-          <Text style={styles.sectionLabel}>プレイヤー名</Text>
-          <View style={styles.playersRow}>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.playerInputContainer}>
-                <View style={styles.playerIconCircle}>
-                  <User size={18} color={'#8E8E93'} />
-                </View>
-                <TextInput
-                  style={styles.playerInput}
-                  value={players[playerIndex]}
-                  onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
-                  placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                  placeholderTextColor="#C7C7CC"
-                  maxLength={8}
-                />
-                <Text style={styles.playerLabel}>
-                  {playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
 
         {/* スコア表 */}
         <View style={styles.scoreSheetCard}>
+          <View style={styles.scoreSheetHeader}>
+            <Text style={styles.scoreSheetTitle}>📊 対局記録表</Text>
+          </View>
           <View style={styles.scoreHeaderRow}>
-            <View style={styles.roundColumn}><Text style={styles.headerText}>半荘</Text></View>
+            <View style={styles.roundColumn}>
+              <Text style={styles.headerText}>局</Text>
+            </View>
             {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.playerColumn}><Text style={styles.headerText}>{players[playerIndex] || (playerIndex === 0 ? '自分' : `P${playerIndex + 1}`)}</Text></View>
+              <View key={playerIndex} style={styles.playerColumn}>
+                <View style={styles.playerHeader}>
+                  <Text style={styles.headerText}>
+                    {playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
+                  </Text>
+                  <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
+                </View>
+              </View>
             ))}
           </View>
           {[...Array(hanchanCount)].map((_, hanchanIndex) => (
@@ -237,18 +228,29 @@ export default function AddGameScreen() {
             <Text style={styles.addHanchanText}>半荘を追加</Text>
           </TouchableOpacity>
           <View style={[styles.scoreRow, styles.subtotalRow]}>
-            <View style={styles.roundNumber}><Text style={styles.subtotalText}>小計</Text></View>
+            <View style={styles.roundNumber}>
+              <Text style={styles.subtotalText}>収支</Text>
+            </View>
             {[0, 1, 2, 3].map((playerIndex) => (
               <View key={playerIndex} style={styles.totalContainer}>
-                <Text style={styles.totalText}>{calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex)}</Text>
+                <Text style={[
+                  styles.totalText,
+                  calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
+                ]}>
+                  {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
+                </Text>
               </View>
             ))}
           </View>
           <View style={[styles.scoreRow, styles.totalRow]}>
-            <View style={styles.roundNumber}><Text style={styles.subtotalText}>合計</Text></View>
+            <View style={styles.roundNumber}>
+              <Text style={styles.finalTotalLabel}>最終</Text>
+            </View>
             {[0, 1, 2, 3].map((playerIndex) => (
               <View key={playerIndex} style={styles.totalContainer}>
-                <Text style={styles.finalTotalText}>{25000 + calculateSubtotal(playerIndex)}</Text>
+                <Text style={styles.finalTotalText}>
+                  {(25000 + calculateSubtotal(playerIndex)).toLocaleString()}
+                </Text>
               </View>
             ))}
           </View>
@@ -359,18 +361,48 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     margin: 12,
     marginTop: 16,
-    padding: 16,
+    padding: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
-  sectionLabel: {
-    fontSize: 16,
+  scoreSheetHeader: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    alignItems: 'center',
+  },
+  scoreSheetTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 12,
+    color: '#FFF',
+  },
+  playerHeader: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  playerColorIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  positiveScore: {
+    color: '#10B981',
+  },
+  negativeScore: {
+    color: '#EF4444',
+  },
+  neutralScore: {
+    color: '#6D6D70',
+  },
+  finalTotalLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1C1C1E', // 黒文字
   },
   playersRow: {
     flexDirection: 'row',
@@ -426,8 +458,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderBottomWidth: 2,
     borderBottomColor: '#FF6B35',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
   },
   roundColumn: {
     width: 60,
