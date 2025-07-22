@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1C1C1E', // 黒文字に変更
+    color: '#000',
   },
   playersCard: {
     backgroundColor: '#FFF',
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     backgroundColor: '#FFF',
     width: '100%',
-    color: '#1C1C1E',
+    color: '#000',
   },
   playerLabel: {
     fontSize: 12,
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1C1C1E', // 黒文字に変更
+    color: '#000',
   },
   playerColumn: {
     flex: 1,
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 14,
     fontWeight: '500',
-    color: '#1C1C1E', // 通常は黒文字
+    color: '#000',
     backgroundColor: '#FFF',
     textAlign: 'center',
     width: '100%',
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
   subtotalText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1C1C1E', // 黒文字
+    color: '#000',
   },
   totalContainer: {
     flex: 1,
@@ -533,6 +533,6 @@ const styles = StyleSheet.create({
   totalText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1C1C1E', // 黒文字
+    color: '#000',
   },
 });
