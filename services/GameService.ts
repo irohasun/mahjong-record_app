@@ -36,7 +36,7 @@ export class GameService {
         date: gameData.date,
         location: gameData.location,
         game_type: gameData.gameType,
-        rules: gameData.rules,
+        rules: gameData.rules as any, // as Json
         memo: gameData.memo,
         duration_minutes: gameData.duration,
         game_end_condition: gameData.gameEndCondition,
@@ -129,21 +129,21 @@ export class GameService {
         throw gamesError;
       }
 
-      return games.map(game => ({
+      return games.map((game: any) => ({
         id: game.id,
         accountId: game.account_id,
         date: game.date,
         location: game.location || '',
         gameType: game.game_type as '東風戦' | '東南戦',
         rules: game.rules as any,
-        players: game.player_records.map(p => ({
+        players: game.player_records.map((p: any) => ({
           name: p.player_name,
           finalScore: p.final_score,
           rank: p.rank,
           isMainAccount: p.is_main_account,
           startingPosition: p.starting_position as 'East' | 'South' | 'West' | 'North',
         })),
-        rounds: game.round_records.map(r => ({
+        rounds: game.round_records.map((r: any) => ({
           round: r.round,
           honba: r.honba,
           riichiSticks: r.riichi_sticks,
@@ -197,14 +197,14 @@ export class GameService {
         location: game.location || '',
         gameType: game.game_type as '東風戦' | '東南戦',
         rules: game.rules as any,
-        players: game.player_records.map(p => ({
+        players: game.player_records.map((p: any) => ({
           name: p.player_name,
           finalScore: p.final_score,
           rank: p.rank,
           isMainAccount: p.is_main_account,
           startingPosition: p.starting_position as 'East' | 'South' | 'West' | 'North',
         })),
-        rounds: game.round_records.map(r => ({
+        rounds: game.round_records.map((r: any) => ({
           round: r.round,
           honba: r.honba,
           riichiSticks: r.riichi_sticks,
@@ -247,14 +247,18 @@ export class GameService {
           )
         `)
         .eq('games.account_id', accountId)
-        .eq('is_main_account', true)
-        .order('games.date', { ascending: false });
+        .eq('is_main_account', true);
 
       if (error) {
         throw error;
       }
 
-      if (playerRecords.length === 0) {
+      // games.dateで降順ソート
+      const sortedRecords = (playerRecords as any[]).sort(
+        (a: any, b: any) => new Date(b.games.date).getTime() - new Date(a.games.date).getTime()
+      );
+
+      if (sortedRecords.length === 0) {
         return {
           totalGames: 0,
           totalHanchans: 0,
@@ -280,19 +284,16 @@ export class GameService {
         };
       }
 
-      const totalGames = playerRecords.length;
-      const totalRank = playerRecords.reduce((sum, p) => sum + p.rank, 0);
-      const totalScore = playerRecords.reduce((sum, p) => sum + p.final_score, 0);
-      
-      const firstPlaceCount = playerRecords.filter(p => p.rank === 1).length;
-      const topTwoCount = playerRecords.filter(p => p.rank <= 2).length;
-      const avoidLastCount = playerRecords.filter(p => p.rank < 4).length;
-      
-      const scores = playerRecords.map(p => p.final_score);
+      const totalGames = sortedRecords.length;
+      const totalRank = (sortedRecords as any[]).reduce((sum, p: any) => sum + p.rank, 0);
+      const totalScore = (sortedRecords as any[]).reduce((sum, p: any) => sum + p.final_score, 0);
+      const firstPlaceCount = (sortedRecords as any[]).filter((p: any) => p.rank === 1).length;
+      const topTwoCount = (sortedRecords as any[]).filter((p: any) => p.rank <= 2).length;
+      const avoidLastCount = (sortedRecords as any[]).filter((p: any) => p.rank < 4).length;
+      const scores = (sortedRecords as any[]).map((p: any) => p.final_score);
       const highestScore = Math.max(...scores);
       const lowestScore = Math.min(...scores);
-      
-      const rankDistribution = playerRecords.reduce((acc, p) => {
+      const rankDistribution = (sortedRecords as any[]).reduce((acc: any, p: any) => {
         acc[p.rank] = (acc[p.rank] || 0) + 1;
         return acc;
       }, {} as { [key: number]: number });
@@ -317,7 +318,7 @@ export class GameService {
         pointStats: {
           averagePointChange: (totalScore - (25000 * totalGames)) / totalGames,
           totalPointChange: totalScore - (25000 * totalGames),
-          positiveGameRate: playerRecords.filter(p => p.final_score > 25000).length / totalGames,
+          positiveGameRate: (sortedRecords as any[]).filter((p: any) => p.final_score > 25000).length / totalGames,
         },
       };
     } catch (error) {
@@ -339,21 +340,25 @@ export class GameService {
           final_score,
           games!inner (
             account_id,
-            game_date:date,
+            date,
             rules
           )
         `)
         .eq('games.account_id', accountId)
-        .eq('is_main_account', true)
-        .order('game_date', { ascending: true });
+        .eq('is_main_account', true);
 
       if (error) {
         throw error;
       }
 
+      // games.dateで昇順ソート
+      const sortedRecords = (playerRecords as any[]).sort(
+        (a: any, b: any) => new Date(a.games.date).getTime() - new Date(b.games.date).getTime()
+      );
+
       // 期間でフィルタリング
       const now = new Date();
-      const filteredData = playerRecords.filter(record => {
+      const filteredData = (sortedRecords as any[]).filter((record: any) => {
         const gameDate = new Date(record.games.date);
         switch (period) {
           case 'month':
@@ -364,11 +369,9 @@ export class GameService {
             return true;
         }
       });
-
-      const labels = filteredData.map((_, index) => `${index + 1}`);
-      const scores = filteredData.map(record => record.final_score - 25000);
-
-      return { labels, scores };
+      const labels = filteredData.map((_: any, index: number) => `${index + 1}`);
+      const scores2 = filteredData.map((record: any) => record.final_score - 25000);
+      return { labels, scores: scores2 };
     } catch (error) {
       console.error('Failed to get chart data:', error);
       return { labels: [], scores: [] };

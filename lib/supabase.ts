@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/database';
 
+console.log('SUPABASE_URL:', process.env.EXPO_PUBLIC_SUPABASE_URL);
+console.log('SUPABASE_ANON_KEY:', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_anon_key';
 

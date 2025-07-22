@@ -144,7 +144,7 @@ export default function AccountScreen() {
     </View>
   );
 
-  if (!account) {
+  if (!account || !stats) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>読み込み中...</Text>
@@ -240,7 +240,7 @@ export default function AccountScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            <Text style={styles.accountId}>ID: {account.accountId.slice(0, 8)}...</Text>
+            <Text style={styles.accountId}>ID: {typeof account.accountId === 'string' ? account.accountId.slice(0, 8) : ''}...</Text>
             <Text style={styles.createdDate}>
               作成日: {new Date(account.createdDate).toLocaleDateString('ja-JP')}
             </Text>
