@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, RefreshControl, SafeAreaView } from 'react-native';
-import { Save, Calendar, Plus, User } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, RefreshControl, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import { Save, Calendar, Plus, User, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
@@ -16,22 +16,27 @@ export default function AddGameScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [hanchanCount, setHanchanCount] = useState(3);
+  const [premiumHanchanCount, setPremiumHanchanCount] = useState(3);
   const [players, setPlayers] = useState(['自分', '', '', '']);
   const [scores, setScores] = useState(Array(hanchanCount).fill(null).map(() => Array(4).fill('')));
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [focusedCell, setFocusedCell] = useState<{hanchan: number, player: number} | null>(null);
+  const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
 
-  const onRefresh = React.useCallback(() => {
+    const onRefresh = React.useCallback(() => {
     setRefreshing(true);
     setGameDate(new Date());
     setHanchanCount(3); // ← ここを3に修正
+    setPremiumHanchanCount(3);
     setPlayers(['', '', '', '']);
     setScores([
       ['', '', '', ''],
       ['', '', '', ''],
       ['', '', '', ''],
     ]);
+    setEditingPlayerName(null);
+ 
     setRefreshing(false);
   }, []);
 
@@ -41,9 +46,40 @@ export default function AddGameScreen() {
     setPlayers(newPlayers);
   };
 
+  const handlePlayerNameEdit = (index: number) => {
+    setEditingPlayerName(index);
+  };
+
+  const handlePlayerNameSave = (index: number) => {
+    setEditingPlayerName(null);
+  };
+
   const handleScoreChange = (hanchanIndex: number, playerIndex: number, value: string) => {
+    // マイナス記号と数字のみを許可
+    const validValue = value.replace(/[^-0-9]/g, '');
+    // マイナス記号が複数ある場合は最初の1つだけ残す
+    const cleanValue = validValue.replace(/-/g, (match, index) => index === 0 ? '-' : '');
+    
     const newScores = [...scores];
-    newScores[hanchanIndex][playerIndex] = value;
+    newScores[hanchanIndex][playerIndex] = cleanValue;
+    
+    // 3人分入力されたら、残り1人を自動計算
+    const currentScores = newScores[hanchanIndex];
+    const filledScores = currentScores.filter((score, index) => index !== playerIndex && score !== '');
+    
+    if (filledScores.length === 3) {
+      // 3人分の合計を計算
+      const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
+      // 残り1人の値を計算（合計が0になるように）
+      const remainingValue = -sum;
+      
+      // 空いているプレイヤーのインデックスを見つける
+      const emptyPlayerIndex = currentScores.findIndex((score, index) => index !== playerIndex && score === '');
+      if (emptyPlayerIndex !== -1) {
+        newScores[hanchanIndex][emptyPlayerIndex] = remainingValue.toString();
+      }
+    }
+    
     setScores(newScores);
   };
 
@@ -59,9 +95,39 @@ export default function AddGameScreen() {
   const addHanchan = () => {
     const newHanchanCount = hanchanCount + 1;
     setHanchanCount(newHanchanCount);
+    setPremiumHanchanCount(newHanchanCount);
     const newScores = [...scores];
     newScores.push(Array(4).fill(''));
     setScores(newScores);
+  };
+
+  const removeHanchan = (hanchanIndex: number) => {
+    if (hanchanCount <= 1) {
+      Alert.alert('エラー', '最低1つの半荘は必要です');
+      return;
+    }
+    
+    Alert.alert(
+      '半荘を削除',
+      `半荘${hanchanIndex + 1}を削除しますか？`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: () => {
+            const newHanchanCount = hanchanCount - 1;
+            setHanchanCount(newHanchanCount);
+            if (newHanchanCount < premiumHanchanCount) {
+              setPremiumHanchanCount(newHanchanCount);
+            }
+            const newScores = [...scores];
+            newScores.splice(hanchanIndex, 1);
+            setScores(newScores);
+          }
+        }
+      ]
+    );
   };
 
   const calculateSubtotal = (playerIndex: number): number => {
@@ -130,40 +196,28 @@ export default function AddGameScreen() {
     return colors[playerIndex];
   };
 
-  const ScoreCell = ({ hanchanIndex, playerIndex, value, onChangeText }: { hanchanIndex: number; playerIndex: number; value: string; onChangeText: (text: string) => void; }) => (
-    <TextInput
-      style={[
-        styles.scoreCell,
-        focusedCell && focusedCell.hanchan === hanchanIndex && focusedCell.player === playerIndex && styles.scoreCellFocused
-      ]}
-      value={value}
-      onChangeText={(text: string) => onChangeText(text)}
-      keyboardType="numbers-and-punctuation"
-      textAlign="center"
-      placeholder="±0"
-      returnKeyType="done"
-      selectTextOnFocus={true}
-      autoCorrect={false}
-      autoCapitalize="none"
-      onFocus={() => setFocusedCell({ hanchan: hanchanIndex, player: playerIndex })}
-      onBlur={() => setFocusedCell(null)}
-    />
-  );
+
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F9F9' }}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#FF6B35']}
-            tintColor="#FF6B35"
-          />
-        }
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#FF6B35']}
+              tintColor="#FF6B35"
+            />
+          }
+          keyboardShouldPersistTaps="handled"
+        >
         {/* ヘッダー */}
         <View style={styles.headerCard}>
           <Text style={styles.title}>対局記録</Text>
@@ -186,20 +240,41 @@ export default function AddGameScreen() {
           </TouchableOpacity>
         </View>
 
+
+
         {/* プレイヤー名入力欄 */}
 
         {/* スコア表 */}
         <View style={styles.scoreSheetCard}>
           <View style={styles.scoreHeaderRow}>
             <View style={styles.roundColumn}>
-              <Text style={styles.headerText}>局</Text>
+              <Text style={styles.headerText}>半荘</Text>
             </View>
             {[0, 1, 2, 3].map((playerIndex) => (
               <View key={playerIndex} style={styles.playerColumn}>
                 <View style={styles.playerHeader}>
-                  <Text style={styles.headerText}>
-                    {playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                  </Text>
+                  {editingPlayerName === playerIndex ? (
+                    <TextInput
+                      style={styles.playerNameInput}
+                      value={players[playerIndex]}
+                      onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
+                      onBlur={() => handlePlayerNameSave(playerIndex)}
+                      onEndEditing={() => handlePlayerNameSave(playerIndex)}
+                      placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
+                      autoFocus={true}
+                      selectTextOnFocus={true}
+                      maxLength={10}
+                    />
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => handlePlayerNameEdit(playerIndex)}
+                      style={styles.playerNameButton}
+                    >
+                      <Text style={styles.headerText}>
+                        {players[playerIndex] || (playerIndex === 0 ? '自分' : `P${playerIndex + 1}`)}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                   <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
                 </View>
               </View>
@@ -207,14 +282,44 @@ export default function AddGameScreen() {
           </View>
           {[...Array(hanchanCount)].map((_, hanchanIndex) => (
             <View key={hanchanIndex} style={styles.scoreRow}>
-              <View style={styles.roundNumber}><Text style={styles.roundText}>{hanchanIndex + 1}</Text></View>
+              <View style={styles.roundNumber}>
+                <View style={styles.roundNumberContainer}>
+                  <Text style={[
+                    styles.roundText,
+                    hanchanIndex >= 3 ? styles.premiumRoundText : styles.normalRoundText
+                  ]}>
+                    {hanchanIndex + 1}
+                  </Text>
+                  {hanchanCount > 1 && (
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => removeHanchan(hanchanIndex)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={12} color="#FF6B35" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
               {[0, 1, 2, 3].map((playerIndex) => (
                 <View key={playerIndex} style={styles.playerScoreContainer}>
-                  <ScoreCell
-                    hanchanIndex={hanchanIndex}
-                    playerIndex={playerIndex}
+                  <TextInput
+                    style={[
+                      styles.scoreCell,
+                      focusedCell && focusedCell.hanchan === hanchanIndex && focusedCell.player === playerIndex && styles.scoreCellFocused
+                    ]}
                     value={scores[hanchanIndex][playerIndex]}
-                    onChangeText={(text) => handleScoreChange(hanchanIndex, playerIndex, text)}
+                    onChangeText={(text: string) => handleScoreChange(hanchanIndex, playerIndex, text)}
+                    keyboardType="numbers-and-punctuation"
+                    textAlign="center"
+                    placeholder="±0"
+                    returnKeyType="done"
+                    selectTextOnFocus={true}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    onFocus={() => setFocusedCell({ hanchan: hanchanIndex, player: playerIndex })}
+                    onBlur={() => setFocusedCell(null)}
+                    editable={true}
                   />
                 </View>
               ))}
@@ -226,7 +331,7 @@ export default function AddGameScreen() {
           </TouchableOpacity>
           <View style={[styles.scoreRow, styles.subtotalRow]}>
             <View style={styles.roundNumber}>
-              <Text style={styles.subtotalText}>収支</Text>
+              <Text style={styles.subtotalText}>合計</Text>
             </View>
             {[0, 1, 2, 3].map((playerIndex) => (
               <View key={playerIndex} style={styles.totalContainer}>
@@ -263,7 +368,8 @@ export default function AddGameScreen() {
             addHanchan();
           }}
         />
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -362,6 +468,23 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
   },
+  playerNameInput: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    textAlign: 'center',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#FF6B35',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    minWidth: 40,
+  },
+  playerNameButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
   positiveScore: {
     color: '#10B981',
   },
@@ -422,9 +545,12 @@ const styles = StyleSheet.create({
   },
   scoreHeaderRow: {
     flexDirection: 'row',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F8F9FA',
     borderBottomWidth: 2,
     borderBottomColor: '#FF6B35',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingVertical: 4,
   },
   roundColumn: {
     width: 60,
@@ -451,8 +577,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#F2F2F7',
-    minHeight: 50,
+    minHeight: 56,
     backgroundColor: '#FFF',
+    paddingVertical: 2,
   },
   roundNumber: {
     width: 60,
@@ -462,38 +589,57 @@ const styles = StyleSheet.create({
     borderRightColor: '#FF6B35',
     backgroundColor: '#F9F9F9',
   },
+  roundNumberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  removeButton: {
+    padding: 2,
+    borderRadius: 8,
+    backgroundColor: '#FFF3ED',
+  },
   roundText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  normalRoundText: {
+    color: '#000',
+  },
+  premiumRoundText: {
     color: '#FF6B35',
   },
   playerScoreContainer: {
     flex: 1,
     borderRightWidth: 1,
     borderRightColor: '#F2F2F7',
-    paddingHorizontal: 1,
+    padding: 4,
+    justifyContent: 'center',
   },
+
   scoreCell: {
-    flex: 1,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
     color: '#000',
     backgroundColor: '#FFF',
     textAlign: 'center',
-    width: '100%',
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    borderRadius: 6,
-    marginVertical: 2,
+    borderRadius: 10,
+    minHeight: 44,
+    width: '100%',
   },
+
   scoreCellFocused: {
     backgroundColor: '#FFF3ED',
     borderColor: '#FF6B35',
     color: '#FF6B35', // フォーカス時のみオレンジ
     fontWeight: '700',
   },
+
   addHanchanButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -503,6 +649,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#FF6B35',
     gap: 4,
+    marginHorizontal: 0,
   },
   addHanchanText: {
     fontSize: 14,
@@ -510,9 +657,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   subtotalRow: {
-    backgroundColor: '#FFF3ED',
+    backgroundColor: '#FFF',
     borderBottomWidth: 2,
     borderBottomColor: '#FF6B35',
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingVertical: 4,
   },
   totalRow: {
     backgroundColor: '#FFF7F2',
