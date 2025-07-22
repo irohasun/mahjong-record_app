@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#1C1C1E', // 通常は黒文字
-    backgroundColor: '#F9F9F9',
+    backgroundColor: '#FFF',
     textAlign: 'center',
     width: '100%',
     borderWidth: 1,
