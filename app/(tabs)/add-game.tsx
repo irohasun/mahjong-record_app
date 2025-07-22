@@ -190,9 +190,6 @@ export default function AddGameScreen() {
 
         {/* スコア表 */}
         <View style={styles.scoreSheetCard}>
-          <View style={styles.scoreSheetHeader}>
-            <Text style={styles.scoreSheetTitle}>📊 対局記録表</Text>
-          </View>
           <View style={styles.scoreHeaderRow}>
             <View style={styles.roundColumn}>
               <Text style={styles.headerText}>局</Text>
@@ -238,18 +235,6 @@ export default function AddGameScreen() {
                   calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
                 ]}>
                   {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <View style={[styles.scoreRow, styles.totalRow]}>
-            <View style={styles.roundNumber}>
-              <Text style={styles.finalTotalLabel}>最終</Text>
-            </View>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.totalContainer}>
-                <Text style={styles.finalTotalText}>
-                  {(25000 + calculateSubtotal(playerIndex)).toLocaleString()}
                 </Text>
               </View>
             ))}
@@ -368,19 +353,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  scoreSheetHeader: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    alignItems: 'center',
-  },
-  scoreSheetTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFF',
-  },
   playerHeader: {
     alignItems: 'center',
     gap: 4,
@@ -398,11 +370,6 @@ const styles = StyleSheet.create({
   },
   neutralScore: {
     color: '#6D6D70',
-  },
-  finalTotalLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1C1C1E', // 黒文字
   },
   playersRow: {
     flexDirection: 'row',
@@ -567,10 +534,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#1C1C1E', // 黒文字
-  },
-  finalTotalText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1C1C1E',
   },
 });
