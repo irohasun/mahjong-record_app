@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl, SafeAreaView } from 'react-native';
-import { TrendingUp, Trophy, Calendar, Target } from 'lucide-react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl, SafeAreaView, Modal } from 'react-native';
+import { TrendingUp, Trophy, Calendar, Target, ChevronDown } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
 import { AccountService } from '@/services/AccountService';
 import { AuthService } from '@/services/AuthService';
@@ -12,16 +13,20 @@ export default function StatisticsScreen() {
   const [chartData, setChartData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('month');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     loadStats();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, selectedDate]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
+    setSelectedDate(new Date());
     loadStats().finally(() => setRefreshing(false));
-  }, [selectedPeriod]);
+  }, [selectedPeriod, selectedDate]);
 
   const loadStats = async () => {
     try {
@@ -92,24 +97,56 @@ export default function StatisticsScreen() {
   );
 
   const PeriodSelector = () => (
-    <View style={styles.periodSelector}>
-      {(['month', 'year', 'all'] as const).map((period) => (
-        <TouchableOpacity
-          key={period}
-          style={[
-            styles.periodButton,
-            selectedPeriod === period && styles.periodButtonActive
-          ]}
-          onPress={() => setSelectedPeriod(period)}
-        >
-          <Text style={[
-            styles.periodButtonText,
-            selectedPeriod === period && styles.periodButtonTextActive
-          ]}>
-            {period === 'month' ? '月間' : period === 'year' ? '年間' : '全期間'}
-          </Text>
-        </TouchableOpacity>
-      ))}
+    <View style={styles.periodSelectorContainer}>
+      <View style={styles.periodSelector}>
+        {(['month', 'year', 'all'] as const).map((period) => (
+          <TouchableOpacity
+            key={period}
+            style={[
+              styles.periodButton,
+              selectedPeriod === period && styles.periodButtonActive
+            ]}
+            onPress={() => {
+              setSelectedPeriod(period);
+              const pageIndex = ['month', 'year', 'all'].indexOf(period);
+              scrollViewRef.current?.scrollTo({
+                x: screenWidth * pageIndex,
+                animated: true
+              });
+            }}
+          >
+            <Text style={[
+              styles.periodButtonText,
+              selectedPeriod === period && styles.periodButtonTextActive
+            ]}>
+              {period === 'month' ? '月間' : period === 'year' ? '年間' : '全期間'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      <View style={styles.dateSelectorContainer}>
+        {(selectedPeriod === 'month' || selectedPeriod === 'year') ? (
+          <TouchableOpacity
+            style={styles.dateSelector}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={styles.dateSelectorText}>
+              {selectedPeriod === 'month' 
+                ? `${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月`
+                : `${selectedDate.getFullYear()}年`
+              }
+            </Text>
+            <ChevronDown size={16} color="#6D6D70" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.dateSelector}>
+            <Text style={styles.dateSelectorText}>
+              2020 ~ 2025
+            </Text>
+          </View>
+        )}
+      </View>
     </View>
   );
 
@@ -123,9 +160,23 @@ export default function StatisticsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
+      <View style={styles.header}>
+        <Text style={styles.title}>成績統計</Text>
+        <PeriodSelector />
+      </View>
+
       <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ flexGrow: 1 }}
+        ref={scrollViewRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(event) => {
+          const { contentOffset } = event.nativeEvent;
+          const pageWidth = screenWidth;
+          const pageIndex = Math.round(contentOffset.x / pageWidth);
+          const periods: ('month' | 'year' | 'all')[] = ['month', 'year', 'all'];
+          setSelectedPeriod(periods[pageIndex]);
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -135,87 +186,105 @@ export default function StatisticsScreen() {
           />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>成績統計</Text>
-          <PeriodSelector />
-        </View>
+        {(['month', 'year', 'all'] as const).map((period) => (
+          <View key={period} style={styles.pageContainer}>
+            <ScrollView
+              style={styles.container}
+              contentContainerStyle={{ flexGrow: 1 }}
+            >
+              <View style={styles.statsGrid}>
+                <StatCard
+                  title="総対局数"
+                  value={stats.totalGames || 0}
+                  icon={Calendar}
+                  color="#FF6B35"
+                />
+                <StatCard
+                  title="平均順位"
+                  value={stats.averageRank?.toFixed(2) || '-'}
+                  icon={Trophy}
+                  color="#3B82F6"
+                />
+                <StatCard
+                  title="1位率"
+                  value={stats.firstPlaceRate ? `${(stats.firstPlaceRate * 100).toFixed(1)}%` : '-'}
+                  icon={TrendingUp}
+                  color="#10B981"
+                />
+                <StatCard
+                  title="平均得点"
+                  value={stats.averageScore?.toFixed(0) || '-'}
+                  icon={Target}
+                  color="#F59E0B"
+                />
+              </View>
 
-        <View style={styles.statsGrid}>
-          <StatCard
-            title="総対局数"
-            value={stats.totalGames || 0}
-            icon={Calendar}
-            color="#FF6B35"
-          />
-          <StatCard
-            title="平均順位"
-            value={stats.averageRank?.toFixed(2) || '-'}
-            icon={Trophy}
-            color="#3B82F6"
-          />
-          <StatCard
-            title="1位率"
-            value={stats.firstPlaceRate ? `${(stats.firstPlaceRate * 100).toFixed(1)}%` : '-'}
-            icon={TrendingUp}
-            color="#10B981"
-          />
-          <StatCard
-            title="平均得点"
-            value={stats.averageScore?.toFixed(0) || '-'}
-            icon={Target}
-            color="#F59E0B"
-          />
-        </View>
+              <View style={styles.chartSection}>
+                <Text style={styles.sectionTitle}>順位分布</Text>
+                <SimpleChart data={rankDistribution} title="" />
+              </View>
 
-        <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>順位分布</Text>
-          <SimpleChart data={rankDistribution} title="" />
-        </View>
+              {chartData && chartData.scores && (
+                <View style={styles.chartSection}>
+                  <Text style={styles.sectionTitle}>得点推移</Text>
+                  <View style={styles.chartContainer}>
+                    <Text style={styles.chartPlaceholder}>
+                      得点推移グラフ
+                    </Text>
+                    <Text style={styles.chartSubtext}>
+                      {chartData.scores.length}回の対局データ
+                    </Text>
+                  </View>
+                </View>
+              )}
 
-        {chartData && chartData.scores && (
-          <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>得点推移</Text>
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartPlaceholder}>
-                得点推移グラフ
-              </Text>
-              <Text style={styles.chartSubtext}>
-                {chartData.scores.length}回の対局データ
-              </Text>
-            </View>
+              <View style={styles.detailsSection}>
+                <Text style={styles.sectionTitle}>詳細成績</Text>
+                <View style={styles.detailCard}>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>最高得点</Text>
+                    <Text style={styles.detailValue}>
+                      {stats.highestScore ? `+${stats.highestScore}` : '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>最低得点</Text>
+                    <Text style={styles.detailValue}>
+                      {stats.lowestScore || '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>連対率</Text>
+                    <Text style={styles.detailValue}>
+                      {stats.topTwoRate ? `${(stats.topTwoRate * 100).toFixed(1)}%` : '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>ラス回避率</Text>
+                    <Text style={styles.detailValue}>
+                      {stats.avoidLastRate ? `${(stats.avoidLastRate * 100).toFixed(1)}%` : '-'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
           </View>
-        )}
-
-        <View style={styles.detailsSection}>
-          <Text style={styles.sectionTitle}>詳細成績</Text>
-          <View style={styles.detailCard}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>最高得点</Text>
-              <Text style={styles.detailValue}>
-                {stats.highestScore ? `+${stats.highestScore}` : '-'}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>最低得点</Text>
-              <Text style={styles.detailValue}>
-                {stats.lowestScore || '-'}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>連対率</Text>
-              <Text style={styles.detailValue}>
-                {stats.topTwoRate ? `${(stats.topTwoRate * 100).toFixed(1)}%` : '-'}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>ラス回避率</Text>
-              <Text style={styles.detailValue}>
-                {stats.avoidLastRate ? `${(stats.avoidLastRate * 100).toFixed(1)}%` : '-'}
-              </Text>
-            </View>
-          </View>
-        </View>
+        ))}
       </ScrollView>
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={selectedDate}
+          mode={selectedPeriod === 'month' ? 'date' : 'date'}
+          display="default"
+          onChange={(event, date) => {
+            setShowDatePicker(false);
+            if (date) {
+              setSelectedDate(date);
+            }
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -247,11 +316,51 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     marginBottom: 16,
   },
+  periodSelectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  periodScrollContainer: {
+    flexDirection: 'row',
+  },
+  periodPage: {
+    width: screenWidth - 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pageContainer: {
+    width: screenWidth,
+    flex: 1,
+  },
   periodSelector: {
     flexDirection: 'row',
     backgroundColor: '#F2F2F7',
     borderRadius: 12,
     padding: 4,
+    flex: 1,
+  },
+  dateSelectorContainer: {
+    width: 120,
+  },
+  dateSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    gap: 4,
+    width: '100%',
+  },
+
+  dateSelectorText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1C1C1E',
   },
   periodButton: {
     flex: 1,
