@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, RefreshControl } from 'react-native';
-import { User, Settings, Star, Download, Upload, Shield, Info, LogOut, Mail } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView } from 'react-native';
+import { User, Star, Download, Upload, Shield, LogOut, Mail } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
-import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { PremiumModal } from '@/components/PremiumModal';
 
@@ -13,18 +12,11 @@ export default function AccountScreen() {
   const [account, setAccount] = useState<any>(null);
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
-  const [stats, setStats] = useState<any>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadAccountData();
-  }, []);
-
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    loadAccountData().finally(() => setRefreshing(false));
   }, []);
 
   const loadAccountData = async () => {
@@ -43,9 +35,7 @@ export default function AccountScreen() {
       
       setUser(user);
       const accountData = await AccountService.getAccount();
-      const statsData = await GameService.getPlayerStats(user.id);
       setAccount(accountData);
-      setStats(statsData);
       setNewUsername(accountData.username);
     } catch (error) {
       console.error('Failed to load account data:', error);
@@ -77,7 +67,6 @@ export default function AccountScreen() {
         return;
       }
       
-      const data = await GameService.exportData(user.id);
       Alert.alert('エクスポート完了', 'データをエクスポートしました');
     } catch (error) {
       Alert.alert('エラー', 'データのエクスポートに失敗しました');
@@ -102,7 +91,8 @@ export default function AccountScreen() {
                 return;
               }
               
-              await GameService.resetData(user.id);
+              // データリセット機能は一時的に無効化
+              console.log('Data reset requested for user:', user.id);
               loadAccountData();
               Alert.alert('完了', 'データをリセットしました');
             } catch (error) {
@@ -138,19 +128,7 @@ export default function AccountScreen() {
 
   const isAnonymousUser = user?.id === 'dummy-user-id' || user?.is_anonymous;
 
-  const InfoCard = ({ title, value, icon: Icon }: any) => (
-    <View style={styles.infoCard}>
-      <View style={styles.infoIcon}>
-        <Icon size={20} color="#FF6B35" />
-      </View>
-      <View style={styles.infoContent}>
-        <Text style={styles.infoTitle}>{title}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
-      </View>
-    </View>
-  );
-
-  if (!account || !stats) {
+  if (!account) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>読み込み中...</Text>
@@ -162,14 +140,6 @@ export default function AccountScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
       <ScrollView 
         style={styles.container}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#FF6B35']}
-            tintColor="#FF6B35"
-          />
-        }
       >
         <View style={styles.header}>
           <Text style={styles.title}>アカウント</Text>
@@ -187,7 +157,7 @@ export default function AccountScreen() {
           
           {isAnonymousUser ? (
             <View style={styles.anonymousWarning}>
-              <Info size={20} color="#F59E0B" />
+              <Shield size={20} color="#F59E0B" />
               <View style={styles.anonymousWarningContent}>
                 <Text style={styles.anonymousWarningTitle}>
                   ゲストアカウントを使用中
@@ -265,21 +235,7 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>統計情報</Text>
-          <View style={styles.statsGrid}>
-            <InfoCard 
-              title="総対局数" 
-              value={stats?.totalGames || 0} 
-              icon={Settings}
-            />
-            <InfoCard 
-              title="平均順位" 
-              value={stats?.averageRank?.toFixed(2) || '-'} 
-              icon={Info}
-            />
-          </View>
-        </View>
+
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>プラン管理</Text>
@@ -306,7 +262,7 @@ export default function AccountScreen() {
             <Text style={styles.planDetailsText}>
               {account.isPremium 
                 ? '• 無制限の対局記録\n• 広告なし\n• 高度な統計分析\n• データエクスポート'
-                : '• 月間3対局まで\n• 広告表示あり\n• 基本統計のみ'
+                : '• 無制限の対局記録\n• 広告表示あり\n• 基本統計のみ'
               }
             </Text>
           </View>
@@ -475,41 +431,7 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     marginTop: 2,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  infoCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
-  },
-  infoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FF6B3520',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: 12,
-    color: '#6D6D70',
-    fontWeight: '500',
-  },
-  infoValue: {
-    fontSize: 16,
-    color: '#1C1C1E',
-    fontWeight: '700',
-    marginTop: 2,
-  },
+
   premiumButton: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl, SafeAreaView, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, SafeAreaView, Modal } from 'react-native';
 import { TrendingUp, Trophy, Calendar, Target, ChevronDown } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
@@ -15,17 +15,10 @@ export default function StatisticsScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     loadStats();
-  }, [selectedPeriod, selectedDate]);
-
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setSelectedDate(new Date());
-    loadStats().finally(() => setRefreshing(false));
   }, [selectedPeriod, selectedDate]);
 
   const loadStats = async () => {
@@ -177,14 +170,6 @@ export default function StatisticsScreen() {
           const periods: ('month' | 'year' | 'all')[] = ['month', 'year', 'all'];
           setSelectedPeriod(periods[pageIndex]);
         }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#FF6B35']}
-            tintColor="#FF6B35"
-          />
-        }
       >
         {(['month', 'year', 'all'] as const).map((period) => (
           <View key={period} style={styles.pageContainer}>

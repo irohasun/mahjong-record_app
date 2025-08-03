@@ -1,44 +1,32 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, RefreshControl, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Save, Calendar, Plus, User, X } from 'lucide-react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
+import { Save, Calendar, Plus, User, X, Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
 import { AccountService } from '@/services/AccountService';
-import { MonetizationService } from '@/services/MonetizationService';
+
 import { AuthService } from '@/services/AuthService';
-import { AdModal } from '@/components/AdModal';
+
 
 export default function AddGameScreen() {
   const router = useRouter();
+  const keyboardAnimation = useRef(new Animated.Value(0)).current;
   
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showAdModal, setShowAdModal] = useState(false);
   const [hanchanCount, setHanchanCount] = useState(3);
   const [premiumHanchanCount, setPremiumHanchanCount] = useState(3);
   const [players, setPlayers] = useState(['自分', '', '', '']);
   const [scores, setScores] = useState(Array(hanchanCount).fill(null).map(() => Array(4).fill('')));
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [focusedCell, setFocusedCell] = useState<{hanchan: number, player: number} | null>(null);
   const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
+  const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
+  const [customKeyboardValue, setCustomKeyboardValue] = useState('');
+  const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
 
-    const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setGameDate(new Date());
-    setHanchanCount(3); // ← ここを3に修正
-    setPremiumHanchanCount(3);
-    setPlayers(['', '', '', '']);
-    setScores([
-      ['', '', '', ''],
-      ['', '', '', ''],
-      ['', '', '', ''],
-    ]);
-    setEditingPlayerName(null);
- 
-    setRefreshing(false);
-  }, []);
+
 
   const handlePlayerNameChange = (index: number, name: string) => {
     const newPlayers = [...players];
@@ -54,6 +42,106 @@ export default function AddGameScreen() {
     setEditingPlayerName(null);
   };
 
+  const handleCustomKeyboardPress = (hanchanIndex: number, playerIndex: number, value: string) => {
+    setCustomKeyboardValue(value);
+    setCustomKeyboardTarget({ hanchan: hanchanIndex, player: playerIndex });
+    setShowCustomKeyboard(true);
+    
+    // アニメーション開始
+    Animated.timing(keyboardAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  // 最後のセルを自動計算する関数
+  const calculateRemainingScore = (newScores: string[][], hanchanIndex: number, currentPlayerIndex: number) => {
+    const currentScores = newScores[hanchanIndex];
+    const filledScores = currentScores.filter((score, index) => score !== '');
+    
+    // 3人分入力されたら、残り1人を自動計算
+    if (filledScores.length === 3) {
+      // 3人分の合計を計算
+      const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
+      // 残り1人の値を計算（合計が0になるように）
+      const remainingValue = -sum;
+      
+      // 空いているプレイヤーのインデックスを見つける
+      const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
+      if (emptyPlayerIndex !== -1) {
+        newScores[hanchanIndex][emptyPlayerIndex] = remainingValue.toString();
+      }
+    }
+  };
+
+  const handleCustomKeyboardInput = (input: string) => {
+    if (input === 'backspace') {
+      const newValue = customKeyboardValue.slice(0, -1);
+      setCustomKeyboardValue(newValue);
+      
+      // リアルタイムでスコアに反映（自動計算なし）
+      if (customKeyboardTarget) {
+        const newScores = [...scores];
+        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
+        setScores(newScores);
+      }
+    } else if (input === 'ok') {
+      // OKボタンでスコアを確定し、3つ目の入力なら自動計算を実行
+      if (customKeyboardTarget) {
+        const newScores = [...scores];
+        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = customKeyboardValue;
+        
+        // 3つ目のスコアが入力された場合のみ自動計算
+        const currentScores = newScores[customKeyboardTarget.hanchan];
+        const filledScores = currentScores.filter((score, index) => score !== '');
+        
+        if (filledScores.length === 3) {
+          // 3人分の合計を計算
+          const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
+          // 残り1人の値を計算（合計が0になるように）
+          const remainingValue = -sum;
+          
+          // 空いているプレイヤーのインデックスを見つける
+          const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
+          if (emptyPlayerIndex !== -1) {
+            newScores[customKeyboardTarget.hanchan][emptyPlayerIndex] = remainingValue.toString();
+          }
+        }
+        
+        setScores(newScores);
+      }
+      
+      // アニメーション終了
+      Animated.timing(keyboardAnimation, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowCustomKeyboard(false);
+        setCustomKeyboardValue('');
+        setCustomKeyboardTarget(null);
+      });
+    } else {
+      // マイナス記号は最初の文字のみ許可
+      if (input === '-' && customKeyboardValue.length > 0) return;
+      // 小数点は1つまで許可
+      if (input === '.' && customKeyboardValue.includes('.')) return;
+      // 数字、マイナス、小数点のみ許可
+      if (/^[0-9\-\.]$/.test(input)) {
+        const newValue = customKeyboardValue + input;
+        setCustomKeyboardValue(newValue);
+        
+        // リアルタイムでスコアに反映（自動計算なし）
+        if (customKeyboardTarget) {
+          const newScores = [...scores];
+          newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
+          setScores(newScores);
+        }
+      }
+    }
+  };
+
   const handleScoreChange = (hanchanIndex: number, playerIndex: number, value: string) => {
     // マイナス記号と数字のみを許可
     const validValue = value.replace(/[^-0-9]/g, '');
@@ -63,33 +151,11 @@ export default function AddGameScreen() {
     const newScores = [...scores];
     newScores[hanchanIndex][playerIndex] = cleanValue;
     
-    // 3人分入力されたら、残り1人を自動計算
-    const currentScores = newScores[hanchanIndex];
-    const filledScores = currentScores.filter((score, index) => index !== playerIndex && score !== '');
-    
-    if (filledScores.length === 3) {
-      // 3人分の合計を計算
-      const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
-      // 残り1人の値を計算（合計が0になるように）
-      const remainingValue = -sum;
-      
-      // 空いているプレイヤーのインデックスを見つける
-      const emptyPlayerIndex = currentScores.findIndex((score, index) => index !== playerIndex && score === '');
-      if (emptyPlayerIndex !== -1) {
-        newScores[hanchanIndex][emptyPlayerIndex] = remainingValue.toString();
-      }
-    }
-    
     setScores(newScores);
   };
 
   const handleAddHanchan = async () => {
-    const isPremium = await MonetizationService.isPremium();
-    if (isPremium) {
-      addHanchan();
-    } else {
-      setShowAdModal(true);
-    }
+    addHanchan();
   };
 
   const addHanchan = () => {
@@ -182,7 +248,6 @@ export default function AddGameScreen() {
         gameEndCondition: 'normal' as const,
       };
       await GameService.addGame(gameRecord);
-      await MonetizationService.incrementGameCount();
       Alert.alert('保存完了', '対局記録を保存しました。履歴画面で確認できます。', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (error) {
       console.error('Save game error:', error);
@@ -208,23 +273,11 @@ export default function AddGameScreen() {
         <ScrollView
           style={styles.container}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#FF6B35']}
-              tintColor="#FF6B35"
-            />
-          }
           keyboardShouldPersistTaps="handled"
         >
         {/* ヘッダー */}
-        <View style={styles.headerCard}>
+        <View style={styles.header}>
           <Text style={styles.title}>対局記録</Text>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Save size={20} color="#FFF" />
-            <Text style={styles.saveButtonText}>保存</Text>
-          </TouchableOpacity>
         </View>
 
         {/* 日付とゲーム番号 */}
@@ -303,24 +356,29 @@ export default function AddGameScreen() {
               </View>
               {[0, 1, 2, 3].map((playerIndex) => (
                 <View key={playerIndex} style={styles.playerScoreContainer}>
-                  <TextInput
+                  <TouchableOpacity
                     style={[
                       styles.scoreCell,
-                      focusedCell && focusedCell.hanchan === hanchanIndex && focusedCell.player === playerIndex && styles.scoreCellFocused
+                      customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex && styles.scoreCellSelected
                     ]}
-                    value={scores[hanchanIndex][playerIndex]}
-                    onChangeText={(text: string) => handleScoreChange(hanchanIndex, playerIndex, text)}
-                    keyboardType="numbers-and-punctuation"
-                    textAlign="center"
-                    placeholder="±0"
-                    returnKeyType="done"
-                    selectTextOnFocus={true}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                    onFocus={() => setFocusedCell({ hanchan: hanchanIndex, player: playerIndex })}
-                    onBlur={() => setFocusedCell(null)}
-                    editable={true}
-                  />
+                    onPress={() => handleCustomKeyboardPress(hanchanIndex, playerIndex, scores[hanchanIndex][playerIndex])}
+                  >
+                    <Text style={[
+                      styles.scoreCellText,
+                      (() => {
+                        const scoreValue = customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
+                          ? customKeyboardValue 
+                          : scores[hanchanIndex][playerIndex];
+                        const numValue = parseInt(scoreValue) || 0;
+                        return numValue < 0 ? styles.negativeScore : numValue > 0 ? styles.positiveScore : styles.neutralScore;
+                      })()
+                    ]}>
+                      {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
+                        ? (customKeyboardValue || '±0')
+                        : (scores[hanchanIndex][playerIndex] || '±0')
+                      }
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -346,7 +404,7 @@ export default function AddGameScreen() {
           </View>
         </View>
 
-        {showDatePicker && (
+                {showDatePicker && (
           <DateTimePicker
             value={gameDate}
             mode="date"
@@ -360,23 +418,117 @@ export default function AddGameScreen() {
           />
         )}
 
-        <AdModal
-          visible={showAdModal}
-          onClose={() => setShowAdModal(false)}
-          onComplete={() => {
-            setShowAdModal(false);
-            addHanchan();
-          }}
-        />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+      </ScrollView>
+      
+      {/* 保存ボタン */}
+      <View style={styles.saveButtonContainer}>
+        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+          <Save size={20} color="#FFF" />
+          <Text style={styles.saveButtonText}>保存</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* カスタムキーボード */}
+      {showCustomKeyboard && (
+        <Animated.View 
+          style={[
+            styles.customKeyboardOverlay,
+            {
+              transform: [{
+                translateY: keyboardAnimation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [300, 0], // 300px下から上にスライド
+                })
+              }]
+            }
+          ]}
+        >
+          <TouchableOpacity 
+            style={styles.overlayBackground}
+            activeOpacity={1}
+            onPress={() => {
+              Animated.timing(keyboardAnimation, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: true,
+              }).start(() => {
+                setShowCustomKeyboard(false);
+                setCustomKeyboardValue('');
+                setCustomKeyboardTarget(null);
+              });
+            }}
+          />
+          <Animated.View style={styles.customKeyboard}>
+            <View style={styles.customKeyboardButtons}>
+              <View style={styles.customKeyboardRow}>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('7')}>
+                  <Text style={styles.customKeyboardButtonText}>7</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('8')}>
+                  <Text style={styles.customKeyboardButtonText}>8</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('9')}>
+                  <Text style={styles.customKeyboardButtonText}>9</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('backspace')}>
+                  <Text style={styles.customKeyboardButtonText}>←</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.customKeyboardRow}>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('4')}>
+                  <Text style={styles.customKeyboardButtonText}>4</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('5')}>
+                  <Text style={styles.customKeyboardButtonText}>5</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('6')}>
+                  <Text style={styles.customKeyboardButtonText}>6</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('-')}>
+                  <Text style={styles.customKeyboardButtonText}>-</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.customKeyboardRow}>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('1')}>
+                  <Text style={styles.customKeyboardButtonText}>1</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('2')}>
+                  <Text style={styles.customKeyboardButtonText}>2</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('3')}>
+                  <Text style={styles.customKeyboardButtonText}>3</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('.')}>
+                  <Text style={styles.customKeyboardButtonText}>.</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.customKeyboardRow}>
+                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('0')}>
+                  <Text style={styles.customKeyboardButtonText}>0</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.customKeyboardButton, styles.customKeyboardButtonOK]} onPress={() => handleCustomKeyboardInput('ok')}>
+                  <Text style={styles.customKeyboardButtonTextOK}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      )}
+    </KeyboardAvoidingView>
+  </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFF',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#FFF',
   },
   headerCard: {
@@ -403,13 +555,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1C1E', // 黒文字に変更
   },
+  saveButtonContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
   saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#FF6B35',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
     gap: 8,
     shadowColor: '#FF6B35',
     shadowOffset: { width: 0, height: 2 },
@@ -631,6 +791,68 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     minHeight: 44,
     width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreCellText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
+    textAlign: 'center',
+  },
+  customKeyboardOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 1000,
+  },
+  overlayBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  customKeyboard: {
+    backgroundColor: '#F2F2F7',
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  customKeyboardButtons: {
+    paddingHorizontal: 20,
+  },
+  customKeyboardRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    gap: 8,
+  },
+  customKeyboardButton: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  customKeyboardButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  customKeyboardButtonOK: {
+    backgroundColor: '#FF6B35',
+  },
+  customKeyboardButtonTextOK: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFF',
   },
 
   scoreCellFocused: {
@@ -638,6 +860,11 @@ const styles = StyleSheet.create({
     borderColor: '#FF6B35',
     color: '#FF6B35', // フォーカス時のみオレンジ
     fontWeight: '700',
+  },
+  scoreCellSelected: {
+    backgroundColor: '#FF6B3510',
+    borderColor: '#FF6B35',
+    borderWidth: 2,
   },
 
   addHanchanButton: {

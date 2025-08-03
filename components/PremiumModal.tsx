@@ -108,7 +108,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({ visible, onClose, on
             <View style={styles.comparisonTable}>
               <View style={styles.comparisonRow}>
                 <Text style={styles.comparisonFeature}>月間対局数</Text>
-                <Text style={styles.comparisonFree}>3対局</Text>
+                <Text style={styles.comparisonFree}>無制限</Text>
                 <Text style={styles.comparisonPremium}>無制限</Text>
               </View>
               <View style={styles.comparisonRow}>
