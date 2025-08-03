@@ -6,6 +6,7 @@ import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
 import { AuthService } from '@/services/AuthService';
 import { PremiumModal } from '@/components/PremiumModal';
+import { ensureAuthenticated } from '@/utils/authUtils';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -21,18 +22,7 @@ export default function AccountScreen() {
 
   const loadAccountData = async () => {
     try {
-      let user = await AuthService.getCurrentUser();
-      
-      // ユーザーが認証されていない場合は匿名認証を行う
-      if (!user) {
-        await AuthService.signInAnonymously();
-        user = await AuthService.getCurrentUser();
-        
-        if (!user) {
-          return;
-        }
-      }
-      
+      const user = await ensureAuthenticated();
       setUser(user);
       const accountData = await AccountService.getAccount();
       setAccount(accountData);
@@ -60,13 +50,7 @@ export default function AccountScreen() {
 
   const handleExportData = async () => {
     try {
-      const user = await AuthService.getCurrentUser();
-      
-      if (!user) {
-        Alert.alert('エラー', 'ログインが必要です');
-        return;
-      }
-      
+      const user = await ensureAuthenticated();
       Alert.alert('エクスポート完了', 'データをエクスポートしました');
     } catch (error) {
       Alert.alert('エラー', 'データのエクスポートに失敗しました');
@@ -84,12 +68,7 @@ export default function AccountScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const user = await AuthService.getCurrentUser();
-              
-              if (!user) {
-                Alert.alert('エラー', 'ログインが必要です');
-                return;
-              }
+              const user = await ensureAuthenticated();
               
               // データリセット機能は一時的に無効化
               console.log('Data reset requested for user:', user.id);

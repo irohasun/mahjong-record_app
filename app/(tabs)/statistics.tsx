@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, SafeA
 import { TrendingUp, Trophy, Calendar, Target, ChevronDown } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
-import { AccountService } from '@/services/AccountService';
 import { AuthService } from '@/services/AuthService';
+import { ensureAuthenticated } from '@/utils/authUtils';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -23,18 +23,7 @@ export default function StatisticsScreen() {
 
   const loadStats = async () => {
     try {
-      let user = await AuthService.getCurrentUser();
-      
-      // ユーザーが認証されていない場合は匿名認証を行う
-      if (!user) {
-        await AuthService.signInAnonymously();
-        user = await AuthService.getCurrentUser();
-        
-        if (!user) {
-          return;
-        }
-      }
-      
+      const user = await ensureAuthenticated();
       const statsData = await GameService.getPlayerStats(user.id);
       const chartData = await GameService.getChartData(user.id, selectedPeriod);
       

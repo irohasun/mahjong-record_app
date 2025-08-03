@@ -1,12 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
-import { Save, Calendar, Plus, User, X, Check } from 'lucide-react-native';
+import { Save, Calendar, Plus, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
-import { AccountService } from '@/services/AccountService';
-
 import { AuthService } from '@/services/AuthService';
+import { ensureAuthenticated } from '@/utils/authUtils';
 
 
 export default function AddGameScreen() {
@@ -20,7 +19,6 @@ export default function AddGameScreen() {
   const [players, setPlayers] = useState(['自分', '', '', '']);
   const [scores, setScores] = useState(Array(hanchanCount).fill(null).map(() => Array(4).fill('')));
   const [loading, setLoading] = useState(false);
-  const [focusedCell, setFocusedCell] = useState<{hanchan: number, player: number} | null>(null);
   const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
   const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
@@ -55,25 +53,7 @@ export default function AddGameScreen() {
     }).start();
   };
 
-  // 最後のセルを自動計算する関数
-  const calculateRemainingScore = (newScores: string[][], hanchanIndex: number, currentPlayerIndex: number) => {
-    const currentScores = newScores[hanchanIndex];
-    const filledScores = currentScores.filter((score, index) => score !== '');
-    
-    // 3人分入力されたら、残り1人を自動計算
-    if (filledScores.length === 3) {
-      // 3人分の合計を計算
-      const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
-      // 残り1人の値を計算（合計が0になるように）
-      const remainingValue = -sum;
-      
-      // 空いているプレイヤーのインデックスを見つける
-      const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
-      if (emptyPlayerIndex !== -1) {
-        newScores[hanchanIndex][emptyPlayerIndex] = remainingValue.toString();
-      }
-    }
-  };
+
 
   const handleCustomKeyboardInput = (input: string) => {
     if (input === 'backspace') {
@@ -142,21 +122,9 @@ export default function AddGameScreen() {
     }
   };
 
-  const handleScoreChange = (hanchanIndex: number, playerIndex: number, value: string) => {
-    // マイナス記号と数字のみを許可
-    const validValue = value.replace(/[^-0-9]/g, '');
-    // マイナス記号が複数ある場合は最初の1つだけ残す
-    const cleanValue = validValue.replace(/-/g, (match, index) => index === 0 ? '-' : '');
-    
-    const newScores = [...scores];
-    newScores[hanchanIndex][playerIndex] = cleanValue;
-    
-    setScores(newScores);
-  };
 
-  const handleAddHanchan = async () => {
-    addHanchan();
-  };
+
+
 
   const addHanchan = () => {
     const newHanchanCount = hanchanCount + 1;
@@ -207,14 +175,10 @@ export default function AddGameScreen() {
 
   const handleSave = async () => {
     try {
-      let user = await AuthService.getCurrentUser();
+      const user = await ensureAuthenticated();
       if (!user) {
-        await AuthService.signInAnonymously();
-        user = await AuthService.getCurrentUser();
-        if (!user) {
-          Alert.alert('エラー', '認証に失敗しました');
-          return;
-        }
+        Alert.alert('エラー', '認証に失敗しました');
+        return;
       }
       const playersData = players.map((name, index) => ({
         name: index === 0 ? '自分' : `プレイヤー${index + 1}`,
@@ -383,7 +347,7 @@ export default function AddGameScreen() {
               ))}
             </View>
           ))}
-          <TouchableOpacity style={styles.addHanchanButton} onPress={handleAddHanchan}>
+          <TouchableOpacity style={styles.addHanchanButton} onPress={addHanchan}>
             <Plus size={16} color="#FF6B35" />
             <Text style={styles.addHanchanText}>半荘を追加</Text>
           </TouchableOpacity>

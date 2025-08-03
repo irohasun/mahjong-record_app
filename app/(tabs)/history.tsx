@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
-import { Calendar, MapPin, Users, CreditCard as Edit2, Trash2, Plus } from 'lucide-react-native';
+import { Calendar, MapPin, Trash2, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { GameService } from '@/services/GameService';
-import { AccountService } from '@/services/AccountService';
 import { AuthService } from '@/services/AuthService';
 import { GameRecord } from '@/types/GameRecord';
+import { ensureAuthenticated } from '@/utils/authUtils';
 
 export default function HistoryScreen() {
   const router = useRouter();
@@ -18,20 +18,7 @@ export default function HistoryScreen() {
 
   const loadGames = async () => {
     try {
-      let user = await AuthService.getCurrentUser();
-      
-      // ユーザーが認証されていない場合は匿名認証を行う
-      if (!user) {
-        const authResult = await AuthService.signInAnonymously();
-        
-        if (authResult?.user) {
-          user = authResult.user;
-        } else {
-          // 認証結果でユーザーが取得できない場合は現在のユーザーを再取得
-          user = await AuthService.getCurrentUser();
-        }
-      }
-      
+      const user = await ensureAuthenticated();
       const allGames = await GameService.getAllGames(user.id);
       setGames(allGames);
     } catch (error) {
