@@ -18,6 +18,7 @@ export interface Database {
           purchase_date: string | null
           monthly_game_count: number
           last_reset_date: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -27,6 +28,7 @@ export interface Database {
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -36,6 +38,7 @@ export interface Database {
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
+          updated_at?: string
         }
       }
       games: {
@@ -164,29 +167,7 @@ export interface Database {
           created_at?: string
         }
       }
-      game_photos: {
-        Row: {
-          id: string
-          game_id: string
-          photo_uri: string
-          description: string | null
-          taken_at: string
-        }
-        Insert: {
-          id?: string
-          game_id: string
-          photo_uri: string
-          description?: string | null
-          taken_at?: string
-        }
-        Update: {
-          id?: string
-          game_id?: string
-          photo_uri?: string
-          description?: string | null
-          taken_at?: string
-        }
-      }
+
     }
     Views: {
       [_ in never]: never
