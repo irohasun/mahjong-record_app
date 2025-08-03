@@ -61,19 +61,16 @@ export default function HistoryScreen() {
   };
 
   const GameCard = ({ game }: { game: GameRecord }) => {
-    // 1日の半荘結果を計算
-    const hanchanResults = game.hanchanResults || [];
-    const totalHanchans = hanchanResults.length;
-    const averageRank = totalHanchans > 0 
-      ? hanchanResults.reduce((sum, h) => sum + h.rank, 0) / totalHanchans 
-      : 0;
-    const totalScoreChange = hanchanResults.reduce((sum, h) => sum + h.scoreChange, 0);
+    // プレイヤー情報から統計を計算
+    const mainPlayer = game.players.find(p => p.isMainAccount);
+    const averageRank = mainPlayer ? mainPlayer.rank : 0;
+    const totalScoreChange = mainPlayer ? mainPlayer.finalScore - 25000 : 0;
     const isPositive = totalScoreChange >= 0;
     
     // その日の着順分布
     const rankCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
-    hanchanResults.forEach(h => {
-      rankCounts[h.rank as keyof typeof rankCounts]++;
+    game.players.forEach(p => {
+      rankCounts[p.rank as keyof typeof rankCounts]++;
     });
 
     return (
@@ -98,7 +95,7 @@ export default function HistoryScreen() {
               <MapPin size={14} color="#8E8E93" />
               <Text style={styles.locationText}>{game.location}</Text>
             </View>
-            <Text style={styles.gameTypeText}>{game.gameType} × {totalHanchans}</Text>
+            <Text style={styles.gameTypeText}>{game.gameType}</Text>
           </View>
 
           {/* 中央：成績サマリー */}

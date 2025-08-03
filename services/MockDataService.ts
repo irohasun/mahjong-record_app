@@ -12,10 +12,8 @@ export class MockDataService {
   static generateMockPlayerStats(): PlayerStats {
     return {
       totalGames: 25,
-      totalHanchans: 25,
       averageRank: 2.32,
       averageScore: 28156,
-      averageFinalPoints: 28156,
       firstPlaceRate: 0.32, // 32% (8/25)
       topTwoRate: 0.56, // 56% (14/25)
       avoidLastRate: 0.76, // 76% (19/25)
@@ -26,16 +24,6 @@ export class MockDataService {
         2: 6,  // 2位: 6回
         3: 5,  // 3位: 5回
         4: 6   // 4位: 6回
-      },
-      chipStats: {
-        totalChipsWon: 156,
-        averageChipsPerGame: 6.24,
-        bestChipGame: 15
-      },
-      pointStats: {
-        averagePointChange: 3156, // 平均+3,156点
-        totalPointChange: 78900,  // 総合+78,900点
-        positiveGameRate: 0.68    // 68%の対局でプラス収支
       }
     };
   }
@@ -160,16 +148,6 @@ export class MockDataService {
         startingPosition: ['East', 'South', 'West', 'North'][index] as any
       }));
 
-      // 半荘結果を計算
-      const hanchanResults = [{
-        startingPoints: 25000,
-        endingPoints: scores[0],
-        rank: ranks[0],
-        scoreChange: scores[0] - 25000,
-        gameEndCondition: 'normal' as const,
-        totalChips: Math.floor(Math.random() * 10) + 2
-      }];
-
       games.push({
         id: `game-${String(i + 1).padStart(3, '0')}`,
         accountId: 'test-user-001',
@@ -185,7 +163,6 @@ export class MockDataService {
         },
         players,
         rounds: [],
-        hanchanResults,
         finalRiichiSticks: Math.floor(Math.random() * 4),
         finalHonba: Math.floor(Math.random() * 4),
         memo: this.generateRandomMemo(),

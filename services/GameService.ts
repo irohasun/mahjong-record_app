@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { GameRecord, PlayerStats, ChipCalculator } from '@/types/GameRecord';
+import { GameRecord, PlayerStats } from '@/types/GameRecord';
 
 type Game = Database['public']['Tables']['games']['Row'];
 type GameInsert = Database['public']['Tables']['games']['Insert'];
@@ -259,29 +259,17 @@ export class GameService {
       );
 
       if (sortedRecords.length === 0) {
-        return {
-          totalGames: 0,
-          totalHanchans: 0,
-          averageRank: 0,
-          averageScore: 0,
-          averageFinalPoints: 0,
-          firstPlaceRate: 0,
-          topTwoRate: 0,
-          avoidLastRate: 0,
-          highestScore: 0,
-          lowestScore: 0,
-          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
-          chipStats: {
-            totalChipsWon: 0,
-            averageChipsPerGame: 0,
-            bestChipGame: 0,
-          },
-          pointStats: {
-            averagePointChange: 0,
-            totalPointChange: 0,
-            positiveGameRate: 0,
-          },
-        };
+              return {
+        totalGames: 0,
+        averageRank: 0,
+        averageScore: 0,
+        firstPlaceRate: 0,
+        topTwoRate: 0,
+        avoidLastRate: 0,
+        highestScore: 0,
+        lowestScore: 0,
+        rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
+      };
       }
 
       const totalGames = sortedRecords.length;
@@ -300,26 +288,14 @@ export class GameService {
 
       return {
         totalGames,
-        totalHanchans: totalGames, // 簡略化
         averageRank: totalRank / totalGames,
         averageScore: totalScore / totalGames,
-        averageFinalPoints: totalScore / totalGames,
         firstPlaceRate: firstPlaceCount / totalGames,
         topTwoRate: topTwoCount / totalGames,
         avoidLastRate: avoidLastCount / totalGames,
         highestScore,
         lowestScore,
         rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
-        chipStats: {
-          totalChipsWon: 0,
-          averageChipsPerGame: 0,
-          bestChipGame: 0,
-        },
-        pointStats: {
-          averagePointChange: (totalScore - (25000 * totalGames)) / totalGames,
-          totalPointChange: totalScore - (25000 * totalGames),
-          positiveGameRate: (sortedRecords as any[]).filter((p: any) => p.final_score > 25000).length / totalGames,
-        },
       };
     } catch (error) {
       console.error('Failed to get player stats:', error);
