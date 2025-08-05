@@ -108,6 +108,185 @@ export class GameService {
     }
   }
 
+  static async getGameById(accountId: string, gameId: string): Promise<GameRecord | null> {
+    try {
+      if (!isSupabaseConfigured) {
+        // モックデータを返す
+        return MockDataService.getMockGame(gameId);
+      }
+
+      // ゲームデータを取得
+      const { data: game, error: gameError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .eq('account_id', accountId)
+        .single();
+
+      if (gameError || !game) {
+        return null;
+      }
+
+      // プレイヤー記録を取得
+      const { data: players, error: playersError } = await supabase
+        .from('player_records')
+        .select('*')
+        .eq('game_id', gameId);
+
+      if (playersError) {
+        throw playersError;
+      }
+
+      // 局記録を取得
+      const { data: rounds, error: roundsError } = await supabase
+        .from('round_records')
+        .select('*')
+        .eq('game_id', gameId)
+        .order('round');
+
+      if (roundsError) {
+        throw roundsError;
+      }
+
+      // GameRecord形式に変換
+      const gameRecord: GameRecord = {
+        id: game.id,
+        accountId: accountId,
+        date: game.date,
+        location: game.location || '',
+        gameType: game.game_type,
+        rules: game.rules as any,
+        memo: game.memo || '',
+        duration: game.duration_minutes || 0,
+        gameEndCondition: game.game_end_condition,
+        finalRiichiSticks: game.final_riichi_sticks,
+        finalHonba: game.final_honba,
+        players: players.map(p => ({
+          name: p.player_name,
+          isMainAccount: p.is_main_account,
+          finalScore: p.final_score,
+          rank: p.rank,
+          startingPosition: p.starting_position,
+        })),
+        rounds: rounds.map(r => ({
+          round: r.round,
+          honba: r.honba,
+          riichiSticks: r.riichi_sticks,
+          winner: r.winner,
+          loser: r.loser,
+          handType: r.hand_type,
+          points: r.points as any,
+          han: r.han,
+          fu: r.fu,
+          yakuman: r.yakuman,
+          memo: r.memo || '',
+        })),
+      };
+
+      return gameRecord;
+    } catch (error) {
+      console.error('Failed to get game by ID:', error);
+      return null;
+    }
+  }
+
+  static async updateGame(accountId: string, gameId: string, gameData: GameRecord): Promise<void> {
+    try {
+      if (!isSupabaseConfigured) {
+        // モック環境では何もしない
+        return;
+      }
+
+      // ゲームデータを更新
+      const { error: gameError } = await supabase
+        .from('games')
+        .update({
+          date: gameData.date,
+          location: gameData.location,
+          game_type: gameData.gameType,
+          rules: gameData.rules as any,
+          memo: gameData.memo,
+          duration_minutes: gameData.duration,
+          game_end_condition: gameData.gameEndCondition,
+          final_riichi_sticks: gameData.finalRiichiSticks,
+          final_honba: gameData.finalHonba,
+        })
+        .eq('id', gameId)
+        .eq('account_id', accountId);
+
+      if (gameError) {
+        throw gameError;
+      }
+
+      // 既存のプレイヤー記録を削除
+      const { error: deletePlayersError } = await supabase
+        .from('player_records')
+        .delete()
+        .eq('game_id', gameId);
+
+      if (deletePlayersError) {
+        throw deletePlayersError;
+      }
+
+      // 新しいプレイヤー記録を挿入
+      const playerInserts: PlayerRecordInsert[] = gameData.players.map(player => ({
+        game_id: gameId,
+        player_name: player.name,
+        is_main_account: player.isMainAccount,
+        final_score: player.finalScore,
+        rank: player.rank,
+        starting_position: player.startingPosition,
+      }));
+
+      const { error: playersError } = await supabase
+        .from('player_records')
+        .insert(playerInserts);
+
+      if (playersError) {
+        throw playersError;
+      }
+
+      // 既存の局記録を削除
+      const { error: deleteRoundsError } = await supabase
+        .from('round_records')
+        .delete()
+        .eq('game_id', gameId);
+
+      if (deleteRoundsError) {
+        throw deleteRoundsError;
+      }
+
+      // 新しい局記録を挿入（もしあれば）
+      if (gameData.rounds.length > 0) {
+        const roundInserts: RoundRecordInsert[] = gameData.rounds.map(round => ({
+          game_id: gameId,
+          round: round.round,
+          honba: round.honba,
+          riichi_sticks: round.riichiSticks,
+          winner: round.winner,
+          loser: round.loser,
+          hand_type: round.handType,
+          points: round.points,
+          han: round.han,
+          fu: round.fu,
+          yakuman: round.yakuman,
+          memo: round.memo,
+        }));
+
+        const { error: roundsError } = await supabase
+          .from('round_records')
+          .insert(roundInserts);
+
+        if (roundsError) {
+          throw roundsError;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update game:', error);
+      throw error;
+    }
+  }
+
   static async getAllGames(accountId: string): Promise<GameRecord[]> {
     try {
       // ダミーユーザーの場合は空配列を返す

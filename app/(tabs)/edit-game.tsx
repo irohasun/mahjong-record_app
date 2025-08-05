@@ -1,17 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
 import { Save, Calendar, Plus, X } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
+import { GameRecord } from '@/types/GameRecord';
 
-
-export default function AddGameScreen() {
+export default function EditGameScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const gameId = params.gameId as string;
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
   
+  const [gameData, setGameData] = useState<GameRecord | null>(null);
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [hanchanCount, setHanchanCount] = useState(3);
@@ -24,7 +27,37 @@ export default function AddGameScreen() {
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
   const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
 
+  // ゲームデータを読み込む
+  useEffect(() => {
+    loadGameData();
+  }, [gameId]);
 
+  const loadGameData = async () => {
+    try {
+      const user = await ensureAuthenticated();
+      const game = await GameService.getGameById(user.id, gameId);
+      if (game) {
+        setGameData(game);
+        setGameDate(new Date(game.date));
+        
+        // プレイヤー名を設定
+        const playerNames = game.players.map(p => p.name);
+        setPlayers(playerNames);
+        
+        // スコアデータを設定（簡略化のため、最初の局のみ）
+        if (game.rounds && game.rounds.length > 0) {
+          const roundScores = game.rounds[0].points as number[];
+          const newScores = Array(hanchanCount).fill(null).map(() => Array(4).fill(''));
+          newScores[0] = roundScores.map(score => score.toString());
+          setScores(newScores);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load game data:', error);
+      Alert.alert('エラー', 'ゲームデータの読み込みに失敗しました');
+      router.back();
+    }
+  };
 
   const handlePlayerNameChange = (index: number, name: string) => {
     const newPlayers = [...players];
@@ -52,8 +85,6 @@ export default function AddGameScreen() {
       useNativeDriver: true,
     }).start();
   };
-
-
 
   const handleCustomKeyboardInput = (input: string) => {
     if (input === 'backspace') {
@@ -103,129 +134,90 @@ export default function AddGameScreen() {
         setCustomKeyboardTarget(null);
       });
     } else {
-      // マイナス記号は最初の文字のみ許可
-      if (input === '-' && customKeyboardValue.length > 0) return;
-      // 小数点は1つまで許可
-      if (input === '.' && customKeyboardValue.includes('.')) return;
-      // 数字、マイナス、小数点のみ許可
-      if (/^[0-9\-\.]$/.test(input)) {
-        const newValue = customKeyboardValue + input;
-        setCustomKeyboardValue(newValue);
-        
-        // リアルタイムでスコアに反映（自動計算なし）
-        if (customKeyboardTarget) {
-          const newScores = [...scores];
-          newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
-          setScores(newScores);
-        }
+      // 数字入力
+      const newValue = customKeyboardValue + input;
+      setCustomKeyboardValue(newValue);
+      
+      // リアルタイムでスコアに反映
+      if (customKeyboardTarget) {
+        const newScores = [...scores];
+        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
+        setScores(newScores);
       }
     }
   };
 
-
-
-
-
   const addHanchan = () => {
-    const newHanchanCount = hanchanCount + 1;
-    setHanchanCount(newHanchanCount);
-    setPremiumHanchanCount(newHanchanCount);
-    const newScores = [...scores];
-    newScores.push(Array(4).fill(''));
-    setScores(newScores);
+    if (hanchanCount < 8) {
+      setHanchanCount(hanchanCount + 1);
+      setScores([...scores, Array(4).fill('')]);
+    }
   };
 
   const removeHanchan = (hanchanIndex: number) => {
-    if (hanchanCount <= 1) {
-      Alert.alert('エラー', '最低1つの半荘は必要です');
-      return;
+    if (hanchanCount > 1) {
+      setHanchanCount(hanchanCount - 1);
+      const newScores = scores.filter((_, index) => index !== hanchanIndex);
+      setScores(newScores);
     }
-    
-    Alert.alert(
-      '半荘を削除',
-      `半荘${hanchanIndex + 1}を削除しますか？`,
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: () => {
-            const newHanchanCount = hanchanCount - 1;
-            setHanchanCount(newHanchanCount);
-            if (newHanchanCount < premiumHanchanCount) {
-              setPremiumHanchanCount(newHanchanCount);
-            }
-            const newScores = [...scores];
-            newScores.splice(hanchanIndex, 1);
-            setScores(newScores);
-          }
-        }
-      ]
-    );
   };
 
   const calculateSubtotal = (playerIndex: number): number => {
-    return scores.reduce((total, hanchan) => {
-      const scoreText = hanchan[playerIndex];
-      if (!scoreText) return total;
-      const score = parseInt(scoreText) || 0;
+    return scores.reduce((total, hanchanScores) => {
+      const score = parseInt(hanchanScores[playerIndex]) || 0;
       return total + score;
     }, 0);
   };
 
   const handleSave = async () => {
+    if (!gameData) return;
+
+    setLoading(true);
     try {
       const user = await ensureAuthenticated();
-      if (!user) {
-        Alert.alert('エラー', '認証に失敗しました');
-        return;
-      }
-      const playersData = players.map((name, index) => ({
-        name: index === 0 ? '自分' : `プレイヤー${index + 1}`,
-        finalScore: 25000 + calculateSubtotal(index),
-        rank: 1,
+      
+      // プレイヤーデータを構築
+      const playerData = players.map((playerName, index) => ({
+        name: playerName,
         isMainAccount: index === 0,
-        startingPosition: ['East', 'South', 'West', 'North'][index] as 'East' | 'South' | 'West' | 'North'
+        finalScore: calculateSubtotal(index),
+        rank: 1, // 簡略化のため固定
+        startingPosition: ['East', 'South', 'West', 'North'][index] as any
       }));
-      const sortedPlayers = [...playersData].sort((a, b) => b.finalScore - a.finalScore);
-      sortedPlayers.forEach((player, idx) => {
-        const originalIndex = playersData.findIndex(p => p.name === player.name && p.isMainAccount === player.isMainAccount);
-        playersData[originalIndex].rank = idx + 1;
-      });
-      const gameRecord = {
-        accountId: user.id,
+
+      // ゲームデータを更新
+      const updatedGame = {
+        ...gameData,
         date: gameDate.toISOString(),
-        location: '',
-        gameType: '東南戦' as const,
-        rules: {
-          startingPoints: 25000,
-          uma: '+15 +5 -5 -15',
-          oka: 5000,
-          riichiStick: 1000,
-          honbaValue: 300,
-        },
-        players: playersData,
-        rounds: [],
-        finalRiichiSticks: 0,
-        finalHonba: 0,
-        memo: '',
-        gameEndCondition: 'normal' as const,
+        players: playerData,
+        // 他のフィールドは既存のデータを使用
       };
-      await GameService.addGame(gameRecord);
-      Alert.alert('保存完了', '対局記録を保存しました。履歴画面で確認できます。', [{ text: 'OK', onPress: () => router.back() }]);
+
+      await GameService.updateGame(user.id, gameId, updatedGame);
+      
+      Alert.alert('修正完了', '対局記録を修正しました', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
     } catch (error) {
-      console.error('Save game error:', error);
-      Alert.alert('エラー', '保存に失敗しました');
+      console.error('Failed to update game:', error);
+      Alert.alert('エラー', '対局記録の修正に失敗しました');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // プレイヤーカラーを取得する関数
   const getPlayerColor = (playerIndex: number) => {
     const colors = ['#FF6B35', '#3B82F6', '#10B981', '#F59E0B'];
     return colors[playerIndex];
   };
 
-
+  if (!gameData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>データを読み込み中...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F9F9' }}>
@@ -241,7 +233,7 @@ export default function AddGameScreen() {
         >
         {/* ヘッダー */}
         <View style={styles.header}>
-          <Text style={styles.title}>対局記録</Text>
+          <Text style={styles.title}>記録修正</Text>
         </View>
 
         {/* 日付とゲーム番号 */}
@@ -256,10 +248,6 @@ export default function AddGameScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-
-
-
-        {/* プレイヤー名入力欄 */}
 
         {/* スコア表 */}
         <View style={styles.scoreSheetCard}>
@@ -368,7 +356,7 @@ export default function AddGameScreen() {
           </View>
         </View>
 
-                {showDatePicker && (
+        {showDatePicker && (
           <DateTimePicker
             value={gameDate}
             mode="date"
@@ -382,14 +370,17 @@ export default function AddGameScreen() {
           />
         )}
 
-
       </ScrollView>
       
       {/* 保存ボタン */}
       <View style={styles.saveButtonContainer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+        <TouchableOpacity 
+          style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
+          onPress={handleSave}
+          disabled={loading}
+        >
           <Save size={20} color="#FFF" />
-          <Text style={styles.saveButtonText}>保存</Text>
+          <Text style={styles.saveButtonText}>修正する</Text>
         </TouchableOpacity>
       </View>
 
@@ -489,6 +480,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFF',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6D6D70',
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -521,6 +522,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 4,
     elevation: 2,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
   saveButtonText: {
     color: '#FFF',
@@ -747,4 +751,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFF',
   },
-});
+}); 

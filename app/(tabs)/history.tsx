@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
-import { Calendar, MapPin, Trash2, Plus } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, RefreshControl } from 'react-native';
+import { Calendar, Trash2, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { GameRecord } from '@/types/GameRecord';
 import { ensureAuthenticated } from '@/utils/authUtils';
 
+interface GameGroup {
+  year: number;
+  games: GameRecord[];
+}
+
 export default function HistoryScreen() {
   const router = useRouter();
   const [games, setGames] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadGames();
@@ -32,9 +38,18 @@ export default function HistoryScreen() {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadGames();
+    setRefreshing(false);
+  };
+
   const handleEditGame = (game: GameRecord) => {
-    // 編集画面への遷移（今後実装）
-    Alert.alert('編集機能', 'この機能は今後実装予定です');
+    // 編集画面への遷移
+    router.push({
+      pathname: '/(tabs)/edit-game',
+      params: { gameId: game.id }
+    });
   };
 
   const handleDeleteGame = (gameId: string) => {
@@ -60,6 +75,28 @@ export default function HistoryScreen() {
     );
   };
 
+  // ゲームを年別にグループ化
+  const groupGamesByYear = (games: GameRecord[]): GameGroup[] => {
+    const groups: { [key: number]: GameRecord[] } = {};
+    
+    games.forEach(game => {
+      const year = new Date(game.date).getFullYear();
+      if (!groups[year]) {
+        groups[year] = [];
+      }
+      groups[year].push(game);
+    });
+
+    // 年別にソート（新しい年順）
+    return Object.keys(groups)
+      .map(year => parseInt(year))
+      .sort((a, b) => b - a)
+      .map(year => ({
+        year,
+        games: groups[year].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      }));
+  };
+
   const GameCard = ({ game }: { game: GameRecord }) => {
     // プレイヤー情報から統計を計算
     const mainPlayer = game.players.find(p => p.isMainAccount);
@@ -73,6 +110,11 @@ export default function HistoryScreen() {
       rankCounts[p.rank as keyof typeof rankCounts]++;
     });
 
+    // 日付をフォーマット
+    const gameDate = new Date(game.date);
+    const month = gameDate.getMonth() + 1;
+    const day = gameDate.getDate();
+
     return (
       <TouchableOpacity 
         style={styles.gameCard}
@@ -84,16 +126,8 @@ export default function HistoryScreen() {
             <View style={styles.dateContainer}>
               <Calendar size={18} color="#FF6B35" />
               <Text style={styles.gameDate}>
-                {new Date(game.date).toLocaleDateString('ja-JP', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric'
-                })}
+                {month}月{day}日
               </Text>
-            </View>
-            <View style={styles.locationInfo}>
-              <MapPin size={14} color="#8E8E93" />
-              <Text style={styles.locationText}>{game.location}</Text>
             </View>
             <Text style={styles.gameTypeText}>{game.gameType}</Text>
           </View>
@@ -144,6 +178,15 @@ export default function HistoryScreen() {
     );
   };
 
+  const GameGroup = ({ group }: { group: GameGroup }) => (
+    <View style={styles.yearGroup}>
+      <Text style={styles.yearTitle}>{group.year}年</Text>
+      {group.games.map((game) => (
+        <GameCard key={game.id} game={game} />
+      ))}
+    </View>
+  );
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -151,6 +194,8 @@ export default function HistoryScreen() {
       </View>
     );
   }
+
+  const gameGroups = groupGamesByYear(games);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
@@ -184,9 +229,17 @@ export default function HistoryScreen() {
           style={styles.gamesList}
           contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#FF6B35']}
+              tintColor="#FF6B35"
+            />
+          }
         >
-          {games.map((game) => (
-            <GameCard key={game.id} game={game} />
+          {gameGroups.map((group) => (
+            <GameGroup key={group.year} group={group} />
           ))}
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -274,7 +327,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -301,16 +354,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1C1C1E',
-  },
-  locationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
-  locationText: {
-    fontSize: 14,
-    color: '#6D6D70',
   },
   gameTypeText: {
     fontSize: 12,
@@ -439,5 +482,15 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 20,
+  },
+  yearGroup: {
+    marginBottom: 24,
+  },
+  yearTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
 });

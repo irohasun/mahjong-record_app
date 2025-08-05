@@ -13,31 +13,61 @@ export interface Database {
         Row: {
           id: string
           username: string
-          created_at: string
+          email: string | null
+          email_verified: boolean
+          avatar_url: string | null
+          phone: string | null
+          date_of_birth: string | null
+          preferred_language: string
+          timezone: string
+          last_login_at: string | null
+          status: string
+          metadata: Json
           is_premium: boolean
           purchase_date: string | null
           monthly_game_count: number
           last_reset_date: string
+          created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          username: string
-          created_at?: string
+          username?: string
+          email?: string | null
+          email_verified?: boolean
+          avatar_url?: string | null
+          phone?: string | null
+          date_of_birth?: string | null
+          preferred_language?: string
+          timezone?: string
+          last_login_at?: string | null
+          status?: string
+          metadata?: Json
           is_premium?: boolean
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
+          created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           username?: string
-          created_at?: string
+          email?: string | null
+          email_verified?: boolean
+          avatar_url?: string | null
+          phone?: string | null
+          date_of_birth?: string | null
+          preferred_language?: string
+          timezone?: string
+          last_login_at?: string | null
+          status?: string
+          metadata?: Json
           is_premium?: boolean
           purchase_date?: string | null
           monthly_game_count?: number
           last_reset_date?: string
+          created_at?: string
           updated_at?: string
         }
       }
@@ -55,6 +85,7 @@ export interface Database {
           final_riichi_sticks: number
           final_honba: number
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -62,13 +93,14 @@ export interface Database {
           date: string
           location?: string | null
           game_type: string
-          rules: Json
+          rules?: Json
           memo?: string | null
           duration_minutes?: number | null
           game_end_condition?: string
           final_riichi_sticks?: number
           final_honba?: number
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -83,6 +115,7 @@ export interface Database {
           final_riichi_sticks?: number
           final_honba?: number
           created_at?: string
+          updated_at?: string
         }
       }
       player_records: {
@@ -95,6 +128,7 @@ export interface Database {
           rank: number
           starting_position: string
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -105,6 +139,7 @@ export interface Database {
           rank: number
           starting_position: string
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -115,6 +150,7 @@ export interface Database {
           rank?: number
           starting_position?: string
           created_at?: string
+          updated_at?: string
         }
       }
       round_records: {
@@ -133,6 +169,7 @@ export interface Database {
           yakuman: boolean
           memo: string | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -143,12 +180,13 @@ export interface Database {
           winner?: number | null
           loser?: number | null
           hand_type: string
-          points: Json
+          points?: Json
           han?: number | null
           fu?: number | null
           yakuman?: boolean
           memo?: string | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -165,15 +203,75 @@ export interface Database {
           yakuman?: boolean
           memo?: string | null
           created_at?: string
+          updated_at?: string
         }
       }
-
+      user_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          display_name: string | null
+          bio: string | null
+          location: string | null
+          website: string | null
+          social_links: Json
+          preferences: Json
+          privacy_settings: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          display_name?: string | null
+          bio?: string | null
+          location?: string | null
+          website?: string | null
+          social_links?: Json
+          preferences?: Json
+          privacy_settings?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          display_name?: string | null
+          bio?: string | null
+          location?: string | null
+          website?: string | null
+          social_links?: Json
+          preferences?: Json
+          privacy_settings?: Json
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_player_stats: {
+        Args: {
+          user_id: string
+          period_start?: string
+          period_end?: string
+        }
+        Returns: Json
+      }
+      get_chart_data: {
+        Args: {
+          user_id: string
+          period_start?: string
+          period_end?: string
+        }
+        Returns: Json
+      }
+      reset_monthly_game_count: {
+        Args: Record<string, never>
+        Returns: void
+      }
     }
     Enums: {
       [_ in never]: never

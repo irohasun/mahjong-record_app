@@ -113,6 +113,11 @@ export class MockDataService {
   /**
    * 対局履歴用のゲーム記録データ
    */
+  static getMockGame(gameId: string): GameRecord | null {
+    const games = this.generateMockGameRecords();
+    return games.find(game => game.id === gameId) || null;
+  }
+
   static generateMockGameRecords(): GameRecord[] {
     const gameTypes = ['東南戦', '東風戦'] as const;
     const locations = ['雀荘ドラゴン', '雀荘フェニックス', '雀荘タイガー'];
