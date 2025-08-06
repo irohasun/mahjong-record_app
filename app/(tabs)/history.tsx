@@ -52,7 +52,7 @@ export default function HistoryScreen() {
     });
   };
 
-  const handleDeleteGame = (gameId: string) => {
+  const handleDeleteGame = async (gameId: string) => {
     Alert.alert(
       '対局記録を削除',
       'この対局記録を削除しますか？',
@@ -63,10 +63,12 @@ export default function HistoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // 削除処理（今後実装）
-              loadGames();
+              const user = await ensureAuthenticated();
+              await GameService.deleteGame(user.id, gameId);
+              await loadGames();
               Alert.alert('削除完了', '対局記録を削除しました');
             } catch (error) {
+              console.error('Failed to delete game:', error);
               Alert.alert('エラー', '削除に失敗しました');
             }
           }
@@ -174,6 +176,16 @@ export default function HistoryScreen() {
             </View>
           </View>
         </View>
+        {/* 削除ボタン - カードの右上に配置 */}
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleDeleteGame(game.id);
+          }}
+        >
+          <Trash2 size={16} color="#FF4444" />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
@@ -492,5 +504,15 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     marginBottom: 12,
     paddingHorizontal: 4,
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
 });

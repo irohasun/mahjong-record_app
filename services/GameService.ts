@@ -190,6 +190,48 @@ export class GameService {
     }
   }
 
+  static async deleteGame(accountId: string, gameId: string): Promise<void> {
+    try {
+      // Supabaseが設定されていない場合はローカル削除として扱う
+      if (!isSupabaseConfigured) {
+        console.log('Mock delete: Game deleted locally');
+        return;
+      }
+
+      // 関連するレコードを削除（局記録、プレイヤー記録、ゲーム記録の順）
+      const { error: roundsError } = await supabase
+        .from('round_records')
+        .delete()
+        .eq('game_id', gameId);
+
+      if (roundsError) {
+        throw roundsError;
+      }
+
+      const { error: playersError } = await supabase
+        .from('player_records')
+        .delete()
+        .eq('game_id', gameId);
+
+      if (playersError) {
+        throw playersError;
+      }
+
+      const { error: gameError } = await supabase
+        .from('games')
+        .delete()
+        .eq('id', gameId)
+        .eq('account_id', accountId);
+
+      if (gameError) {
+        throw gameError;
+      }
+    } catch (error) {
+      console.error('Failed to delete game:', error);
+      throw error;
+    }
+  }
+
   static async updateGame(accountId: string, gameId: string, gameData: GameRecord): Promise<void> {
     try {
       if (!isSupabaseConfigured) {
