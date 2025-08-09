@@ -26,12 +26,8 @@ export default function HistoryScreen() {
   // 画面がフォーカスされた時にデータをリロード
   useFocusEffect(
     React.useCallback(() => {
-      // console.log('🔍 DEBUG: History screen focused, reloading games...');
-      // console.log('🔍 DEBUG: Current games count:', games.length);
-      // 少し遅延を入れてからデータを再読み込み
-      setTimeout(() => {
-        loadGames();
-      }, 100);
+      // フォーカス時に即時リロード
+      loadGames();
     }, [])
   );
 

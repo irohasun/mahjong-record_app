@@ -250,7 +250,10 @@ export default function EditGameScreen() {
         { 
           text: 'OK', 
           onPress: () => {
-            router.push('/(tabs)/history');
+            // DB反映のタイミング差分を避けるため、少し待ってから遷移
+            setTimeout(() => {
+              router.push('/(tabs)/history');
+            }, 200);
           }
         }
       ]);
