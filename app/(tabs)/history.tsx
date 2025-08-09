@@ -66,12 +66,11 @@ export default function HistoryScreen() {
   };
 
   const handleEditGame = (game: GameRecord) => {
-    // 編集画面への遷移（データを渡す）
+    // 履歴からのみ記録修正画面へ遷移（IDで開く）
     router.push({
-      pathname: '/(tabs)/add-game',
-      params: { 
-        editMode: 'true',
-        gameData: JSON.stringify(game)
+      pathname: '/(tabs)/edit-game',
+      params: {
+        gameId: game.id,
       }
     });
   };
@@ -80,8 +79,8 @@ export default function HistoryScreen() {
     // console.log('🔍 DEBUG: handleDeleteGame called with gameId:', gameId);
     
     Alert.alert(
-      '対局記録を削除',
-      'この対局記録を削除しますか？',
+      '',
+      'この対局履歴を削除しますか？',
       [
         { 
           text: 'キャンセル', 
@@ -154,20 +153,35 @@ export default function HistoryScreen() {
     // プレイヤー情報から統計を計算
     const mainPlayer = game.players.find(p => p.isMainAccount);
     const averageRank = mainPlayer ? mainPlayer.rank : 0;
-    const totalScoreChange = mainPlayer ? mainPlayer.finalScore - 25000 : 0;
+    const totalScoreChange = mainPlayer ? mainPlayer.finalScore: 0;
     const isPositive = totalScoreChange >= 0;
     
-    // 各半荘での着順をカウント
-    const rankCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
-    
-    // 各半荘での自分の着順をカウント
-    game.players.forEach(player => {
-      if (player.isMainAccount) {
-        rankCounts[player.rank as keyof typeof rankCounts]++;
+    // 各半荘での自分の着順をカウント（rounds の各行の点数から算出）
+    const rankCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as { [k: number]: number };
+    const mainIndex = game.players.findIndex(p => p.isMainAccount);
+    if (mainIndex !== -1 && game.rounds && game.rounds.length > 0) {
+      for (const r of game.rounds) {
+        const rawPoints = (r.points as any[]) || [];
+        if (rawPoints.length < 4) continue;
+        // 入力なし（null/undefined/空文字）が含まれる半荘はスキップ
+        const hasBlank = rawPoints.some((v) => v === null || v === undefined || v === '');
+        if (hasBlank) continue;
+        const points = rawPoints.map((v) => Number(v) || 0);
+        // ランク算出（同点は同順位）
+        const uniqueSorted = Array.from(new Set(points)).sort((a, b) => b - a);
+        const ranksByScore = new Map<number, number>();
+        uniqueSorted.forEach((score, idx) => ranksByScore.set(score, idx + 1));
+        const myScore = points[mainIndex] ?? 0;
+        const myRank = ranksByScore.get(myScore) ?? 4;
+        if (myRank >= 1 && myRank <= 4) rankCounts[myRank]++;
       }
-    });
-    
-    // console.log('🔍 DEBUG: GameCard - rankCounts:', rankCounts);
+    } else {
+      // rounds が無い古いデータは最終着順でカウント（1回分）
+      const main = game.players.find(p => p.isMainAccount);
+      if (main && main.rank >= 1 && main.rank <= 4) {
+        rankCounts[main.rank]++;
+      }
+    }
     
 
 
@@ -239,9 +253,7 @@ export default function HistoryScreen() {
             <View style={styles.rightSection}>
               <Text style={styles.rankDistributionTitle}>着順</Text>
               <View style={styles.rankDistribution}>
-                {[1, 2, 3, 4].map(rank => {
-                  console.log(`🔍 DEBUG: Rank ${rank} - count: ${rankCounts[rank as keyof typeof rankCounts]}`);
-                  return (
+                {[1, 2, 3, 4].map(rank => (
                     <View key={rank} style={styles.rankBadge}>
                       <Text style={[
                         styles.rankNumber,
@@ -256,8 +268,7 @@ export default function HistoryScreen() {
                         {rankCounts[rank as keyof typeof rankCounts]}
                       </Text>
                     </View>
-                  );
-                })}
+                  ))}
               </View>
             </View>
           </View>

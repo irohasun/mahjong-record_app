@@ -198,6 +198,19 @@ export default function StatisticsScreen() {
     );
   }
 
+  // 最高収支（最高得点から25000を差し引いた値）
+  const highestRevenue: number | null =
+    typeof stats?.highestScore === 'number' ? stats.highestScore : null;
+  // 平均収支（平均最終得点から25000を差し引いた値）
+  const averageRevenue: number | null =
+    typeof stats?.averageScore === 'number' ? stats.averageScore : null;
+
+  // 合計収支（平均収支 × 総対局数）
+  const totalRevenue: number | null =
+    typeof stats?.averageScore === 'number' && typeof stats?.totalGames === 'number'
+      ? stats.averageScore * stats.totalGames
+      : null;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
       <View style={styles.header}>
@@ -244,8 +257,12 @@ export default function StatisticsScreen() {
                   color="#10B981"
                 />
                 <StatCard
-                  title="平均得点"
-                  value={stats.averageScore?.toFixed(0) || '-'}
+                  title="合計収支"
+                  value={
+                    totalRevenue !== null
+                      ? `${totalRevenue > 0 ? '+' : ''}${Math.round(totalRevenue)}`
+                      : '-'
+                  }
                   icon={Target}
                   color="#F59E0B"
                 />
@@ -262,21 +279,29 @@ export default function StatisticsScreen() {
                   <View style={styles.chartContainer}>
                     <LineChart
                       data={{
-                        labels: chartData.ranks.map((_: any, index: number) => `${index + 1}回目`),
+                        // 横軸は数字のみ表示（単位は下に表示）
+                        labels: chartData.ranks.map((_: any, index: number) => `${index + 1}`),
                         datasets: [
                           {
-                            data: [
-                              ...chartData.ranks.map((rank: number) => 5 - rank), // 1位→4、2位→3、3位→2、4位→1に変換
-                              1, // 最小値として1を追加
-                              4, // 最大値として4を追加
-                            ],
+                            // 実データ
+                            data: chartData.ranks.map((rank: number) => 5 - rank),
                             color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
                             strokeWidth: 3,
+                            withDots: true,
+                          },
+                          {
+                            // y軸を1..4に固定させるためのダミー不可視データ（線幅0、透明色、点は非表示にする）
+                            data: [1, 4],
+                            color: () => 'rgba(0,0,0,0)',
+                            strokeWidth: 0,
+                            withDots: false,
                           },
                         ],
                       }}
                       width={screenWidth - 40}
                       height={220}
+          
+            
                       chartConfig={{
                         backgroundColor: '#FFFFFF',
                         backgroundGradientFrom: '#FFFFFF',
@@ -289,15 +314,16 @@ export default function StatisticsScreen() {
                         },
                         propsForDots: {
                           r: '4',
-                          strokeWidth: '2',
-                          stroke: '#FF6B35',
+                          // 透過データセットの点が縁取りで見えないようにする
+                          strokeWidth: '0',
+                          stroke: 'transparent',
                         },
                         propsForBackgroundLines: {
                           strokeDasharray: '',
                           stroke: '#F2F2F7',
                           strokeWidth: 1,
                         },
-                        count: 4,
+                        // y軸は明示的に1〜4に固定（yAxisMin/yAxisMaxで制御）
                       }}
                       bezier
                       style={styles.chart}
@@ -309,6 +335,9 @@ export default function StatisticsScreen() {
                       withHorizontalLines={true}
                       fromZero={false}
                       segments={3}
+                      // y軸範囲を1..4に固定した見た目にするため、ダミーデータで下限1・上限4を確保
+                      // （react-native-chart-kitにyAxisMin/yAxisMaxがないため）
+                      // データはdatasetsにのみ含まれ、labelsは実データ数に合わせています
                       yAxisSuffix="位"
                       yAxisInterval={1}
                       yLabelsOffset={10}
@@ -323,9 +352,9 @@ export default function StatisticsScreen() {
                         if (originalRank === 4) return '4';
                         return `${originalRank}`;
                       }}
-                    />
+                      />
                     <Text style={styles.chartSubtext}>
-                      {chartData.ranks.length}回の対局データ
+                      {chartData.ranks.length}回の対局
                     </Text>
                   </View>
                 </View>
@@ -335,9 +364,16 @@ export default function StatisticsScreen() {
                 <Text style={styles.sectionTitle}>詳細成績</Text>
                 <View style={styles.detailCard}>
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>最高得点</Text>
-                    <Text style={[styles.detailValue, styles.firstPlaceValue]}>
-                      {stats.highestScore ? `+${stats.highestScore}` : '-'}
+                    <Text style={styles.detailLabel}>最高収支</Text>
+                    <Text
+                      style={[
+                        styles.detailValue,
+                        (highestRevenue ?? 0) >= 0 ? styles.firstPlaceValue : styles.fourthPlaceValue,
+                      ]}
+                    >
+                      {highestRevenue !== null
+                        ? `${highestRevenue > 0 ? '+' : ''}${highestRevenue.toLocaleString()}`
+                        : '-'}
                     </Text>
                   </View>
                   <View style={styles.detailRow}>
@@ -618,6 +654,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 40,
   },
+  
   detailsSection: {
     paddingHorizontal: 20,
     paddingTop: 30,

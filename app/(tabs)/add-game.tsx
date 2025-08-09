@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image } from 'react-native';
-import { Save, Calendar, Plus, X, Camera } from 'lucide-react-native';
+import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -224,13 +224,8 @@ export default function AddGameScreen() {
       });
       setScores(tempScores);
     } else {
-      // 既存データに半荘ごとの情報が無い場合は、最終スコアを参照（合算しない）
-      const finalScores = editGameData.players.map((player: any) => player.finalScore - 25000);
-      const tempScores = Array(3).fill(null).map(() => Array(4).fill(''));
-      finalScores.forEach((score: number, index: number) => {
-        tempScores[0][index] = score.toString();
-      });
-      setScores(tempScores);
+      // 既存データに半荘ごとの情報が無い場合のフォールバック（空の行）
+      setScores(Array(3).fill(null).map(() => Array(4).fill('')));
     }
     
     // console.log('🔍 DEBUG: Game data loaded successfully');
@@ -262,10 +257,10 @@ export default function AddGameScreen() {
       }
       // console.log('🔍 DEBUG: User authenticated successfully:', user.id);
       
-      // console.log('🔍 DEBUG: Creating player data...');
+      // 収支をそのまま保存（ベース点の加減算はしない）
       const playersData = players.map((name, index) => ({
-        name: index === 0 ? '自分' : `プレイヤー${index + 1}`,
-        finalScore: 25000 + calculateSubtotal(index),
+        name: index === 0 ? (players[0] || '自分') : `P${index + 1}`,
+        finalScore: calculateSubtotal(index),
         rank: 1,
         isMainAccount: index === 0,
         startingPosition: ['East', 'South', 'West', 'North'][index] as 'East' | 'South' | 'West' | 'North'
@@ -287,7 +282,13 @@ export default function AddGameScreen() {
         honba: 0,
         riichiSticks: 0,
         handType: 'draw' as const,
-        points: row.map((v) => parseInt(v) || 0),
+        // 空欄は0で保存せず、nullとして保存して集計対象外にする
+        points: row.map((v) => {
+          const s = String(v ?? '').trim();
+          if (s === '') return null as any;
+          const n = parseInt(s);
+          return (isNaN(n) ? 0 : n) as any;
+        }),
       }));
 
       const gameRecord = {
@@ -541,11 +542,23 @@ export default function AddGameScreen() {
                       })()
                     ]}>
                       {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                        ? (customKeyboardValue || '±0')
-                        : (scores[hanchanIndex][playerIndex] || '±0')
+                        ? (customKeyboardValue || '')
+                        : String(scores[hanchanIndex][playerIndex] ?? '')
                       }
                     </Text>
                   </TouchableOpacity>
+                  {playerIndex === 3 && (() => {
+                    const row = scores[hanchanIndex] || [];
+                    const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
+                    if (!hasAny) return null;
+                    const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
+                    const ok = sum === 0;
+                    return (
+                      <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
+                        {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
+                      </View>
+                    );
+                  })()}
                 </View>
               ))}
             </View>
@@ -842,6 +855,7 @@ const styles = StyleSheet.create({
   playerScoreContainer: {
     flex: 1,
     alignItems: 'center',
+    position: 'relative',
   },
   scoreCell: {
     backgroundColor: '#F8F9FA',
@@ -903,6 +917,27 @@ const styles = StyleSheet.create({
   totalText: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  statusBadge: {
+    marginTop: 4,
+    alignSelf: 'center',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  okBadge: {
+    backgroundColor: '#10B981',
+  },
+  ngBadge: {
+    backgroundColor: '#EF4444',
+  },
+  statusBadgeRight: {
+    position: 'absolute',
+    right: -14,
+    top: '50%',
+    transform: [{ translateY: -7 }],
   },
   customKeyboardOverlay: {
     position: 'absolute',

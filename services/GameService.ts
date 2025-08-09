@@ -38,7 +38,7 @@ export class GameService {
         game_type: gameData.gameType,
         rules: gameData.rules as any, // as Json
         memo: gameData.memo,
-        duration_minutes: gameData.duration,
+        duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
         game_end_condition: gameData.gameEndCondition,
         final_riichi_sticks: gameData.finalRiichiSticks,
         final_honba: gameData.finalHonba,
@@ -258,7 +258,7 @@ export class GameService {
           game_type: gameData.gameType,
           rules: gameData.rules as any,
           memo: gameData.memo,
-          duration_minutes: gameData.duration,
+          duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
           game_end_condition: gameData.gameEndCondition,
           final_riichi_sticks: gameData.finalRiichiSticks,
           final_honba: gameData.finalHonba,
@@ -532,6 +532,7 @@ export class GameService {
           avoidLastRate: 0,
           highestScore: 0,
           lowestScore: 0,
+          maxConsecutiveWins: 0,
           rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
         };
       }
@@ -563,10 +564,11 @@ export class GameService {
         return acc;
       }, {} as { [key: number]: number });
 
+      const averageScore = totalScore / totalGames;
       const result = {
         totalGames,
         averageRank: totalRank / totalGames,
-        averageScore: totalScore / totalGames,
+        averageScore,
         firstPlaceRate: firstPlaceCount / totalGames,
         topTwoRate: topTwoCount / totalGames,
         avoidLastRate: avoidLastCount / totalGames,

@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
-import { Save, Calendar, Plus, X } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { GameRecord } from '@/types/GameRecord';
+import * as ImagePicker from 'expo-image-picker';
+import { AccountService } from '@/services/AccountService';
 
 export default function EditGameScreen() {
   const router = useRouter();
@@ -26,12 +28,32 @@ export default function EditGameScreen() {
   const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
   const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
-  const [gameType, setGameType] = useState<'東南戦' | '東風戦'>('東南戦');
+  // 追加画面と同一のUIに合わせる（ゲームタイプ選択は表示しない）
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // ゲームデータを読み込む
   useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+    const showEvt = Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow';
+    const hideEvt = Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide';
+    const showSub = Keyboard.addListener(showEvt, (e: any) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e?.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    });
     loadGameData();
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, [gameId]);
+  const [gamePhoto, setGamePhoto] = useState<string | null>(null);
+
 
   const loadGameData = async () => {
     try {
@@ -40,11 +62,15 @@ export default function EditGameScreen() {
       if (game) {
         setGameData(game);
         setGameDate(new Date(game.date));
-        setGameType(game.gameType);
+        // UI統一のためゲームタイプ選択は表示しない
         
-        // プレイヤー名を設定
-        const playerNames = game.players.map(p => p.name);
-        setPlayers(playerNames);
+        // プレイヤー名を設定（自分=アカウント名、他= P2/P3/P4）
+        try {
+          const account = await AccountService.getAccount();
+          setPlayers([account.username || '自分', 'P2', 'P3', 'P4']);
+        } catch {
+          setPlayers(['自分', 'P2', 'P3', 'P4']);
+        }
         
         // スコアデータを設定（各半荘をそのままの行として表示）
         if (game.rounds && game.rounds.length > 0) {
@@ -52,7 +78,7 @@ export default function EditGameScreen() {
           setHanchanCount(roundCount);
           const newScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
           game.rounds.forEach((r, idx) => {
-            const row = (r.points as number[]).map((n) => (n ?? 0).toString());
+            const row = (r.points as any[]).map((n) => (n === null || n === undefined ? '' : String(n)));
             for (let i = 0; i < 4; i++) newScores[idx][i] = row[i] ?? '';
           });
           setScores(newScores);
@@ -170,26 +196,25 @@ export default function EditGameScreen() {
 
   const calculateSubtotal = (playerIndex: number): number => {
     return scores.reduce((total, hanchanScores) => {
-      const score = parseInt(hanchanScores[playerIndex]) || 0;
-      return total + score;
+      const raw = String(hanchanScores[playerIndex] ?? '').trim();
+      if (raw === '') return total; // 空欄は集計対象外
+      const n = parseInt(raw);
+      return total + (isNaN(n) ? 0 : n);
     }, 0);
   };
 
   const handleSave = async () => {
-    console.log('🔍 DEBUG: handleSave called - Starting game record update');
+    
     
     if (!gameData) {
-      console.error('❌ DEBUG: No game data available');
+      
       return;
     }
 
     setLoading(true);
     try {
-      console.log('🔍 DEBUG: Authenticating user...');
       const user = await ensureAuthenticated();
-      console.log('🔍 DEBUG: User authenticated:', user.id);
       
-      console.log('🔍 DEBUG: Creating player data...');
       // プレイヤーデータを構築
       const playerData = players.map((playerName, index) => ({
         name: playerName,
@@ -198,42 +223,26 @@ export default function EditGameScreen() {
         rank: 1, // 簡略化のため固定
         startingPosition: ['East', 'South', 'West', 'North'][index] as any
       }));
-      console.log('🔍 DEBUG: Player data created:', playerData);
-
-      console.log('🔍 DEBUG: Creating updated game data...');
-      // ゲームデータを更新
+      // 追加画面と同一の構成でデータを更新（ゲームタイプは既存値を維持）
       const updatedGame = {
         ...gameData,
         date: gameDate.toISOString(),
-        gameType: gameType,
+        gameType: gameData.gameType,
         players: playerData,
         // 他のフィールドは既存のデータを使用
       };
-      console.log('🔍 DEBUG: Updated game data created:', {
-        id: updatedGame.id,
-        date: updatedGame.date,
-        playerCount: updatedGame.players.length
-      });
-
-      console.log('🔍 DEBUG: Calling GameService.updateGame...');
       await GameService.updateGame(user.id, gameId, updatedGame);
-      console.log('🔍 DEBUG: Game updated successfully');
       
-      Alert.alert('保存完了', undefined, [
+      Alert.alert('修正完了', undefined, [
         { 
           text: 'OK', 
           onPress: () => {
-            console.log('🔍 DEBUG: Navigating to history screen');
             router.push('/(tabs)/history');
           }
         }
       ]);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to update game:', error);
-      console.error('❌ DEBUG: Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
+      console.error('Failed to update game');
       Alert.alert('エラー', '対局記録の修正に失敗しました');
     } finally {
       setLoading(false);
@@ -262,15 +271,17 @@ export default function EditGameScreen() {
       >
         <ScrollView
           style={styles.container}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
-          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 + keyboardHeight }}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
         {/* ヘッダー */}
         <View style={styles.header}>
           <Text style={styles.title}>記録修正</Text>
         </View>
 
-        {/* 日付とゲームタイプ */}
+        {/* 日付 */}
         <View style={styles.infoCard}>
           <TouchableOpacity 
             style={styles.dateContainer}
@@ -281,41 +292,47 @@ export default function EditGameScreen() {
               {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
             </Text>
           </TouchableOpacity>
-          
-          {/* ゲームタイプ選択 */}
-          <View style={styles.gameTypeContainer}>
-            <Text style={styles.gameTypeLabel}>ゲームタイプ</Text>
-            <View style={styles.gameTypeButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.gameTypeButton,
-                  gameType === '東南戦' && styles.gameTypeButtonActive
-                ]}
-                onPress={() => setGameType('東南戦')}
-              >
-                <Text style={[
-                  styles.gameTypeButtonText,
-                  gameType === '東南戦' && styles.gameTypeButtonTextActive
-                ]}>
-                  東南戦
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.gameTypeButton,
-                  gameType === '東風戦' && styles.gameTypeButtonActive
-                ]}
-                onPress={() => setGameType('東風戦')}
-              >
-                <Text style={[
-                  styles.gameTypeButtonText,
-                  gameType === '東風戦' && styles.gameTypeButtonTextActive
-                ]}>
-                  東風戦
-                </Text>
+        </View>
+
+        {/* 写真選択（追加画面と同一UI） */}
+        <View style={styles.photoCard}>
+          <Text style={styles.photoLabel}>対局写真</Text>
+          {gamePhoto ? (
+            <View style={styles.photoContainer}>
+              <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
+              <TouchableOpacity style={styles.removePhotoButton} onPress={() => setGamePhoto(null)}>
+                <X size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-          </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.addPhotoButton}
+              onPress={async () => {
+                try {
+                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (status !== 'granted') {
+                    Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
+                    return;
+                  }
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    allowsEditing: true,
+                    aspect: [4, 3],
+                    quality: 0.8,
+                  });
+                  if (!result.canceled && result.assets[0]) {
+                    setGamePhoto(result.assets[0].uri);
+                  }
+                } catch (e) {
+                  console.error('写真選択エラー:', e);
+                  Alert.alert('エラー', '写真の選択に失敗しました');
+                }
+              }}
+            >
+              <Camera size={24} color="#FF6B35" />
+              <Text style={styles.addPhotoText}>写真を追加</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* スコア表 */}
@@ -330,7 +347,9 @@ export default function EditGameScreen() {
                   {editingPlayerName === playerIndex ? (
                     <TextInput
                       style={styles.playerNameInput}
-                      value={players[playerIndex]}
+                      value={
+                        playerIndex === 0 ? players[0] : `P${playerIndex + 1}`
+                      }
                       onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
                       onBlur={() => handlePlayerNameSave(playerIndex)}
                       onEndEditing={() => handlePlayerNameSave(playerIndex)}
@@ -345,7 +364,9 @@ export default function EditGameScreen() {
                       style={styles.playerNameButton}
                     >
                       <Text style={styles.headerText}>
-                        {players[playerIndex] || (playerIndex === 0 ? '自分' : `P${playerIndex + 1}`)}
+                        {playerIndex === 0
+                          ? players[0] || '自分'
+                          : `P${playerIndex + 1}`}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -395,11 +416,23 @@ export default function EditGameScreen() {
                       })()
                     ]}>
                       {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                        ? (customKeyboardValue || '±0')
-                        : (scores[hanchanIndex][playerIndex] || '±0')
+                        ? (customKeyboardValue || '')
+                        : String(scores[hanchanIndex][playerIndex] ?? '')
                       }
                     </Text>
                   </TouchableOpacity>
+                  {playerIndex === 3 && (() => {
+                    const row = scores[hanchanIndex] || [];
+                    const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
+                    if (!hasAny) return null;
+                    const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
+                    const ok = sum === 0;
+                    return (
+                      <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
+                        {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
+                      </View>
+                    );
+                  })()}
                 </View>
               ))}
             </View>
@@ -442,16 +475,16 @@ export default function EditGameScreen() {
       </ScrollView>
       
       {/* 保存ボタン */}
-      <View style={styles.saveButtonContainer}>
-        <TouchableOpacity 
-          style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
-          onPress={handleSave}
-          disabled={loading}
-        >
-          <Save size={20} color="#FFF" />
-          <Text style={styles.saveButtonText}>修正する</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.saveButtonContainer}>
+          <TouchableOpacity 
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Save size={20} color="#FFF" />
+            <Text style={styles.saveButtonText}>修正</Text>
+          </TouchableOpacity>
+        </View>
 
       {/* カスタムキーボード */}
       {showCustomKeyboard && (
@@ -712,6 +745,7 @@ const styles = StyleSheet.create({
   playerScoreContainer: {
     flex: 1,
     alignItems: 'center',
+    position: 'relative',
   },
   scoreCell: {
     backgroundColor: '#F8F9FA',
@@ -774,6 +808,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  statusBadge: {
+    marginTop: 4,
+    alignSelf: 'center',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  okBadge: {
+    backgroundColor: '#10B981',
+  },
+  ngBadge: {
+    backgroundColor: '#EF4444',
+  },
+  statusBadgeRight: {
+    position: 'absolute',
+    right: -14,
+    top: '50%',
+    transform: [{ translateY: -7 }],
+  },
   customKeyboardOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -819,6 +874,59 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#FFF',
+  },
+  photoCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  photoLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 12,
+  },
+  photoContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  gamePhoto: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  addPhotoText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF6B35',
   },
   gameTypeContainer: {
     marginTop: 16,
