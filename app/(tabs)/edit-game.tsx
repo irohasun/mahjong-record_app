@@ -220,9 +220,22 @@ export default function EditGameScreen() {
         name: playerName,
         isMainAccount: index === 0,
         finalScore: calculateSubtotal(index),
-        rank: 1, // 簡略化のため固定
+        rank: 1,
         startingPosition: ['East', 'South', 'West', 'North'][index] as any
       }));
+
+      // 同点は同順位（dense ranking）でrankを再計算
+      const sortedPlayers = [...playerData].sort((a, b) => b.finalScore - a.finalScore);
+      let currentRank = 0;
+      let lastScore: number | null = null;
+      sortedPlayers.forEach((p) => {
+        if (lastScore === null || p.finalScore < lastScore) {
+          currentRank += 1;
+          lastScore = p.finalScore;
+        }
+        const originalIndex = playerData.findIndex(x => x.name === p.name && x.isMainAccount === p.isMainAccount);
+        playerData[originalIndex].rank = currentRank;
+      });
       // 追加画面と同一の構成でデータを更新（ゲームタイプは既存値を維持）
       const updatedGame = {
         ...gameData,

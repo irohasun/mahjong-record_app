@@ -267,11 +267,17 @@ export default function AddGameScreen() {
       }));
       // console.log('🔍 DEBUG: Player data created:', playersData);
       
-      // console.log('🔍 DEBUG: Calculating player ranks...');
+      // 同点は同順位（dense ranking）
       const sortedPlayers = [...playersData].sort((a, b) => b.finalScore - a.finalScore);
-      sortedPlayers.forEach((player, idx) => {
+      let currentRank = 0;
+      let lastScore: number | null = null;
+      sortedPlayers.forEach((player) => {
+        if (lastScore === null || player.finalScore < lastScore) {
+          currentRank += 1;
+          lastScore = player.finalScore;
+        }
         const originalIndex = playersData.findIndex(p => p.name === player.name && p.isMainAccount === player.isMainAccount);
-        playersData[originalIndex].rank = idx + 1;
+        playersData[originalIndex].rank = currentRank;
       });
       // console.log('🔍 DEBUG: Player ranks calculated:', playersData);
       
