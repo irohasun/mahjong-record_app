@@ -36,6 +36,7 @@ export interface GameRecord {
   memo?: string;
   duration?: number; // ゲーム時間（分）
   gameEndCondition: 'normal' | 'bankruptcy' | 'timeout' | 'time_limit'; // 終了条件
+  photoPath?: string; // ストレージ上の写真パス
 }
 
 export interface GameRules {

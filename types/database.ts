@@ -84,6 +84,7 @@ export interface Database {
           game_end_condition: string
           final_riichi_sticks: number
           final_honba: number
+          photo_path: string | null
           created_at: string
           updated_at: string
         }
@@ -99,6 +100,7 @@ export interface Database {
           game_end_condition?: string
           final_riichi_sticks?: number
           final_honba?: number
+          photo_path?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -114,6 +116,7 @@ export interface Database {
           game_end_condition?: string
           final_riichi_sticks?: number
           final_honba?: number
+          photo_path?: string | null
           created_at?: string
           updated_at?: string
         }

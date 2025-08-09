@@ -4,6 +4,7 @@ import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import { StorageService } from '@/services/StorageService';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
@@ -297,7 +298,7 @@ export default function AddGameScreen() {
         }),
       }));
 
-      const gameRecord = {
+      const gameRecord: any = {
         accountId: user.id,
         date: gameDate.toISOString(),
         location: '',
@@ -316,6 +317,15 @@ export default function AddGameScreen() {
         memo: '',
         gameEndCondition: 'normal' as const,
       };
+
+      // 写真アップロード（ある場合）
+      if (gamePhoto) {
+        try {
+          const tmpId = isEditMode && editGameData ? editGameData.id : `temp-${Date.now()}`;
+          const storagePath = await StorageService.uploadGamePhoto(user.id, tmpId, gamePhoto);
+          gameRecord.photoPath = storagePath;
+        } catch {}
+      }
       // console.log('🔍 DEBUG: Game record created:', {
       //   accountId: gameRecord.accountId,
       //   date: gameRecord.date,
@@ -329,7 +339,7 @@ export default function AddGameScreen() {
           // console.log('🔍 DEBUG: Updated game data:', gameRecord);
           
           try {
-            const updatedGameRecord = {
+            const updatedGameRecord: any = {
               ...gameRecord,
               id: editGameData.id,
             };

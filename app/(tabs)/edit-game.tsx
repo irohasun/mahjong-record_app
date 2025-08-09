@@ -8,6 +8,7 @@ import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { GameRecord } from '@/types/GameRecord';
 import * as ImagePicker from 'expo-image-picker';
+import { StorageService } from '@/services/StorageService';
 import { AccountService } from '@/services/AccountService';
 
 export default function EditGameScreen() {
@@ -74,6 +75,11 @@ export default function EditGameScreen() {
         
         // スコアデータを設定（各半荘をそのままの行として表示）
         if (game.rounds && game.rounds.length > 0) {
+        // 写真の事前表示
+        if (game.photoPath) {
+          const url = StorageService.getPublicUrl(game.photoPath);
+          if (url) setGamePhoto(url);
+        }
           const roundCount = game.rounds.length;
           setHanchanCount(roundCount);
           const newScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
@@ -216,7 +222,7 @@ export default function EditGameScreen() {
       const user = await ensureAuthenticated();
       
       // プレイヤーデータを構築
-      const playerData = players.map((playerName, index) => ({
+      const playerData: any[] = players.map((playerName, index) => ({
         name: playerName,
         isMainAccount: index === 0,
         finalScore: calculateSubtotal(index),
@@ -237,13 +243,21 @@ export default function EditGameScreen() {
         playerData[originalIndex].rank = currentRank;
       });
       // 追加画面と同一の構成でデータを更新（ゲームタイプは既存値を維持）
-      const updatedGame = {
+      const updatedGame: any = {
         ...gameData,
         date: gameDate.toISOString(),
         gameType: gameData.gameType,
         players: playerData,
         // 他のフィールドは既存のデータを使用
       };
+
+      // 写真が更新されていればアップロードしてパスを保存
+      if (gamePhoto) {
+        try {
+          const storagePath = await StorageService.uploadGamePhoto(user.id, gameId, gamePhoto);
+          updatedGame.photoPath = storagePath;
+        } catch {}
+      }
       await GameService.updateGame(user.id, gameId, updatedGame);
       
       Alert.alert('修正完了', undefined, [

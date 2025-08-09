@@ -42,6 +42,7 @@ export class GameService {
         game_end_condition: gameData.gameEndCondition,
         final_riichi_sticks: gameData.finalRiichiSticks,
         final_honba: gameData.finalHonba,
+        photo_path: (gameData as any).photoPath || null,
       };
 
       const { data: game, error: gameError } = await supabase
@@ -161,6 +162,7 @@ export class GameService {
         gameEndCondition: game.game_end_condition,
         finalRiichiSticks: game.final_riichi_sticks,
         finalHonba: game.final_honba,
+        photoPath: (game as any).photo_path || undefined,
         players: players.map(p => ({
           name: p.player_name,
           isMainAccount: p.is_main_account,
@@ -250,19 +252,24 @@ export class GameService {
 
       // ゲームデータを更新
       console.log('🔍 DEBUG: Updating game record in Supabase...');
+      const updatePayload: any = {
+        date: gameData.date,
+        location: gameData.location,
+        game_type: gameData.gameType,
+        rules: gameData.rules as any,
+        memo: gameData.memo,
+        duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
+        game_end_condition: gameData.gameEndCondition,
+        final_riichi_sticks: gameData.finalRiichiSticks,
+        final_honba: gameData.finalHonba,
+      };
+      if ((gameData as any).photoPath !== undefined) {
+        updatePayload.photo_path = (gameData as any).photoPath;
+      }
+
       const { error: gameError } = await supabase
         .from('games')
-        .update({
-          date: gameData.date,
-          location: gameData.location,
-          game_type: gameData.gameType,
-          rules: gameData.rules as any,
-          memo: gameData.memo,
-          duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
-          game_end_condition: gameData.gameEndCondition,
-          final_riichi_sticks: gameData.finalRiichiSticks,
-          final_honba: gameData.finalHonba,
-        })
+        .update(updatePayload)
         .eq('id', gameId)
         .eq('account_id', accountId);
 
@@ -394,6 +401,7 @@ export class GameService {
         location: game.location || '',
         gameType: game.game_type as '東風戦' | '東南戦',
         rules: game.rules as any,
+        photoPath: game.photo_path || undefined,
         players: game.player_records.map((p: any) => ({
           name: p.player_name,
           finalScore: p.final_score,
@@ -456,6 +464,7 @@ export class GameService {
         location: game.location || '',
         gameType: game.game_type as '東風戦' | '東南戦',
         rules: game.rules as any,
+        photoPath: (game as any).photo_path || undefined,
         players: game.player_records.map((p: any) => ({
           name: p.player_name,
           finalScore: p.final_score,

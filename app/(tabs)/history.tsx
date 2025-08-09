@@ -4,6 +4,7 @@ import { Calendar, Trash2, Plus } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { GameService } from '@/services/GameService';
+import { StorageService } from '@/services/StorageService';
 import { AuthService } from '@/services/AuthService';
 import { GameRecord } from '@/types/GameRecord';
 import { ensureAuthenticated } from '@/utils/authUtils';
@@ -226,7 +227,7 @@ export default function HistoryScreen() {
           onPress={() => handleEditGame(game)}
         >
           <View style={styles.cardContent}>
-            {/* 左側：日付情報 */}
+            {/* 左側：日付情報＋サムネイル */}
             <View style={styles.leftSection}>
               <View style={styles.dateContainer}>
                 <Calendar size={18} color="#FF6B35" />
@@ -234,6 +235,12 @@ export default function HistoryScreen() {
                   {month}月{day}日
                 </Text>
               </View>
+              {game.photoPath && (
+                <Image
+                  source={{ uri: (StorageService.getPublicUrl(game.photoPath) || '') }}
+                  style={{ width: 72, height: 72, borderRadius: 8, backgroundColor: '#F2F2F7' }}
+                />
+              )}
             </View>
 
             {/* 中央：成績サマリー */}
