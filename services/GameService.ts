@@ -380,7 +380,8 @@ export class GameService {
           round_records (*)
         `)
         .eq('account_id', accountId)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
 
       if (gamesError) {
         throw gamesError;
@@ -441,6 +442,7 @@ export class GameService {
         `)
         .eq('account_id', accountId)
         .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) {
