@@ -415,12 +415,14 @@ export default function StatisticsScreen() {
       {showDatePicker && selectedPeriod === 'month' && (
         <DateTimePicker
           value={selectedDate}
-          mode={selectedPeriod === 'month' ? 'date' : 'date'}
-          display="default"
+          mode="date"
+          display="spinner"
           onChange={(event, date) => {
             setShowDatePicker(false);
             if (date) {
-              setSelectedDate(date);
+              // 年月のみ利用するため、日付は1日に固定
+              const normalized = new Date(date.getFullYear(), date.getMonth(), 1);
+              setSelectedDate(normalized);
             }
           }}
         />
