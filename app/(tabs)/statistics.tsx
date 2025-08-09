@@ -40,9 +40,8 @@ export default function StatisticsScreen() {
       const user = await ensureAuthenticated();
       // console.log('🔍 DEBUG: User authenticated:', user.id);
       
-      // console.log('🔍 DEBUG: Loading player stats...');
-      const statsData = await GameService.getPlayerStats(user.id);
-      // console.log('🔍 DEBUG: Player stats loaded:', statsData);
+      // 半荘単位の統計（期間フィルタ付き）
+      const statsData = await GameService.getHanchanStats(user.id, selectedPeriod, selectedDate);
       
       // console.log('🔍 DEBUG: Loading chart data...');
       const chartData = await GameService.getChartData(user.id, selectedPeriod);
@@ -198,10 +197,9 @@ export default function StatisticsScreen() {
     );
   }
 
-  // 最高収支（最高得点から25000を差し引いた値）
+  // 最高収支・平均収支（最終得点=収支）
   const highestRevenue: number | null =
     typeof stats?.highestScore === 'number' ? stats.highestScore : null;
-  // 平均収支（平均最終得点から25000を差し引いた値）
   const averageRevenue: number | null =
     typeof stats?.averageScore === 'number' ? stats.averageScore : null;
 
@@ -354,7 +352,7 @@ export default function StatisticsScreen() {
                       }}
                       />
                     <Text style={styles.chartSubtext}>
-                      {chartData.ranks.length}回の対局
+                      {stats.totalGames}回の対局
                     </Text>
                   </View>
                 </View>

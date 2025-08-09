@@ -596,6 +596,130 @@ export class GameService {
     }
   }
 
+  static async getHanchanStats(
+    accountId: string,
+    period: 'month' | 'year' | 'all',
+    selectedDate: Date
+  ): Promise<PlayerStats> {
+    try {
+      if (accountId === 'dummy-user-id') {
+        return MockDataService.generateMockPlayerStats();
+      }
+
+      const { data: rounds, error } = await supabase
+        .from('round_records')
+        .select(`
+          points,
+          created_at,
+          games!inner (
+            account_id,
+            date
+          )
+        `)
+        .eq('games.account_id', accountId);
+
+      if (error) {
+        throw error;
+      }
+
+      // フィルタ: 期間
+      const filtered = (rounds as any[]).filter((r: any) => {
+        const d = new Date(r.games.date);
+        if (period === 'all') return true;
+        if (period === 'year') return d.getFullYear() === selectedDate.getFullYear();
+        // month
+        return (
+          d.getFullYear() === selectedDate.getFullYear() &&
+          d.getMonth() === selectedDate.getMonth()
+        );
+      });
+
+      // 有効半荘のみ（4人分そろっており、null/空でない）
+      const valid = filtered.filter((r: any) => {
+        const pts = (r.points as any[]) || [];
+        if (pts.length < 4) return false;
+        return !pts.some((v) => v === null || v === undefined || v === '');
+      });
+
+      if (valid.length === 0) {
+        return {
+          totalGames: 0,
+          averageRank: 0,
+          averageScore: 0,
+          firstPlaceRate: 0,
+          topTwoRate: 0,
+          avoidLastRate: 0,
+          highestScore: 0,
+          lowestScore: 0,
+          maxConsecutiveWins: 0,
+          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        };
+      }
+
+      // 日付・作成時刻順でソート（連荘計算用）
+      const sorted = [...valid].sort(
+        (a: any, b: any) => new Date(a.games.date).getTime() - new Date(b.games.date).getTime() || new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      let totalRounds = 0;
+      let totalRank = 0;
+      let totalScore = 0;
+      let firstPlaceCount = 0;
+      let topTwoCount = 0;
+      let avoidLastCount = 0;
+      let highestScore = -Infinity;
+      let lowestScore = Infinity;
+      const rankDistribution: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+      // 連荘（連続1位）
+      let maxConsecutiveWins = 0;
+      let currentConsecutiveWins = 0;
+
+      for (const r of sorted) {
+        const pts = (r.points as any[]).map((v) => Number(v) || 0);
+        const my = pts[0];
+        const uniqueSorted = Array.from(new Set(pts)).sort((a, b) => b - a);
+        const myRank = (uniqueSorted.indexOf(my) + 1) || 4;
+
+        totalRounds += 1;
+        totalRank += myRank;
+        totalScore += my;
+        highestScore = Math.max(highestScore, my);
+        lowestScore = Math.min(lowestScore, my);
+        rankDistribution[myRank] = (rankDistribution[myRank] || 0) + 1;
+        if (myRank === 1) firstPlaceCount += 1;
+        if (myRank <= 2) topTwoCount += 1;
+        if (myRank < 4) avoidLastCount += 1;
+
+        if (myRank === 1) {
+          currentConsecutiveWins += 1;
+          if (currentConsecutiveWins > maxConsecutiveWins) maxConsecutiveWins = currentConsecutiveWins;
+        } else {
+          currentConsecutiveWins = 0;
+        }
+      }
+
+      const averageRank = totalRounds > 0 ? totalRank / totalRounds : 0;
+      const averageScore = totalRounds > 0 ? totalScore / totalRounds : 0;
+
+      return {
+        totalGames: totalRounds,
+        averageRank,
+        averageScore,
+        firstPlaceRate: totalRounds > 0 ? firstPlaceCount / totalRounds : 0,
+        topTwoRate: totalRounds > 0 ? topTwoCount / totalRounds : 0,
+        avoidLastRate: totalRounds > 0 ? avoidLastCount / totalRounds : 0,
+        highestScore: isFinite(highestScore) ? highestScore : 0,
+        lowestScore: isFinite(lowestScore) ? lowestScore : 0,
+        maxConsecutiveWins,
+        rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
+      };
+    } catch (error) {
+      console.error('Failed to get hanchan stats:', error);
+      throw new Error('統計データの取得に失敗しました');
+    }
+  }
+
   static async getChartData(accountId: string, period: 'month' | 'year' | 'all') {
     console.log('🔍 DEBUG: GameService.getChartData called with:', { accountId, period });
     
