@@ -810,6 +810,46 @@ export class GameService {
     }
   }
 
+  static async getYearRange(accountId: string): Promise<{ minYear: number; maxYear: number } | null> {
+    try {
+      if (!isSupabaseConfigured || accountId === 'dummy-user-id') {
+        const mock = MockDataService.generateMockGameRecords();
+        if (mock.length === 0) return null;
+        const years = mock.map(g => new Date(g.date).getFullYear());
+        return { minYear: Math.min(...years), maxYear: Math.max(...years) };
+      }
+
+      // 最古の年
+      const { data: oldest, error: errOldest } = await supabase
+        .from('games')
+        .select('date')
+        .eq('account_id', accountId)
+        .order('date', { ascending: true })
+        .limit(1);
+
+      if (errOldest) throw errOldest;
+
+      // 最新の年
+      const { data: newest, error: errNewest } = await supabase
+        .from('games')
+        .select('date')
+        .eq('account_id', accountId)
+        .order('date', { ascending: false })
+        .limit(1);
+
+      if (errNewest) throw errNewest;
+
+      if (!oldest || oldest.length === 0 || !newest || newest.length === 0) return null;
+
+      const minYear = new Date(oldest[0].date as string).getFullYear();
+      const maxYear = new Date(newest[0].date as string).getFullYear();
+      return { minYear, maxYear };
+    } catch (error) {
+      console.error('Failed to get year range:', error);
+      return null;
+    }
+  }
+
   static async resetData(accountId: string): Promise<void> {
     try {
       // ダミーユーザーの場合は何もしない

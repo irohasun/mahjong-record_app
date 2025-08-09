@@ -17,6 +17,8 @@ export default function StatisticsScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [yearRange, setYearRange] = useState<{ minYear: number; maxYear: number } | null>(null);
+  const [showYearPicker, setShowYearPicker] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -40,6 +42,10 @@ export default function StatisticsScreen() {
       const user = await ensureAuthenticated();
       // console.log('🔍 DEBUG: User authenticated:', user.id);
       
+      // 年範囲の取得（全期間表示用）
+      const range = await GameService.getYearRange(user.id);
+      setYearRange(range);
+
       // 半荘単位の統計（期間フィルタ付き）
       const statsData = await GameService.getHanchanStats(user.id, selectedPeriod, selectedDate);
       
@@ -165,23 +171,30 @@ export default function StatisticsScreen() {
       </View>
       
       <View style={styles.dateSelectorContainer}>
-        {(selectedPeriod === 'month' || selectedPeriod === 'year') ? (
+        {selectedPeriod === 'month' ? (
           <TouchableOpacity
             style={styles.dateSelector}
             onPress={() => setShowDatePicker(true)}
           >
             <Text style={styles.dateSelectorText}>
-              {selectedPeriod === 'month' 
-                ? `${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月`
-                : `${selectedDate.getFullYear()}年`
-              }
+              {`${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月`}
+            </Text>
+            <ChevronDown size={16} color="#6D6D70" />
+          </TouchableOpacity>
+        ) : selectedPeriod === 'year' ? (
+          <TouchableOpacity
+            style={styles.dateSelector}
+            onPress={() => setShowYearPicker(true)}
+          >
+            <Text style={styles.dateSelectorText}>
+              {`${selectedDate.getFullYear()}年`}
             </Text>
             <ChevronDown size={16} color="#6D6D70" />
           </TouchableOpacity>
         ) : (
           <View style={styles.dateSelector}>
             <Text style={styles.dateSelectorText}>
-              2020 ~ 2025
+              {yearRange ? `${yearRange.minYear} ~ ${yearRange.maxYear}` : '-'}
             </Text>
           </View>
         )}
@@ -399,7 +412,7 @@ export default function StatisticsScreen() {
         ))}
       </ScrollView>
 
-      {showDatePicker && (
+      {showDatePicker && selectedPeriod === 'month' && (
         <DateTimePicker
           value={selectedDate}
           mode={selectedPeriod === 'month' ? 'date' : 'date'}
@@ -411,6 +424,38 @@ export default function StatisticsScreen() {
             }
           }}
         />
+      )}
+
+      {/* 年選択モーダル（簡易） */}
+      {showYearPicker && selectedPeriod === 'year' && (
+        <Modal transparent animationType="fade" onRequestClose={() => setShowYearPicker(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#FFF', borderRadius: 12, padding: 16, width: 280, maxHeight: 360 }}>
+              <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 12 }}>年を選択</Text>
+              <ScrollView style={{ maxHeight: 300 }}>
+                {(() => {
+                  const years: number[] = [];
+                  const min = yearRange?.minYear ?? selectedDate.getFullYear() - 10;
+                  const max = yearRange?.maxYear ?? selectedDate.getFullYear();
+                  for (let y = max; y >= min; y--) years.push(y);
+                  return years.map((y) => (
+                    <TouchableOpacity key={y} style={{ paddingVertical: 10 }} onPress={() => {
+                      const newDate = new Date(selectedDate);
+                      newDate.setFullYear(y);
+                      setSelectedDate(newDate);
+                      setShowYearPicker(false);
+                    }}>
+                      <Text style={{ fontSize: 16, color: '#1C1C1E' }}>{y}年</Text>
+                    </TouchableOpacity>
+                  ));
+                })()}
+              </ScrollView>
+              <TouchableOpacity style={{ alignSelf: 'flex-end', marginTop: 8 }} onPress={() => setShowYearPicker(false)}>
+                <Text style={{ color: '#FF6B35', fontWeight: '600' }}>閉じる</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
     </SafeAreaView>
   );
