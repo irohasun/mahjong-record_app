@@ -152,7 +152,6 @@ export default function HistoryScreen() {
     
     // プレイヤー情報から統計を計算
     const mainPlayer = game.players.find(p => p.isMainAccount);
-    const averageRank = mainPlayer ? mainPlayer.rank : 0;
     const totalScoreChange = mainPlayer ? mainPlayer.finalScore: 0;
     const isPositive = totalScoreChange >= 0;
     
@@ -182,6 +181,17 @@ export default function HistoryScreen() {
         rankCounts[main.rank]++;
       }
     }
+
+    // 平均着順（各半荘の自分の着順の平均）
+    const roundsPlayed = (rankCounts[1] || 0) + (rankCounts[2] || 0) + (rankCounts[3] || 0) + (rankCounts[4] || 0);
+    const averageRank = roundsPlayed > 0
+      ? (
+          1 * (rankCounts[1] || 0) +
+          2 * (rankCounts[2] || 0) +
+          3 * (rankCounts[3] || 0) +
+          4 * (rankCounts[4] || 0)
+        ) / roundsPlayed
+      : (mainPlayer ? mainPlayer.rank : 0);
     
 
 
