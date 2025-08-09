@@ -49,10 +49,10 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       const result = await AuthService.signUp(email.trim(), password);
-      
+
       Alert.alert(
-        'アカウント作成完了',
-        'アカウントが作成されました。メールアドレスの確認が完了次第、ログインできます。',
+        '登録完了',
+        undefined,
         [
           {
             text: 'OK',
