@@ -26,6 +26,7 @@ export default function EditGameScreen() {
   const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
   const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
+  const [gameType, setGameType] = useState<'東南戦' | '東風戦'>('東南戦');
 
   // ゲームデータを読み込む
   useEffect(() => {
@@ -39,16 +40,21 @@ export default function EditGameScreen() {
       if (game) {
         setGameData(game);
         setGameDate(new Date(game.date));
+        setGameType(game.gameType);
         
         // プレイヤー名を設定
         const playerNames = game.players.map(p => p.name);
         setPlayers(playerNames);
         
-        // スコアデータを設定（簡略化のため、最初の局のみ）
+        // スコアデータを設定（各半荘をそのままの行として表示）
         if (game.rounds && game.rounds.length > 0) {
-          const roundScores = game.rounds[0].points as number[];
-          const newScores = Array(hanchanCount).fill(null).map(() => Array(4).fill(''));
-          newScores[0] = roundScores.map(score => score.toString());
+          const roundCount = game.rounds.length;
+          setHanchanCount(roundCount);
+          const newScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
+          game.rounds.forEach((r, idx) => {
+            const row = (r.points as number[]).map((n) => (n ?? 0).toString());
+            for (let i = 0; i < 4; i++) newScores[idx][i] = row[i] ?? '';
+          });
           setScores(newScores);
         }
       }
@@ -170,12 +176,20 @@ export default function EditGameScreen() {
   };
 
   const handleSave = async () => {
-    if (!gameData) return;
+    console.log('🔍 DEBUG: handleSave called - Starting game record update');
+    
+    if (!gameData) {
+      console.error('❌ DEBUG: No game data available');
+      return;
+    }
 
     setLoading(true);
     try {
+      console.log('🔍 DEBUG: Authenticating user...');
       const user = await ensureAuthenticated();
+      console.log('🔍 DEBUG: User authenticated:', user.id);
       
+      console.log('🔍 DEBUG: Creating player data...');
       // プレイヤーデータを構築
       const playerData = players.map((playerName, index) => ({
         name: playerName,
@@ -184,22 +198,42 @@ export default function EditGameScreen() {
         rank: 1, // 簡略化のため固定
         startingPosition: ['East', 'South', 'West', 'North'][index] as any
       }));
+      console.log('🔍 DEBUG: Player data created:', playerData);
 
+      console.log('🔍 DEBUG: Creating updated game data...');
       // ゲームデータを更新
       const updatedGame = {
         ...gameData,
         date: gameDate.toISOString(),
+        gameType: gameType,
         players: playerData,
         // 他のフィールドは既存のデータを使用
       };
+      console.log('🔍 DEBUG: Updated game data created:', {
+        id: updatedGame.id,
+        date: updatedGame.date,
+        playerCount: updatedGame.players.length
+      });
 
+      console.log('🔍 DEBUG: Calling GameService.updateGame...');
       await GameService.updateGame(user.id, gameId, updatedGame);
+      console.log('🔍 DEBUG: Game updated successfully');
       
-      Alert.alert('修正完了', '対局記録を修正しました', [
-        { text: 'OK', onPress: () => router.back() }
+      Alert.alert('保存完了', undefined, [
+        { 
+          text: 'OK', 
+          onPress: () => {
+            console.log('🔍 DEBUG: Navigating to history screen');
+            router.push('/(tabs)/history');
+          }
+        }
       ]);
     } catch (error) {
-      console.error('Failed to update game:', error);
+      console.error('❌ DEBUG: Failed to update game:', error);
+      console.error('❌ DEBUG: Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       Alert.alert('エラー', '対局記録の修正に失敗しました');
     } finally {
       setLoading(false);
@@ -236,7 +270,7 @@ export default function EditGameScreen() {
           <Text style={styles.title}>記録修正</Text>
         </View>
 
-        {/* 日付とゲーム番号 */}
+        {/* 日付とゲームタイプ */}
         <View style={styles.infoCard}>
           <TouchableOpacity 
             style={styles.dateContainer}
@@ -247,6 +281,41 @@ export default function EditGameScreen() {
               {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
             </Text>
           </TouchableOpacity>
+          
+          {/* ゲームタイプ選択 */}
+          <View style={styles.gameTypeContainer}>
+            <Text style={styles.gameTypeLabel}>ゲームタイプ</Text>
+            <View style={styles.gameTypeButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.gameTypeButton,
+                  gameType === '東南戦' && styles.gameTypeButtonActive
+                ]}
+                onPress={() => setGameType('東南戦')}
+              >
+                <Text style={[
+                  styles.gameTypeButtonText,
+                  gameType === '東南戦' && styles.gameTypeButtonTextActive
+                ]}>
+                  東南戦
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.gameTypeButton,
+                  gameType === '東風戦' && styles.gameTypeButtonActive
+                ]}
+                onPress={() => setGameType('東風戦')}
+              >
+                <Text style={[
+                  styles.gameTypeButtonText,
+                  gameType === '東風戦' && styles.gameTypeButtonTextActive
+                ]}>
+                  東風戦
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* スコア表 */}
@@ -750,5 +819,37 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#FFF',
+  },
+  gameTypeContainer: {
+    marginTop: 16,
+  },
+  gameTypeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6D6D70',
+    marginBottom: 8,
+  },
+  gameTypeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  gameTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center',
+  },
+  gameTypeButtonActive: {
+    backgroundColor: '#FF6B35',
+  },
+  gameTypeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6D6D70',
+  },
+  gameTypeButtonTextActive: {
+    color: '#FFFFFF',
   },
 }); 

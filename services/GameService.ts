@@ -233,13 +233,23 @@ export class GameService {
   }
 
   static async updateGame(accountId: string, gameId: string, gameData: GameRecord): Promise<void> {
+    console.log('🔍 DEBUG: GameService.updateGame called with:', { accountId, gameId });
+    console.log('🔍 DEBUG: Game data:', {
+      date: gameData.date,
+      gameType: gameData.gameType,
+      playerCount: gameData.players.length
+    });
+    
     try {
       if (!isSupabaseConfigured) {
-        // モック環境では何もしない
+        console.log('🔍 DEBUG: Using LOCAL UPDATE mode (no-op)');
         return;
       }
 
+      console.log('🔍 DEBUG: Using SUPABASE UPDATE mode');
+
       // ゲームデータを更新
+      console.log('🔍 DEBUG: Updating game record in Supabase...');
       const { error: gameError } = await supabase
         .from('games')
         .update({
@@ -257,20 +267,26 @@ export class GameService {
         .eq('account_id', accountId);
 
       if (gameError) {
+        console.error('❌ DEBUG: Failed to update game record:', gameError);
         throw gameError;
       }
+      console.log('🔍 DEBUG: Game record updated successfully');
 
       // 既存のプレイヤー記録を削除
+      console.log('🔍 DEBUG: Deleting existing player records...');
       const { error: deletePlayersError } = await supabase
         .from('player_records')
         .delete()
         .eq('game_id', gameId);
 
       if (deletePlayersError) {
+        console.error('❌ DEBUG: Failed to delete existing player records:', deletePlayersError);
         throw deletePlayersError;
       }
+      console.log('🔍 DEBUG: Existing player records deleted successfully');
 
       // 新しいプレイヤー記録を挿入
+      console.log('🔍 DEBUG: Creating new player insert data...');
       const playerInserts: PlayerRecordInsert[] = gameData.players.map(player => ({
         game_id: gameId,
         player_name: player.name,
@@ -279,27 +295,35 @@ export class GameService {
         rank: player.rank,
         starting_position: player.startingPosition,
       }));
+      console.log('🔍 DEBUG: Player insert data created:', playerInserts);
 
+      console.log('🔍 DEBUG: Inserting new player records...');
       const { error: playersError } = await supabase
         .from('player_records')
         .insert(playerInserts);
 
       if (playersError) {
+        console.error('❌ DEBUG: Failed to insert new player records:', playersError);
         throw playersError;
       }
+      console.log('🔍 DEBUG: New player records inserted successfully');
 
       // 既存の局記録を削除
+      console.log('🔍 DEBUG: Deleting existing round records...');
       const { error: deleteRoundsError } = await supabase
         .from('round_records')
         .delete()
         .eq('game_id', gameId);
 
       if (deleteRoundsError) {
+        console.error('❌ DEBUG: Failed to delete existing round records:', deleteRoundsError);
         throw deleteRoundsError;
       }
+      console.log('🔍 DEBUG: Existing round records deleted successfully');
 
       // 新しい局記録を挿入（もしあれば）
       if (gameData.rounds.length > 0) {
+        console.log('🔍 DEBUG: Creating new round insert data...');
         const roundInserts: RoundRecordInsert[] = gameData.rounds.map(round => ({
           game_id: gameId,
           round: round.round,
@@ -314,17 +338,29 @@ export class GameService {
           yakuman: round.yakuman,
           memo: round.memo,
         }));
+        console.log('🔍 DEBUG: Round insert data created:', roundInserts);
 
+        console.log('🔍 DEBUG: Inserting new round records...');
         const { error: roundsError } = await supabase
           .from('round_records')
           .insert(roundInserts);
 
         if (roundsError) {
+          console.error('❌ DEBUG: Failed to insert new round records:', roundsError);
           throw roundsError;
         }
+        console.log('🔍 DEBUG: New round records inserted successfully');
+      } else {
+        console.log('🔍 DEBUG: No round records to insert');
       }
+      
+      console.log('🔍 DEBUG: Game update completed successfully');
     } catch (error) {
-      console.error('Failed to update game:', error);
+      console.error('❌ DEBUG: Failed to update game:', error);
+      console.error('❌ DEBUG: Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }
@@ -451,12 +487,16 @@ export class GameService {
   }
 
   static async getPlayerStats(accountId: string): Promise<PlayerStats> {
+    console.log('🔍 DEBUG: GameService.getPlayerStats called with accountId:', accountId);
+    
     try {
       // ダミーユーザーの場合はデフォルト統計を返す
       if (accountId === 'dummy-user-id') {
+        console.log('🔍 DEBUG: Using mock player stats for dummy user');
         return MockDataService.generateMockPlayerStats();
       }
 
+      console.log('🔍 DEBUG: Fetching player records from Supabase...');
       const { data: playerRecords, error } = await supabase
         .from('player_records')
         .select(`
@@ -471,8 +511,10 @@ export class GameService {
         .eq('is_main_account', true);
 
       if (error) {
+        console.error('❌ DEBUG: Failed to fetch player records:', error);
         throw error;
       }
+      console.log('🔍 DEBUG: Player records fetched successfully, count:', playerRecords?.length || 0);
 
       // games.dateで降順ソート
       const sortedRecords = (playerRecords as any[]).sort(
@@ -480,17 +522,18 @@ export class GameService {
       );
 
       if (sortedRecords.length === 0) {
-              return {
-        totalGames: 0,
-        averageRank: 0,
-        averageScore: 0,
-        firstPlaceRate: 0,
-        topTwoRate: 0,
-        avoidLastRate: 0,
-        highestScore: 0,
-        lowestScore: 0,
-        rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
-      };
+        console.log('🔍 DEBUG: No player records found, returning default stats');
+        return {
+          totalGames: 0,
+          averageRank: 0,
+          averageScore: 0,
+          firstPlaceRate: 0,
+          topTwoRate: 0,
+          avoidLastRate: 0,
+          highestScore: 0,
+          lowestScore: 0,
+          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        };
       }
 
       const totalGames = sortedRecords.length;
@@ -502,12 +545,25 @@ export class GameService {
       const scores = (sortedRecords as any[]).map((p: any) => p.final_score);
       const highestScore = Math.max(...scores);
       const lowestScore = Math.min(...scores);
+      
+      // 最大連荘を計算
+      let maxConsecutiveWins = 0;
+      let currentConsecutiveWins = 0;
+      for (const record of sortedRecords) {
+        if (record.rank === 1) {
+          currentConsecutiveWins++;
+          maxConsecutiveWins = Math.max(maxConsecutiveWins, currentConsecutiveWins);
+        } else {
+          currentConsecutiveWins = 0;
+        }
+      }
+      
       const rankDistribution = (sortedRecords as any[]).reduce((acc: any, p: any) => {
         acc[p.rank] = (acc[p.rank] || 0) + 1;
         return acc;
       }, {} as { [key: number]: number });
 
-      return {
+      const result = {
         totalGames,
         averageRank: totalRank / totalGames,
         averageScore: totalScore / totalGames,
@@ -516,25 +572,44 @@ export class GameService {
         avoidLastRate: avoidLastCount / totalGames,
         highestScore,
         lowestScore,
+        maxConsecutiveWins,
         rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
       };
+      
+      console.log('🔍 DEBUG: Player stats calculated successfully:', {
+        totalGames: result.totalGames,
+        averageRank: result.averageRank,
+        firstPlaceRate: result.firstPlaceRate,
+        rankDistribution: result.rankDistribution
+      });
+      
+      return result;
     } catch (error) {
-      console.error('Failed to get player stats:', error);
+      console.error('❌ DEBUG: Failed to get player stats:', error);
+      console.error('❌ DEBUG: Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw new Error('統計データの取得に失敗しました');
     }
   }
 
   static async getChartData(accountId: string, period: 'month' | 'year' | 'all') {
+    console.log('🔍 DEBUG: GameService.getChartData called with:', { accountId, period });
+    
     try {
       // ダミーユーザーの場合は空のチャートデータを返す
       if (accountId === 'dummy-user-id') {
+        console.log('🔍 DEBUG: Using mock chart data for dummy user');
         return MockDataService.generateChartData(period);
       }
 
+      console.log('🔍 DEBUG: Fetching player records for chart data...');
       const { data: playerRecords, error } = await supabase
         .from('player_records')
         .select(`
           final_score,
+          rank,
           games!inner (
             account_id,
             date,
@@ -545,8 +620,10 @@ export class GameService {
         .eq('is_main_account', true);
 
       if (error) {
+        console.error('❌ DEBUG: Failed to fetch player records for chart:', error);
         throw error;
       }
+      console.log('🔍 DEBUG: Player records fetched for chart, count:', playerRecords?.length || 0);
 
       // games.dateで昇順ソート
       const sortedRecords = (playerRecords as any[]).sort(
@@ -566,11 +643,26 @@ export class GameService {
             return true;
         }
       });
+
+      // 選択された期間のすべての対局データを取得
       const labels = filteredData.map((_: any, index: number) => `${index + 1}`);
       const scores2 = filteredData.map((record: any) => record.final_score - 25000);
-      return { labels, scores: scores2 };
+      const ranks = filteredData.map((record: any) => record.rank);
+      
+      const result = { labels, scores: scores2, ranks };
+      console.log('🔍 DEBUG: Chart data calculated successfully:', {
+        period,
+        dataPoints: result.labels.length,
+        scoreRange: result.scores.length > 0 ? `${Math.min(...result.scores)} to ${Math.max(...result.scores)}` : 'No data'
+      });
+      
+      return result;
     } catch (error) {
-      console.error('Failed to get chart data:', error);
+      console.error('❌ DEBUG: Failed to get chart data:', error);
+      console.error('❌ DEBUG: Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return { labels: [], scores: [] };
     }
   }

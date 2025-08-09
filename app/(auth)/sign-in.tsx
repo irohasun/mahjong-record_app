@@ -19,9 +19,12 @@ export default function SignInScreen() {
 
     setLoading(true);
     try {
+      console.log('🔍 DEBUG: Attempting sign in with email:', email.trim());
       await AuthService.signIn(email.trim(), password);
+      console.log('🔍 DEBUG: Sign in successful');
       router.replace('/(tabs)/history');
     } catch (error: any) {
+      console.error('❌ DEBUG: Sign in error:', error);
       Alert.alert('ログインエラー', error.message || 'ログインに失敗しました');
     } finally {
       setLoading(false);
@@ -31,9 +34,12 @@ export default function SignInScreen() {
   const handleAnonymousSignIn = async () => {
     setLoading(true);
     try {
+      console.log('🔍 DEBUG: Attempting anonymous sign in');
       await AuthService.signInAnonymously();
+      console.log('🔍 DEBUG: Anonymous sign in successful');
       router.replace('/(tabs)/history');
     } catch (error: any) {
+      console.error('❌ DEBUG: Anonymous sign in error:', error);
       Alert.alert('エラー', '匿名ログインに失敗しました');
     } finally {
       setLoading(false);

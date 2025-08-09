@@ -19,6 +19,7 @@ export class MockDataService {
       avoidLastRate: 0.76, // 76% (19/25)
       highestScore: 42300,
       lowestScore: 16500,
+      maxConsecutiveWins: 3, // 最大3連荘
       rankDistribution: {
         1: 8,  // 1位: 8回
         2: 6,  // 2位: 6回
@@ -82,32 +83,64 @@ export class MockDataService {
       8800    // game-025: 33800 - 25000
     ];
 
+    const allRanks = [
+      2,  // game-001
+      3,  // game-002
+      1,  // game-003
+      4,  // game-004
+      2,  // game-005
+      3,  // game-006
+      1,  // game-007
+      4,  // game-008
+      1,  // game-009
+      2,  // game-010
+      3,  // game-011
+      2,  // game-012
+      1,  // game-013
+      4,  // game-014
+      1,  // game-015
+      2,  // game-016
+      3,  // game-017
+      1,  // game-018
+      3,  // game-019
+      2,  // game-020
+      4,  // game-021
+      1,  // game-022
+      2,  // game-023
+      2,  // game-024
+      1   // game-025
+    ];
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
     let filteredScores = allScores;
+    let filteredRanks = allRanks;
     let labels = allScores.map((_, index) => `${index + 1}`);
 
     switch (period) {
       case 'month':
         // 今月のデータのみ（最後の2〜3局）
         filteredScores = allScores.slice(-3);
+        filteredRanks = allRanks.slice(-3);
         labels = filteredScores.map((_, index) => `${index + 1}`);
         break;
       case 'year':
         // 今年のデータのみ（全て）
         filteredScores = allScores;
+        filteredRanks = allRanks;
         labels = allScores.map((_, index) => `${index + 1}`);
         break;
       case 'all':
         // 全データ
         filteredScores = allScores;
+        filteredRanks = allRanks;
         labels = allScores.map((_, index) => `${index + 1}`);
         break;
     }
 
-    return { labels, scores: filteredScores };
+    return { labels, scores: filteredScores, ranks: filteredRanks };
   }
 
   /**

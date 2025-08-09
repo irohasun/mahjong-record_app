@@ -109,7 +109,7 @@ export class AuthService {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('アカウント作成に失敗しました');
+      throw new Error('ログインに失敗しました');
     }
   }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView } from 'react-native';
-import { User, Star, Download, Upload, Shield, LogOut, Mail } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, Linking } from 'react-native';
+import { User, Star, Download, Upload, Shield, LogOut, Mail, Settings, Lock, Eye, Bell, HelpCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
@@ -117,18 +117,19 @@ export default function AccountScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
+      <View style={styles.header}>
+        <Text style={styles.title}>アカウント</Text>
+        <View style={styles.planBadge}>
+          <Star size={16} color={account.isPremium ? '#FFD700' : '#8E8E93'} />
+          <Text style={styles.planText}>
+            {account.isPremium ? 'プレミアム' : 'フリー'}
+          </Text>
+        </View>
+      </View>
       <ScrollView 
         style={styles.container}
+        contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>アカウント</Text>
-          <View style={styles.planBadge}>
-            <Star size={16} color={account.isPremium ? '#FFD700' : '#8E8E93'} />
-            <Text style={styles.planText}>
-              {account.isPremium ? 'プレミアム' : 'フリー'}
-            </Text>
-          </View>
-        </View>
 
         {/* 認証情報セクション */}
         <View style={styles.section}>
@@ -173,45 +174,172 @@ export default function AccountScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>基本情報</Text>
+          <Text style={styles.sectionTitle}>プロフィール設定</Text>
           
-          <View style={styles.userInfo}>
-            <View style={styles.avatar}>
-              <User size={32} color="#FF6B35" />
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // プロフィール編集画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/profile-edit');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <User size={20} color="#FF6B35" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>プロフィール編集</Text>
+                <Text style={styles.menuItemSubtitle}>{account.username}</Text>
+              </View>
             </View>
-            <View style={styles.userDetails}>
-              {editing ? (
-                <View style={styles.editingRow}>
-                  <TextInput
-                    style={styles.usernameInput}
-                    value={newUsername}
-                    onChangeText={setNewUsername}
-                    placeholder="ユーザー名"
-                  />
-                  <TouchableOpacity 
-                    style={styles.saveButton}
-                    onPress={handleUsernameChange}
-                  >
-                    <Text style={styles.saveButtonText}>保存</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.usernameRow}>
-                  <Text style={styles.username}>{account.username}</Text>
-                  <TouchableOpacity 
-                    style={styles.editButton}
-                    onPress={() => setEditing(true)}
-                  >
-                    <Text style={styles.editButtonText}>編集</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              <Text style={styles.accountId}>ID: {typeof account.accountId === 'string' ? account.accountId.slice(0, 8) : ''}...</Text>
-              <Text style={styles.createdDate}>
-                作成日: {new Date(account.createdDate).toLocaleDateString('ja-JP')}
-              </Text>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // 通知設定画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/notification-settings');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <Settings size={20} color="#3B82F6" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>通知設定</Text>
+                <Text style={styles.menuItemSubtitle}>プッシュ通知の設定</Text>
+              </View>
             </View>
-          </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // プライバシー設定画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/privacy-settings');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <Eye size={20} color="#10B981" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>プライバシー設定</Text>
+                <Text style={styles.menuItemSubtitle}>データ共有の設定</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>セキュリティ・プライバシー</Text>
+          
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // 利用規約画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/terms-of-service');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <Lock size={20} color="#3B82F6" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>利用規約</Text>
+                <Text style={styles.menuItemSubtitle}>アプリの利用条件</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // プライバシーポリシー画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/privacy-policy');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <Shield size={20} color="#10B981" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>プライバシーポリシー</Text>
+                <Text style={styles.menuItemSubtitle}>データ保護方針</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              // データ処理について画面に遷移（実装予定）
+              Alert.alert('開発中', 'この機能は開発中です');
+              // router.push('/(tabs)/data-processing');
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <HelpCircle size={20} color="#F59E0B" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>データ処理について</Text>
+                <Text style={styles.menuItemSubtitle}>データの取り扱い</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => {
+              Alert.alert(
+                'アカウント削除',
+                'アカウントを削除しますか？\n\nこの操作により、すべての対局記録とデータが完全に削除されます。この操作は取り消せません。',
+                [
+                  { text: 'キャンセル', style: 'cancel' },
+                  { 
+                    text: '削除', 
+                    style: 'destructive',
+                    onPress: () => {
+                      Alert.alert('確認', '本当にアカウントを削除しますか？', [
+                        { text: 'キャンセル', style: 'cancel' },
+                        { 
+                          text: '削除', 
+                          style: 'destructive',
+                          onPress: () => {
+                            // アカウント削除処理（実装が必要）
+                            Alert.alert('削除完了', 'アカウントを削除しました');
+                          }
+                        }
+                      ]);
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <LogOut size={20} color="#EF4444" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={[styles.menuItemTitle, styles.dangerText]}>アカウント削除</Text>
+                <Text style={styles.menuItemSubtitle}>アカウントとデータの完全削除</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
         </View>
 
 
@@ -305,6 +433,12 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     paddingBottom: 20,
     backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1,
   },
   title: {
     fontSize: 28,
@@ -553,5 +687,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#EF4444',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F2F2F7',
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  menuItemContent: {
+    flex: 1,
+  },
+  menuItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 2,
+  },
+  menuItemSubtitle: {
+    fontSize: 14,
+    color: '#6D6D70',
+  },
+  menuItemArrow: {
+    fontSize: 18,
+    color: '#8E8E93',
+    fontWeight: '300',
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
 });

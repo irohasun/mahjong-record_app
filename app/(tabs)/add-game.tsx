@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated } from 'react-native';
-import { Save, Calendar, Plus, X } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image } from 'react-native';
+import { Save, Calendar, Plus, X, Camera } from 'lucide-react-native';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
@@ -10,7 +11,30 @@ import { ensureAuthenticated } from '@/utils/authUtils';
 
 export default function AddGameScreen() {
   const router = useRouter();
+  const { editMode, gameData: gameDataStr } = useLocalSearchParams<{ editMode?: string; gameData?: string }>();
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
+  
+  // 編集モードの判定（タブからの直接アクセス時は編集モードを無視）
+  const isEditMode = editMode === 'true' && !!gameDataStr;
+  const editGameData = useMemo(() => {
+    if (!isEditMode || !gameDataStr) return null;
+    try {
+      return JSON.parse(gameDataStr as string);
+    } catch {
+      return null;
+    }
+  }, [isEditMode, gameDataStr]);
+  
+  // 画面がフォーカスされた時にフォームをリセット（編集モードでない場合のみ）
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!isEditMode) {
+        resetForm();
+      } else {
+        loadGameData();
+      }
+    }, [isEditMode, gameDataStr])
+  );
   
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -23,6 +47,7 @@ export default function AddGameScreen() {
   const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
   const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
+  const [gamePhoto, setGamePhoto] = useState<string | null>(null);
 
 
 
@@ -173,13 +198,71 @@ export default function AddGameScreen() {
     }, 0);
   };
 
+  const loadGameData = () => {
+    if (!editGameData) return;
+    
+    // console.log('🔍 DEBUG: Loading game data:', editGameData);
+    
+    // 日付を設定
+    setGameDate(new Date(editGameData.date));
+    
+    // プレイヤー名を設定
+    const playerNames = editGameData.players.map((player: any) => player.name);
+    setPlayers(playerNames);
+    
+    // 半荘数とスコアを設定
+    if (editGameData.rounds && editGameData.rounds.length > 0) {
+      const roundCount = editGameData.rounds.length;
+      setHanchanCount(roundCount);
+      setPremiumHanchanCount(Math.max(3, roundCount));
+      const tempScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
+      editGameData.rounds.forEach((round: any, idx: number) => {
+        const row = (round.points || []).map((p: any) => (p ?? 0).toString());
+        for (let i = 0; i < 4; i++) {
+          tempScores[idx][i] = row[i] ?? '';
+        }
+      });
+      setScores(tempScores);
+    } else {
+      // 既存データに半荘ごとの情報が無い場合は、最終スコアを参照（合算しない）
+      const finalScores = editGameData.players.map((player: any) => player.finalScore - 25000);
+      const tempScores = Array(3).fill(null).map(() => Array(4).fill(''));
+      finalScores.forEach((score: number, index: number) => {
+        tempScores[0][index] = score.toString();
+      });
+      setScores(tempScores);
+    }
+    
+    // console.log('🔍 DEBUG: Game data loaded successfully');
+  };
+
+  const resetForm = () => {
+    setGameDate(new Date());
+    setHanchanCount(3);
+    setPremiumHanchanCount(3);
+    setPlayers(['自分', '', '', '']);
+    setScores(Array(3).fill(null).map(() => Array(4).fill('')));
+    setGamePhoto(null);
+    setEditingPlayerName(null);
+    setShowCustomKeyboard(false);
+    setCustomKeyboardValue('');
+    setCustomKeyboardTarget(null);
+  };
+
   const handleSave = async () => {
+    // console.log('🔍 DEBUG: handleSave called - Starting game record creation');
+    
     try {
+      // console.log('🔍 DEBUG: Authenticating user...');
       const user = await ensureAuthenticated();
       if (!user) {
+        // console.error('❌ DEBUG: Authentication failed');
         Alert.alert('エラー', '認証に失敗しました');
         return;
       }
+      // console.log('🔍 DEBUG: User authenticated successfully:', user.id);
+      
+      // console.log('🔍 DEBUG: Creating player data...');
       const playersData = players.map((name, index) => ({
         name: index === 0 ? '自分' : `プレイヤー${index + 1}`,
         finalScore: 25000 + calculateSubtotal(index),
@@ -187,11 +270,26 @@ export default function AddGameScreen() {
         isMainAccount: index === 0,
         startingPosition: ['East', 'South', 'West', 'North'][index] as 'East' | 'South' | 'West' | 'North'
       }));
+      // console.log('🔍 DEBUG: Player data created:', playersData);
+      
+      // console.log('🔍 DEBUG: Calculating player ranks...');
       const sortedPlayers = [...playersData].sort((a, b) => b.finalScore - a.finalScore);
       sortedPlayers.forEach((player, idx) => {
         const originalIndex = playersData.findIndex(p => p.name === player.name && p.isMainAccount === player.isMainAccount);
         playersData[originalIndex].rank = idx + 1;
       });
+      // console.log('🔍 DEBUG: Player ranks calculated:', playersData);
+      
+      // console.log('🔍 DEBUG: Creating game record...');
+      // 半荘ごとの行を局レコードとして保存
+      const rounds = scores.map((row, idx) => ({
+        round: `半荘${idx + 1}`,
+        honba: 0,
+        riichiSticks: 0,
+        handType: 'draw' as const,
+        points: row.map((v) => parseInt(v) || 0),
+      }));
+
       const gameRecord = {
         accountId: user.id,
         date: gameDate.toISOString(),
@@ -205,18 +303,105 @@ export default function AddGameScreen() {
           honbaValue: 300,
         },
         players: playersData,
-        rounds: [],
+        rounds,
         finalRiichiSticks: 0,
         finalHonba: 0,
         memo: '',
         gameEndCondition: 'normal' as const,
       };
-      await GameService.addGame(gameRecord);
-      Alert.alert('保存完了', '対局記録を保存しました。履歴画面で確認できます。', [{ text: 'OK', onPress: () => router.back() }]);
+      // console.log('🔍 DEBUG: Game record created:', {
+      //   accountId: gameRecord.accountId,
+      //   date: gameRecord.date,
+      //   gameType: gameRecord.gameType,
+      //   playerCount: gameRecord.players.length
+      // });
+      
+              if (isEditMode && editGameData) {
+          // console.log('🔍 DEBUG: Edit mode detected, updating game...');
+          // console.log('🔍 DEBUG: Original game ID:', editGameData.id);
+          // console.log('🔍 DEBUG: Updated game data:', gameRecord);
+          
+          try {
+            const updatedGameRecord = {
+              ...gameRecord,
+              id: editGameData.id,
+            };
+            // console.log('🔍 DEBUG: Calling GameService.updateGame...');
+            await GameService.updateGame(user.id, editGameData.id, updatedGameRecord);
+            // console.log('🔍 DEBUG: Game updated successfully');
+            
+            Alert.alert('保存完了', undefined, [{ 
+              text: 'OK', 
+              onPress: () => {
+                // console.log('🔍 DEBUG: Navigating to history screen');
+                // 履歴画面に戻る前に少し待機
+                setTimeout(() => {
+                  router.push('/(tabs)/history');
+                }, 200);
+              }
+            }]);
+          } catch (updateError) {
+            // console.error('❌ DEBUG: Update game error:', updateError);
+            // console.error('❌ DEBUG: Update error details:', {
+            //   message: updateError instanceof Error ? updateError.message : 'Unknown error',
+            //   stack: updateError instanceof Error ? updateError.stack : undefined
+            // });
+            Alert.alert('エラー', '更新に失敗しました');
+            return;
+          }
+              } else {
+          // console.log('🔍 DEBUG: Calling GameService.addGame...');
+          await GameService.addGame(gameRecord);
+          // console.log('🔍 DEBUG: Game saved successfully');
+          
+          Alert.alert('保存完了', undefined, [{ 
+            text: 'OK', 
+            onPress: () => {
+              // console.log('🔍 DEBUG: Resetting form...');
+              resetForm();
+              // console.log('🔍 DEBUG: Navigating to history screen');
+              router.push('/(tabs)/history');
+            }
+          }]);
+        }
     } catch (error) {
-      console.error('Save game error:', error);
+      // console.error('❌ DEBUG: Save game error:', error);
+      // console.error('❌ DEBUG: Error details:', {
+      //   message: error instanceof Error ? error.message : 'Unknown error',
+      //   stack: error instanceof Error ? error.stack : undefined
+      // });
       Alert.alert('エラー', '保存に失敗しました');
     }
+  };
+
+  // 写真選択機能
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setGamePhoto(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('写真選択エラー:', error);
+      Alert.alert('エラー', '写真の選択に失敗しました');
+    }
+  };
+
+  // 写真を削除
+  const removePhoto = () => {
+    setGamePhoto(null);
   };
 
   // プレイヤーカラーを取得する関数
@@ -244,7 +429,7 @@ export default function AddGameScreen() {
           <Text style={styles.title}>対局記録</Text>
         </View>
 
-        {/* 日付とゲーム番号 */}
+        {/* 日付とゲームタイプ */}
         <View style={styles.infoCard}>
           <TouchableOpacity 
             style={styles.dateContainer}
@@ -255,9 +440,27 @@ export default function AddGameScreen() {
               {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
             </Text>
           </TouchableOpacity>
+          
+
         </View>
 
-
+        {/* 写真選択 */}
+        <View style={styles.photoCard}>
+          <Text style={styles.photoLabel}>対局写真</Text>
+          {gamePhoto ? (
+            <View style={styles.photoContainer}>
+              <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
+              <TouchableOpacity style={styles.removePhotoButton} onPress={removePhoto}>
+                <X size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.addPhotoButton} onPress={pickImage}>
+              <Camera size={24} color="#FF6B35" />
+              <Text style={styles.addPhotoText}>写真を追加</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* プレイヤー名入力欄 */}
 
@@ -389,7 +592,7 @@ export default function AddGameScreen() {
       <View style={styles.saveButtonContainer}>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
           <Save size={20} color="#FFF" />
-          <Text style={styles.saveButtonText}>保存</Text>
+          <Text style={styles.saveButtonText}>{isEditMode ? '修正' : '保存'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -746,5 +949,90 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#FFF',
+  },
+  gameTypeContainer: {
+    marginTop: 16,
+  },
+  gameTypeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6D6D70',
+    marginBottom: 8,
+  },
+  gameTypeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  gameTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center',
+  },
+  gameTypeButtonActive: {
+    backgroundColor: '#FF6B35',
+  },
+  gameTypeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6D6D70',
+  },
+  gameTypeButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  photoCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  photoLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 12,
+  },
+  photoContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  gamePhoto: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  addPhotoText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF6B35',
   },
 });

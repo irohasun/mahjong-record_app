@@ -65,5 +65,6 @@ export interface PlayerStats {
   avoidLastRate: number;
   highestScore: number;
   lowestScore: number;
+  maxConsecutiveWins: number;
   rankDistribution: { [key: number]: number };
 }

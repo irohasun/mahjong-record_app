@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, SafeAreaView, Modal } from 'react-native';
 import { TrendingUp, Trophy, Calendar, Target, ChevronDown } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from 'expo-router';
+import { LineChart } from 'react-native-chart-kit';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
@@ -21,24 +23,75 @@ export default function StatisticsScreen() {
     loadStats();
   }, [selectedPeriod, selectedDate]);
 
+  // 画面がフォーカスされた時にデータをリロード
+  useFocusEffect(
+    React.useCallback(() => {
+      // console.log('🔍 DEBUG: Statistics screen focused, reloading stats...');
+      loadStats();
+    }, []) // 依存配列を空にして、画面フォーカス時のみリロード
+  );
+
   const loadStats = async () => {
+    // console.log('🔍 DEBUG: loadStats called with period:', selectedPeriod);
+    
+    setLoading(true);
     try {
+      // console.log('🔍 DEBUG: Authenticating user...');
       const user = await ensureAuthenticated();
+      // console.log('🔍 DEBUG: User authenticated:', user.id);
+      
+      // console.log('🔍 DEBUG: Loading player stats...');
       const statsData = await GameService.getPlayerStats(user.id);
+      // console.log('🔍 DEBUG: Player stats loaded:', statsData);
+      
+      // console.log('🔍 DEBUG: Loading chart data...');
       const chartData = await GameService.getChartData(user.id, selectedPeriod);
+      // console.log('🔍 DEBUG: Chart data loaded:', chartData);
       
       setStats(statsData);
       setChartData(chartData);
+      // console.log('🔍 DEBUG: Statistics data updated successfully');
     } catch (error) {
-      console.error('Failed to load statistics:', error);
+      // console.error('❌ DEBUG: Failed to load statistics:', error);
+      // console.error('❌ DEBUG: Error details:', {
+      //   message: error instanceof Error ? error.message : 'Unknown error',
+      //   stack: error instanceof Error ? error.stack : undefined
+      // });
+    } finally {
+      setLoading(false);
     }
   };
 
+  const totalGames = stats?.totalGames || 0;
   const rankDistribution = [
-    { name: '1位', population: stats?.rankDistribution?.[1] || 0, color: '#10B981', legendFontColor: '#1C1C1E' },
-    { name: '2位', population: stats?.rankDistribution?.[2] || 0, color: '#3B82F6', legendFontColor: '#1C1C1E' },
-    { name: '3位', population: stats?.rankDistribution?.[3] || 0, color: '#F59E0B', legendFontColor: '#1C1C1E' },
-    { name: '4位', population: stats?.rankDistribution?.[4] || 0, color: '#EF4444', legendFontColor: '#1C1C1E' },
+    { 
+      name: '1位', 
+      population: stats?.rankDistribution?.[1] || 0, 
+      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[1] || 0) / totalGames * 100).toFixed(1) : '0.0',
+      color: '#10B981', 
+      legendFontColor: '#1C1C1E' 
+    },
+    { 
+      name: '2位', 
+      population: stats?.rankDistribution?.[2] || 0, 
+      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[2] || 0) / totalGames * 100).toFixed(1) : '0.0',
+      color: '#3B82F6', 
+      legendFontColor: '#1C1C1E' 
+    },
+    { 
+      name: '3位', 
+      population: stats?.rankDistribution?.[3] || 0, 
+      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[3] || 0) / totalGames * 100).toFixed(1) : '0.0',
+      color: '#F59E0B', 
+      legendFontColor: '#1C1C1E' 
+    },
+    { 
+      name: '4位', 
+      population: stats?.rankDistribution?.[4] || 0, 
+      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[4] || 0) / totalGames * 100).toFixed(1) : '0.0',
+      color: '#EF4444', 
+      legendFontColor: '#1C1C1E' 
+    },
   ];
 
   const SimpleChart = ({ data, title }: { data: any[], title: string }) => (
@@ -49,7 +102,12 @@ export default function StatisticsScreen() {
           <View style={styles.chartItemHeader}>
             <View style={[styles.chartColorBox, { backgroundColor: item.color }]} />
             <Text style={styles.chartItemName}>{item.name}</Text>
-            <Text style={styles.chartItemValue}>{item.population}</Text>
+            <View style={styles.chartItemValueContainer}>
+              <Text style={styles.chartItemValue}>{item.population}</Text>
+              {item.percentage && (
+                <Text style={styles.chartItemPercentage}>({item.percentage}%)</Text>
+              )}
+            </View>
           </View>
           <View style={styles.chartBar}>
             <View 
@@ -198,15 +256,76 @@ export default function StatisticsScreen() {
                 <SimpleChart data={rankDistribution} title="" />
               </View>
 
-              {chartData && chartData.scores && (
+              {chartData && chartData.ranks && chartData.ranks.length > 0 && (
                 <View style={styles.chartSection}>
-                  <Text style={styles.sectionTitle}>得点推移</Text>
+                  <Text style={styles.sectionTitle}>順位推移</Text>
                   <View style={styles.chartContainer}>
-                    <Text style={styles.chartPlaceholder}>
-                      得点推移グラフ
-                    </Text>
+                    <LineChart
+                      data={{
+                        labels: chartData.ranks.map((_: any, index: number) => `${index + 1}回目`),
+                        datasets: [
+                          {
+                            data: [
+                              ...chartData.ranks.map((rank: number) => 5 - rank), // 1位→4、2位→3、3位→2、4位→1に変換
+                              1, // 最小値として1を追加
+                              4, // 最大値として4を追加
+                            ],
+                            color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
+                            strokeWidth: 3,
+                          },
+                        ],
+                      }}
+                      width={screenWidth - 40}
+                      height={220}
+                      chartConfig={{
+                        backgroundColor: '#FFFFFF',
+                        backgroundGradientFrom: '#FFFFFF',
+                        backgroundGradientTo: '#FFFFFF',
+                        decimalPlaces: 0,
+                        color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
+                        labelColor: (opacity = 1) => `rgba(108, 108, 112, ${opacity})`,
+                        style: {
+                          borderRadius: 16,
+                        },
+                        propsForDots: {
+                          r: '4',
+                          strokeWidth: '2',
+                          stroke: '#FF6B35',
+                        },
+                        propsForBackgroundLines: {
+                          strokeDasharray: '',
+                          stroke: '#F2F2F7',
+                          strokeWidth: 1,
+                        },
+                        count: 4,
+                      }}
+                      bezier
+                      style={styles.chart}
+                      withDots={true}
+                      withShadow={false}
+                      withInnerLines={true}
+                      withOuterLines={false}
+                      withVerticalLines={false}
+                      withHorizontalLines={true}
+                      fromZero={false}
+                      segments={3}
+                      yAxisSuffix="位"
+                      yAxisInterval={1}
+                      yLabelsOffset={10}
+                      withVerticalLabels={true}
+                      formatYLabel={(value) => {
+                        const convertedValue = parseInt(value);
+                        // 変換された値から元の順位を計算: 4→1位、3→2位、2→3位、1→4位
+                        const originalRank = 5 - convertedValue;
+                        if (originalRank === 1) return '1';
+                        if (originalRank === 2) return '2';
+                        if (originalRank === 3) return '3';
+                        if (originalRank === 4) return '4';
+                        return `${originalRank}`;
+                      }}
+                    />
                     <Text style={styles.chartSubtext}>
-                      {chartData.scores.length}回の対局データ
+                      {chartData.ranks.length}回の対局データ
                     </Text>
                   </View>
                 </View>
@@ -217,25 +336,25 @@ export default function StatisticsScreen() {
                 <View style={styles.detailCard}>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>最高得点</Text>
-                    <Text style={styles.detailValue}>
+                    <Text style={[styles.detailValue, styles.firstPlaceValue]}>
                       {stats.highestScore ? `+${stats.highestScore}` : '-'}
                     </Text>
                   </View>
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>最低得点</Text>
-                    <Text style={styles.detailValue}>
-                      {stats.lowestScore || '-'}
+                    <Text style={styles.detailLabel}>最大連荘</Text>
+                    <Text style={[styles.detailValue, styles.secondPlaceValue]}>
+                      {stats.maxConsecutiveWins || '-'}
                     </Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>連対率</Text>
-                    <Text style={styles.detailValue}>
+                    <Text style={[styles.detailValue, styles.thirdPlaceValue]}>
                       {stats.topTwoRate ? `${(stats.topTwoRate * 100).toFixed(1)}%` : '-'}
                     </Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>ラス回避率</Text>
-                    <Text style={styles.detailValue}>
+                    <Text style={[styles.detailValue, styles.fourthPlaceValue]}>
                       {stats.avoidLastRate ? `${(stats.avoidLastRate * 100).toFixed(1)}%` : '-'}
                     </Text>
                   </View>
@@ -467,6 +586,14 @@ const styles = StyleSheet.create({
     color: '#6D6D70',
     fontWeight: '600',
   },
+  chartItemValueContainer: {
+    alignItems: 'flex-end',
+  },
+  chartItemPercentage: {
+    fontSize: 12,
+    color: '#8E8E93',
+    fontWeight: '400',
+  },
   chartBar: {
     height: 8,
     backgroundColor: '#F2F2F7',
@@ -523,5 +650,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FF6B35',
     fontWeight: '600',
+  },
+  firstPlaceValue: {
+    color: '#10B981', // 1位の色（緑色）
+  },
+  secondPlaceValue: {
+    color: '#3B82F6', // 2位の色（青色）
+  },
+  thirdPlaceValue: {
+    color: '#F59E0B', // 3位の色（オレンジ色）
+  },
+  fourthPlaceValue: {
+    color: '#EF4444', // 4位の色（赤色）
   },
 });
