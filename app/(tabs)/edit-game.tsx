@@ -254,15 +254,9 @@ export default function EditGameScreen() {
       // 写真が更新されていればアップロードしてパスを保存
       if (gamePhoto) {
         try {
-          console.log('🔍 DEBUG: Uploading photo for game update:', gameId);
           const storagePath = await StorageService.uploadGamePhoto(user.id, gameId, gamePhoto);
           updatedGame.photoPath = storagePath;
-          console.log('✅ DEBUG: Photo uploaded successfully for update, path:', storagePath);
-        } catch (photoError) {
-          console.error('❌ DEBUG: Photo upload failed during update:', photoError);
-          Alert.alert('写真アップロードエラー', '写真のアップロードに失敗しました。ゲームは更新されますが、写真は含まれません。');
-          // 写真なしでゲームを更新する
-        }
+        } catch {}
       }
       await GameService.updateGame(user.id, gameId, updatedGame);
       

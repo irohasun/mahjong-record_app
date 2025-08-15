@@ -83,34 +83,20 @@ export class AuthService {
    * @returns ユーザー情報
    */
   static async signIn(email: string, password: string) {
-    console.log('🔍 DEBUG: AuthService.signIn called with:', { email, passwordLength: password.length });
-    console.log('🔍 DEBUG: isSupabaseConfigured:', isSupabaseConfigured);
-    
     if (!isSupabaseConfigured) {
-      console.error('❌ DEBUG: Supabase is not configured');
       throw new Error('Supabaseが設定されていません');
     }
     
     try {
-      console.log('🔍 DEBUG: Attempting to sign in with Supabase...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      console.log('🔍 DEBUG: Supabase auth response:', { 
-        hasData: !!data, 
-        hasError: !!error, 
-        errorMessage: error?.message 
-      });
-
       if (error) {
-        console.error('❌ DEBUG: Supabase auth error:', error);
         const message = this.translateAuthError(error.message);
         throw new Error(message);
       }
-
-      console.log('✅ DEBUG: Sign in successful, user ID:', data.user?.id);
 
       // 認証状態をローカルに保存
       if (data.user) {
@@ -119,7 +105,7 @@ export class AuthService {
 
       return data;
     } catch (error) {
-      console.error('❌ DEBUG: Sign in error:', error);
+      console.error('Failed to sign in:', error);
       if (error instanceof Error) {
         throw error;
       }

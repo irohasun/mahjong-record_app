@@ -13,7 +13,6 @@ export const isSupabaseConfigured = supabaseUrl !== 'https://placeholder.supabas
 console.log('🔍 DEBUG: isSupabaseConfigured:', isSupabaseConfigured);
 console.log('🔍 DEBUG: supabaseUrl:', supabaseUrl);
 console.log('🔍 DEBUG: supabaseAnonKey length:', supabaseAnonKey.length);
-console.log('🔍 DEBUG: supabaseAnonKey starts with:', supabaseAnonKey.substring(0, 20) + '...');
 
 if (!isSupabaseConfigured) {
   console.warn('⚠️ DEBUG: Supabase environment variables not configured. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file.');

@@ -322,15 +322,9 @@ export default function AddGameScreen() {
       if (gamePhoto) {
         try {
           const tmpId = isEditMode && editGameData ? editGameData.id : `temp-${Date.now()}`;
-          console.log('🔍 DEBUG: Uploading photo for game:', tmpId);
           const storagePath = await StorageService.uploadGamePhoto(user.id, tmpId, gamePhoto);
           gameRecord.photoPath = storagePath;
-          console.log('✅ DEBUG: Photo uploaded successfully, path:', storagePath);
-        } catch (photoError) {
-          console.error('❌ DEBUG: Photo upload failed:', photoError);
-          Alert.alert('写真アップロードエラー', '写真のアップロードに失敗しました。ゲームは保存されますが、写真は含まれません。');
-          // 写真なしでゲームを保存する
-        }
+        } catch {}
       }
       // console.log('🔍 DEBUG: Game record created:', {
       //   accountId: gameRecord.accountId,
