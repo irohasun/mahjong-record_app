@@ -10,6 +10,7 @@ import { GameRecord } from '@/types/GameRecord';
 import * as ImagePicker from 'expo-image-picker';
 import { StorageService } from '@/services/StorageService';
 import { AccountService } from '@/services/AccountService';
+import { LocalStorageService } from '@/services/LocalStorageService';
 
 export default function EditGameScreen() {
   const router = useRouter();
@@ -242,12 +243,35 @@ export default function EditGameScreen() {
         const originalIndex = playerData.findIndex(x => x.name === p.name && x.isMainAccount === p.isMainAccount);
         playerData[originalIndex].rank = currentRank;
       });
+      // スコア表からラウンドデータを再構築（4人分入力済みの行のみ保存）
+      const roundsData = scores
+        .map((row, idx) => {
+          const numericRow = row.map((v) => {
+            const t = String(v ?? '').trim();
+            if (t === '') return null;
+            const n = parseInt(t, 10);
+            return Number.isNaN(n) ? null : n;
+          });
+          const hasBlank = numericRow.some((v) => v === null);
+          if (hasBlank) return null;
+          return {
+            round: `半荘${idx + 1}`,
+            honba: 0,
+            riichiSticks: 0,
+            handType: 'draw' as const,
+            points: numericRow as number[],
+            memo: '',
+          };
+        })
+        .filter((v) => v !== null) as any[];
+
       // 追加画面と同一の構成でデータを更新（ゲームタイプは既存値を維持）
       const updatedGame: any = {
         ...gameData,
         date: gameDate.toISOString(),
         gameType: gameData.gameType,
         players: playerData,
+        rounds: roundsData,
         // 他のフィールドは既存のデータを使用
       };
 
@@ -258,7 +282,12 @@ export default function EditGameScreen() {
           updatedGame.photoPath = storagePath;
         } catch {}
       }
+      
+      // ゲームデータを更新
       await GameService.updateGame(user.id, gameId, updatedGame);
+      
+      // ローカルキャッシュも更新
+      await LocalStorageService.saveGame(updatedGame);
       
       Alert.alert('修正完了', undefined, [
         { 
@@ -267,7 +296,7 @@ export default function EditGameScreen() {
             // DB反映のタイミング差分を避けるため、少し待ってから遷移
             setTimeout(() => {
               router.push('/(tabs)/history');
-            }, 200);
+            }, 500);
           }
         }
       ]);

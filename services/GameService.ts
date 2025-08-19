@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { GameRecord, PlayerStats } from '@/types/GameRecord';
+import { LocalStorageService } from './LocalStorageService';
+import { SyncService } from './SyncService';
 
 type Game = Database['public']['Tables']['games']['Row'];
 type GameInsert = Database['public']['Tables']['games']['Insert'];
@@ -99,13 +101,120 @@ export class GameService {
         }
       }
 
-      return {
+      const savedGame = {
         ...gameData,
         id: game.id,
       };
+
+      // ローカルに保存（即座に表示可能）
+      await LocalStorageService.saveGame(savedGame);
+
+      // バックグラウンドで同期
+      SyncService.backgroundSync().catch(error => {
+        console.error('❌ DEBUG: Background sync after add failed:', error);
+      });
+
+      return savedGame;
     } catch (error) {
       console.error('Failed to add game:', error);
       throw new Error('対局記録の保存に失敗しました');
+    }
+  }
+
+  static async getGames(): Promise<GameRecord[]> {
+    try {
+      // ローカル・ファースト: まずローカルデータを取得（瞬間表示）
+      const localGames = await LocalStorageService.getGames();
+      
+      // キャッシュが有効な場合はローカルデータを返す
+      const isCacheValid = await LocalStorageService.isCacheValid();
+      if (isCacheValid && localGames.length > 0) {
+        console.log('✅ DEBUG: Returning cached games:', localGames.length);
+        return localGames;
+      }
+
+      // Supabaseが設定されていない場合はモックデータ
+      if (!isSupabaseConfigured) {
+        return MockDataService.generateMockGameRecords();
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('認証されていません');
+      }
+
+      // バックグラウンドで同期を実行
+      SyncService.backgroundSync().catch(error => {
+        console.error('❌ DEBUG: Background sync failed:', error);
+      });
+
+      // ローカルデータがあれば返す（同期中でも表示可能）
+      if (localGames.length > 0) {
+        console.log('✅ DEBUG: Returning local games while syncing:', localGames.length);
+        return localGames;
+      }
+
+      // ローカルデータがない場合はリモートから取得
+      const { data: games, error } = await supabase
+        .from('games')
+        .select(`
+          *,
+          player_records (*),
+          round_records (*)
+        `)
+        .eq('account_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      const remoteGames = games?.map((game: any) => ({
+        id: game.id,
+        accountId: game.account_id,
+        date: game.date,
+        location: game.location || '',
+        gameType: game.game_type,
+        rules: game.rules,
+        memo: game.memo || '',
+        duration: game.duration_minutes,
+        gameEndCondition: game.game_end_condition,
+        finalRiichiSticks: game.final_riichi_sticks,
+        finalHonba: game.final_honba,
+        photoPath: game.photo_path,
+        players: game.player_records?.map((pr: any) => ({
+          name: pr.player_name,
+          isMainAccount: pr.is_main_account,
+          finalScore: pr.final_score,
+          rank: pr.rank,
+          startingPosition: pr.starting_position,
+        })) || [],
+        rounds: game.round_records?.map((rr: any) => ({
+          round: rr.round,
+          honba: rr.honba,
+          riichiSticks: rr.riichi_sticks,
+          winner: rr.winner,
+          loser: rr.loser,
+          handType: rr.hand_type,
+          points: rr.points,
+          han: rr.han,
+          fu: rr.fu,
+          yakuman: rr.yakuman,
+          memo: rr.memo || '',
+        })) || [],
+      })) || [];
+
+      // ローカルに保存
+      await LocalStorageService.saveGames(remoteGames);
+      
+      console.log('✅ DEBUG: Fetched and cached remote games:', remoteGames.length);
+      return remoteGames;
+    } catch (error) {
+      console.error('Failed to get games:', error);
+      // エラー時はローカルデータを返す
+      const localGames = await LocalStorageService.getGames();
+      return localGames;
     }
   }
 
@@ -361,6 +470,13 @@ export class GameService {
         console.log('🔍 DEBUG: No round records to insert');
       }
       
+      // ローカルキャッシュを更新
+      console.log('🔍 DEBUG: Updating local cache...');
+      await LocalStorageService.saveGame(gameData);
+      
+      // キャッシュの有効期限をリセットして強制的に再取得させる
+      await LocalStorageService.clearCacheTimestamp();
+      
       console.log('🔍 DEBUG: Game update completed successfully');
     } catch (error) {
       console.error('❌ DEBUG: Failed to update game:', error);
@@ -379,6 +495,8 @@ export class GameService {
         return MockDataService.generateMockGameRecords();
       }
 
+      console.log('🔍 DEBUG: getAllGames called for accountId:', accountId);
+
       const { data: games, error: gamesError } = await supabase
         .from('games')
         .select(`
@@ -394,7 +512,7 @@ export class GameService {
         throw gamesError;
       }
 
-      return games.map((game: any) => ({
+      const mappedGames = games.map((game: any) => ({
         id: game.id,
         accountId: game.account_id,
         date: game.date,
@@ -428,6 +546,12 @@ export class GameService {
         duration: game.duration_minutes,
         gameEndCondition: game.game_end_condition as 'normal' | 'bankruptcy' | 'timeout' | 'time_limit',
       }));
+
+      // ローカルキャッシュを更新
+      await LocalStorageService.saveGames(mappedGames);
+      console.log('🔍 DEBUG: getAllGames completed, games count:', mappedGames.length);
+
+      return mappedGames;
     } catch (error) {
       console.error('Failed to get games:', error);
       return [];
@@ -731,8 +855,8 @@ export class GameService {
     }
   }
 
-  static async getChartData(accountId: string, period: 'month' | 'year' | 'all') {
-    console.log('🔍 DEBUG: GameService.getChartData called with:', { accountId, period });
+  static async getChartData(accountId: string, period: 'month' | 'year' | 'all', selectedDate: Date) {
+    console.log('🔍 DEBUG: GameService.getChartData called with:', { accountId, period, selectedDate });
     
     try {
       // ダミーユーザーの場合は空のチャートデータを返す
@@ -741,58 +865,63 @@ export class GameService {
         return MockDataService.generateChartData(period);
       }
 
-      console.log('🔍 DEBUG: Fetching player records for chart data...');
-      const { data: playerRecords, error } = await supabase
-        .from('player_records')
+      console.log('🔍 DEBUG: Fetching games with rounds for rank progression...');
+      const { data: gamesData, error } = await supabase
+        .from('games')
         .select(`
-          final_score,
-          rank,
-          games!inner (
-            account_id,
-            date,
-            rules
-          )
+          id,
+          date,
+          player_records (is_main_account, starting_position),
+          round_records (points, created_at)
         `)
-        .eq('games.account_id', accountId)
-        .eq('is_main_account', true);
+        .eq('account_id', accountId);
 
       if (error) {
-        console.error('❌ DEBUG: Failed to fetch player records for chart:', error);
+        console.error('❌ DEBUG: Failed to fetch games for chart:', error);
         throw error;
       }
-      console.log('🔍 DEBUG: Player records fetched for chart, count:', playerRecords?.length || 0);
+      console.log('🔍 DEBUG: Games fetched for chart, count:', gamesData?.length || 0);
 
-      // games.dateで昇順ソート
-      const sortedRecords = (playerRecords as any[]).sort(
-        (a: any, b: any) => new Date(a.games.date).getTime() - new Date(b.games.date).getTime()
-      );
+      const posOrder: Record<string, number> = { East: 0, South: 1, West: 2, North: 3 } as const;
 
-      // 期間でフィルタリング
-      const now = new Date();
-      const filteredData = (sortedRecords as any[]).filter((record: any) => {
-        const gameDate = new Date(record.games.date);
+      // 期間でフィルタリング（選択された日付に基づく）
+      const base = new Date(selectedDate);
+      const filteredGames = (gamesData as any[]).filter((g: any) => {
+        const d = new Date(g.date);
         switch (period) {
           case 'month':
-            return gameDate.getMonth() === now.getMonth() && gameDate.getFullYear() === now.getFullYear();
+            return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth();
           case 'year':
-            return gameDate.getFullYear() === now.getFullYear();
+            return d.getFullYear() === base.getFullYear();
           default:
             return true;
         }
       });
 
-      // 選択された期間のすべての対局データを取得
-      const labels = filteredData.map((_: any, index: number) => `${index + 1}`);
-      const scores2 = filteredData.map((record: any) => record.final_score - 25000);
-      const ranks = filteredData.map((record: any) => record.rank);
-      
-      const result = { labels, scores: scores2, ranks };
-      console.log('🔍 DEBUG: Chart data calculated successfully:', {
-        period,
-        dataPoints: result.labels.length,
-        scoreRange: result.scores.length > 0 ? `${Math.min(...result.scores)} to ${Math.max(...result.scores)}` : 'No data'
-      });
-      
+      // 昇順にしてから各局の順位を抽出
+      const sortedGames = filteredGames.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const ranks: number[] = [];
+
+      for (const g of sortedGames) {
+        const players = (g.player_records || []).slice().sort((a: any, b: any) => (posOrder[a.starting_position] ?? 0) - (posOrder[b.starting_position] ?? 0));
+        const mainIdx = Math.max(0, players.findIndex((p: any) => p.is_main_account));
+
+        const rounds = (g.round_records || []).slice().sort((a: any, b: any) => new Date(a.created_at || g.date).getTime() - new Date(b.created_at || g.date).getTime());
+        for (const r of rounds) {
+          const raw = (r.points as any[]) || [];
+          if (raw.length < 4) continue;
+          if (raw.some((v) => v === null || v === undefined || v === '')) continue;
+          const pts = raw.map((v) => Number(v) || 0);
+          const uniqueSorted = Array.from(new Set(pts)).sort((a, b) => b - a);
+          const my = pts[mainIdx] ?? 0;
+          const myRank = (uniqueSorted.indexOf(my) + 1) || 4;
+          ranks.push(myRank);
+        }
+      }
+
+      const labels = ranks.map((_, idx) => `${idx + 1}`);
+      const result = { labels, scores: [], ranks };
+      console.log('🔍 DEBUG: Hanchan rank progression calculated:', { points: ranks.length });
       return result;
     } catch (error) {
       console.error('❌ DEBUG: Failed to get chart data:', error);

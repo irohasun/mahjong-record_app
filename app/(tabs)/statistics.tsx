@@ -53,7 +53,7 @@ export default function StatisticsScreen() {
       const statsData = await GameService.getHanchanStats(user.id, selectedPeriod, selectedDate);
       
       // console.log('🔍 DEBUG: Loading chart data...');
-      const chartData = await GameService.getChartData(user.id, selectedPeriod);
+      const chartData = await GameService.getChartData(user.id, selectedPeriod, selectedDate);
       // console.log('🔍 DEBUG: Chart data loaded:', chartData);
       
       setStats(statsData);
@@ -372,7 +372,7 @@ export default function StatisticsScreen() {
                       }}
                       />
                     <Text style={styles.chartSubtext}>
-                      {stats.totalGames}回の対局
+                      {chartData?.ranks?.length ?? 0}回の対局
                     </Text>
                   </View>
                 </View>

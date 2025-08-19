@@ -6,6 +6,7 @@ import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler'
 import { GameService } from '@/services/GameService';
 import { StorageService } from '@/services/StorageService';
 import { AuthService } from '@/services/AuthService';
+import { LocalStorageService } from '@/services/LocalStorageService';
 import { GameRecord } from '@/types/GameRecord';
 import { ensureAuthenticated } from '@/utils/authUtils';
 
@@ -28,23 +29,27 @@ export default function HistoryScreen() {
   useFocusEffect(
     React.useCallback(() => {
       // フォーカス時に即時リロード
+      console.log('🔍 DEBUG: History screen focused, reloading games...');
       loadGames();
     }, [])
   );
 
   const loadGames = async () => {
-    // console.log('🔍 DEBUG: loadGames called');
+    console.log('🔍 DEBUG: loadGames called');
     try {
       const user = await ensureAuthenticated();
-      // console.log('🔍 DEBUG: User authenticated:', user.id);
+      console.log('🔍 DEBUG: User authenticated:', user.id);
+      
+      // キャッシュを強制的に無効化して最新データを取得
+      await LocalStorageService.clearCacheTimestamp();
       
       const allGames = await GameService.getAllGames(user.id);
-      // console.log('🔍 DEBUG: Games loaded, count:', allGames.length);
+      console.log('🔍 DEBUG: Games loaded, count:', allGames.length);
       
       setGames(allGames);
-      // console.log('🔍 DEBUG: Games state updated');
+      console.log('🔍 DEBUG: Games state updated');
     } catch (error) {
-      // console.error('❌ DEBUG: Failed to load games:', error);
+      console.error('❌ DEBUG: Failed to load games:', error);
       // 予期しないエラーの場合のみログ出力
       if (error instanceof Error && !error.message.includes('匿名ログインに失敗しました')) {
         console.error('Failed to load games:', error);
@@ -52,7 +57,7 @@ export default function HistoryScreen() {
       setGames([]);
     } finally {
       setLoading(false);
-      // console.log('🔍 DEBUG: Loading completed');
+      console.log('🔍 DEBUG: Loading completed');
     }
   };
 
