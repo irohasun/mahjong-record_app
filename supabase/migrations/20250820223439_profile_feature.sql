@@ -29,24 +29,29 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Policies for profile photos (idempotent)
 DO $$ BEGIN
-  CREATE POLICY "Public read profile photos"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'profile-photos');
+  -- Create policy only if current_user is the storage schema owner
+  IF (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE relname = 'objects' AND relnamespace = 'storage'::regnamespace) = current_user THEN
+    CREATE POLICY "Public read profile photos"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'profile-photos');
+  END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE POLICY "Users can upsert their own profile photos"
-  ON storage.objects FOR ALL TO authenticated
-  USING (
-    bucket_id = 'profile-photos'
-    AND (split_part(name, '/', 1) = 'avatars')
-    AND (split_part(name, '/', 2) = auth.uid()::text)
-  )
-  WITH CHECK (
-    bucket_id = 'profile-photos'
-    AND (split_part(name, '/', 1) = 'avatars')
-    AND (split_part(name, '/', 2) = auth.uid()::text)
-  );
+  IF (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE relname = 'objects' AND relnamespace = 'storage'::regnamespace) = current_user THEN
+    CREATE POLICY "Users can upsert their own profile photos"
+    ON storage.objects FOR ALL TO authenticated
+    USING (
+      bucket_id = 'profile-photos'
+      AND (split_part(name, '/', 1) = 'avatars')
+      AND (split_part(name, '/', 2) = auth.uid()::text)
+    )
+    WITH CHECK (
+      bucket_id = 'profile-photos'
+      AND (split_part(name, '/', 1) = 'avatars')
+      AND (split_part(name, '/', 2) = auth.uid()::text)
+    );
+  END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- RLS on accounts (idempotent updates)

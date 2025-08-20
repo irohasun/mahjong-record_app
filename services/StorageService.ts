@@ -76,12 +76,14 @@ export class StorageService {
     const path = `avatars/${accountId}/profile.${ext}`;
 
     try {
+      console.log('🔍 DEBUG: Starting profile photo upload:', { accountId, uri, path });
       const res = await fetch(uri);
       if (!res.ok) {
         throw new Error(`Failed to fetch image: ${res.status} ${res.statusText}`);
       }
 
       const blob = await res.blob();
+      console.log('🔍 DEBUG: Profile file blob created:', { size: blob.size, type: blob.type });
       if (blob.size === 0) {
         throw new Error('Image file is empty (0 bytes)');
       }
@@ -98,6 +100,7 @@ export class StorageService {
 
       reader.readAsDataURL(blob);
       const base64 = await base64Promise;
+      console.log('🔍 DEBUG: Profile converted to base64, length:', base64.length);
 
       const { data, error } = await supabase.storage.from(bucket).upload(path, decode(base64), {
         upsert: true,
@@ -105,6 +108,7 @@ export class StorageService {
       });
 
       if (error) throw error;
+      console.log('✅ DEBUG: Profile photo uploaded successfully:', data);
       return `${bucket}/${data.path}`;
     } catch (error) {
       console.error('❌ DEBUG: Profile photo upload failed:', error);
