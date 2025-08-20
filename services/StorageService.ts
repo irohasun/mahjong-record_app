@@ -72,7 +72,8 @@ export class StorageService {
   static async uploadProfilePhoto(accountId: string, uri: string): Promise<string> {
     const bucket = 'profile-photos';
     const ext = uri.split('?')[0].split('#')[0].split('.').pop() || 'jpg';
-    const path = `avatars/${accountId}.${ext}`;
+    // RLS: second segment must equal auth.uid(); store under avatars/{uid}/profile.ext
+    const path = `avatars/${accountId}/profile.${ext}`;
 
     try {
       const res = await fetch(uri);
