@@ -8,6 +8,7 @@ import { StorageService } from '@/services/StorageService';
 import { GameService } from '@/services/GameService';
 import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
+import { AccountService } from '@/services/AccountService';
 
 
 export default function AddGameScreen() {
@@ -31,6 +32,12 @@ export default function AddGameScreen() {
     React.useCallback(() => {
       if (!isEditMode) {
         resetForm();
+        (async () => {
+          try {
+            const account = await AccountService.getAccount();
+            setPlayers([account.username || '自分', '', '', '']);
+          } catch {}
+        })();
       } else {
         loadGameData();
       }

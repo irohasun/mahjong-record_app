@@ -178,11 +178,7 @@ export default function AccountScreen() {
           
           <TouchableOpacity 
             style={styles.menuItem}
-            onPress={() => {
-              // プロフィール編集画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/profile-edit');
-            }}
+            onPress={() => router.push('/(tabs)/profile-edit')}
           >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIcon}>

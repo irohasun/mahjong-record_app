@@ -47,4 +47,28 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Profile photos bucket (public read)
+insert into storage.buckets (id, name, public)
+values ('profile-photos', 'profile-photos', true)
+on conflict (id) do nothing;
 
+do $$ begin
+  create policy "Public read profile photos"
+  on storage.objects for select
+  using (bucket_id = 'profile-photos');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy "Users can upsert their own profile photos"
+  on storage.objects for all to authenticated
+  using (
+    bucket_id = 'profile-photos'
+    and (split_part(name, '/', 1) = 'avatars')
+    and (split_part(name, '/', 2) = auth.uid()::text)
+  )
+  with check (
+    bucket_id = 'profile-photos'
+    and (split_part(name, '/', 1) = 'avatars')
+    and (split_part(name, '/', 2) = auth.uid()::text)
+  );
+exception when duplicate_object then null; end $$;
