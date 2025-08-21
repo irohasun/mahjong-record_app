@@ -195,9 +195,7 @@ export default function AccountScreen() {
           <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => {
-              // 通知設定画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/notification-settings');
+              router.push('/(tabs)/notification-settings');
             }}
           >
             <View style={styles.menuItemLeft}>

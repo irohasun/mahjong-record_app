@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Stack } from 'expo-router/stack';
+import { Stack } from 'expo-router';
+import { useFonts } from 'expo-font';
+import { SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { AuthGuard } from '@/components/AuthGuard';
+import { NotificationService } from '@/services/NotificationService';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { useRouter, useSegments } from 'expo-router';
 import { AuthService } from '@/services/AuthService';
@@ -12,6 +16,33 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [isLoading, setIsLoading] = useState(true);
+
+  const [loaded] = useFonts({
+    Inter: require('@expo-google-fonts/inter/Inter_400Regular.ttf'),
+    'Inter-Medium': require('@expo-google-fonts/inter/Inter_500Medium.ttf'),
+    'Inter-SemiBold': require('@expo-google-fonts/inter/Inter_600SemiBold.ttf'),
+    'Inter-Bold': require('@expo-google-fonts/inter/Inter_700Bold.ttf'),
+  });
+
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
+
+  // 通知サービスの初期化
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        console.log('🔔 DEBUG: Initializing notifications in app layout...');
+        await NotificationService.initialize();
+      } catch (error) {
+        console.error('❌ DEBUG: Failed to initialize notifications in app layout:', error);
+      }
+    };
+
+    initializeNotifications();
+  }, []);
 
   useEffect(() => {
     const checkAuthState = async () => {
@@ -66,14 +97,20 @@ export default function RootLayout() {
     );
   }
 
+  if (!loaded) return null;
+
   return (
-    <>
-      <Stack>
+    <AuthGuard>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
-    </>
+    </AuthGuard>
   );
 }

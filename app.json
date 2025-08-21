@@ -1,14 +1,30 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
-    "slug": "bolt-expo-nativewind",
+    "name": "Mahjong Record",
+    "slug": "mahjong-record-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mahjongrecord.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.mahjongrecord.app"
     },
     "web": {
       "bundler": "metro",
@@ -17,12 +33,22 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font", 
-      "expo-web-browser"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#FF6B35",
+          "sounds": ["./assets/sounds/notification.wav"]
+        }
+      ]
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
-    "platforms": ["ios", "android", "web"]
+    "notification": {
+      "icon": "./assets/images/notification-icon.png",
+      "color": "#FF6B35",
+      "iosDisplayInForeground": true,
+      "androidMode": "default",
+      "androidCollapsedTitle": "新しい通知"
+    }
   }
 }
