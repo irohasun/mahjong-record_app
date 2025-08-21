@@ -629,9 +629,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 100,
     borderRadius: 12, // gameCardと同じborderRadius
-    marginBottom: 12, // gameCardと同じmarginBottom
-    minHeight: 120, // gameCardと同じminHeight
-    padding: 20, // gameCardと同じpadding
+    // 余計なマージンやパディングを無くし、カード高さと完全一致させる
+    // Swipeable が行全体の高さを管理するため、ここでは高さ調整しない
+    overflow: 'hidden',
   },
   swipeDeleteButton: {
     justifyContent: 'center',
