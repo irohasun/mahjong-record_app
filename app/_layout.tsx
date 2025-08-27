@@ -18,10 +18,10 @@ export default function RootLayout() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [loaded] = useFonts({
-    Inter: require('@expo-google-fonts/inter/Inter_400Regular.ttf'),
-    'Inter-Medium': require('@expo-google-fonts/inter/Inter_500Medium.ttf'),
-    'Inter-SemiBold': require('@expo-google-fonts/inter/Inter_600SemiBold.ttf'),
-    'Inter-Bold': require('@expo-google-fonts/inter/Inter_700Bold.ttf'),
+    Inter: require('@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf'),
+    'Inter-Medium': require('@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf'),
+    'Inter-SemiBold': require('@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf'),
+    'Inter-Bold': require('@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf'),
   });
 
   useEffect(() => {

@@ -45,13 +45,42 @@ export class NotificationService {
       let finalStatus = existingStatus;
       
       if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
+        console.log('🔔 DEBUG: Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowAnnouncements: false,
+          },
+        });
         finalStatus = status;
+        console.log('🔔 DEBUG: Permission request result:', status);
       }
       
       if (finalStatus !== 'granted') {
-        console.log('❌ DEBUG: Notification permission not granted');
-        return false;
+        console.log('❌ DEBUG: Notification permission not granted. Status:', finalStatus);
+        
+        // 許可が拒否された場合の詳細情報をログに出力
+        if (finalStatus === 'denied') {
+          console.log('❌ DEBUG: Permission explicitly denied by user');
+        } else if (finalStatus === 'undetermined') {
+          console.log('❌ DEBUG: Permission status undetermined');
+        }
+        
+        // 許可が拒否されても、基本的な通知機能は有効にする
+        console.log('🔔 DEBUG: Continuing with limited notification functionality');
+        
+        // 通知の動作を設定（ローカル通知は動作する可能性がある）
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+          }),
+        });
+        
+        return false; // プッシュ通知は利用不可
       }
       
       // デバイスが物理デバイスかチェック
@@ -82,7 +111,54 @@ export class NotificationService {
       return true;
     } catch (error) {
       console.error('❌ DEBUG: Failed to initialize notifications:', error);
+      
+      // エラーが発生しても基本的な通知機能は有効にする
+      console.log('🔔 DEBUG: Setting up basic notification handler despite error');
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+      
       return false;
+    }
+  }
+
+  /**
+   * 通知の許可状態を確認
+   */
+  static async checkPermissionStatus() {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      console.log('🔔 DEBUG: Current notification permission status:', status);
+      return status;
+    } catch (error) {
+      console.error('❌ DEBUG: Failed to check permission status:', error);
+      return 'undetermined';
+    }
+  }
+
+  /**
+   * 通知の許可を再要求
+   */
+  static async requestPermissionAgain() {
+    try {
+      console.log('🔔 DEBUG: Requesting notification permissions again...');
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowAnnouncements: false,
+        },
+      });
+      console.log('🔔 DEBUG: Permission request result:', status);
+      return status;
+    } catch (error) {
+      console.error('❌ DEBUG: Failed to request permissions again:', error);
+      return 'undetermined';
     }
   }
 

@@ -9,6 +9,8 @@ import {
   Alert,
   SafeAreaView,
   TextInput,
+  Platform,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Bell, Clock, Calendar, Trophy, ArrowLeft, TestTube } from 'lucide-react-native';
@@ -39,7 +41,7 @@ export default function NotificationSettingsScreen() {
       
       // 権限状態を確認
       const permissionStatus = await NotificationService.checkPermissionStatus();
-      setPermissionGranted(permissionStatus.granted);
+      setPermissionGranted(permissionStatus === 'granted');
       
       // 設定を読み込み
       const savedSettings = await NotificationService.getSettings();
@@ -64,13 +66,23 @@ export default function NotificationSettingsScreen() {
       // 通知の有効/無効が変更された場合
       if (key === 'enabled') {
         if (value && !permissionGranted) {
-          const granted = await NotificationService.requestPermission();
-          if (!granted) {
-            Alert.alert('権限が必要', '通知を有効にするには、通知の権限を許可してください。');
-            setSettings({ ...newSettings, enabled: false });
-            return;
+          // 通知の許可状態を再確認
+          const currentStatus = await NotificationService.checkPermissionStatus();
+          if (currentStatus !== 'granted') {
+            // 許可を要求
+            const newStatus = await NotificationService.requestPermissionAgain();
+            if (newStatus !== 'granted') {
+              Alert.alert(
+                '権限が必要', 
+                '通知を有効にするには、通知の権限を許可してください。\n\n設定アプリで通知の許可を有効にすることもできます。'
+              );
+              setSettings({ ...newSettings, enabled: false });
+              return;
+            }
+            setPermissionGranted(true);
+          } else {
+            setPermissionGranted(true);
           }
-          setPermissionGranted(true);
         }
       }
       
@@ -94,6 +106,23 @@ export default function NotificationSettingsScreen() {
     } catch (error) {
       console.error('❌ DEBUG: Failed to update reminder time:', error);
       Alert.alert('エラー', 'リマインダー時間の更新に失敗しました');
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    try {
+      console.log('🔔 DEBUG: User requested permission again...');
+      const status = await NotificationService.requestPermissionAgain();
+      
+      if (status === 'granted') {
+        setPermissionGranted(true);
+        Alert.alert('成功', '通知の許可が付与されました！');
+      } else {
+        Alert.alert('権限が拒否されました', '通知を有効にするには、設定アプリで通知の許可を有効にしてください。');
+      }
+    } catch (error) {
+      console.error('❌ DEBUG: Failed to request permission:', error);
+      Alert.alert('エラー', '権限の要求に失敗しました');
     }
   };
 
@@ -158,6 +187,89 @@ export default function NotificationSettingsScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* 通知の許可状態 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>通知の許可状態</Text>
+          
+          <View style={styles.permissionStatus}>
+            <View style={styles.settingLeft}>
+              <View style={styles.settingIcon}>
+                <Bell size={20} color={permissionGranted ? "#10B981" : "#EF4444"} />
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={styles.settingTitle}>
+                  {permissionGranted ? '通知が許可されています' : '通知が許可されていません'}
+                </Text>
+                <Text style={styles.settingSubtitle}>
+                  {permissionGranted 
+                    ? 'アプリからの通知を受信できます' 
+                    : '通知を受信するには、通知の許可が必要です'
+                  }
+                </Text>
+              </View>
+            </View>
+            
+            {!permissionGranted && (
+              <TouchableOpacity
+                style={styles.permissionButton}
+                onPress={handleRequestPermission}
+              >
+                <Text style={styles.permissionButtonText}>許可を要求</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          {!permissionGranted && (
+            <View style={styles.permissionHelp}>
+              <Text style={styles.permissionHelpTitle}>通知の許可を有効にする方法</Text>
+              <Text style={styles.permissionHelpText}>
+                1. 設定アプリを開く{'\n'}
+                2. 「通知」をタップ{'\n'}
+                3. 「麻雀記録アプリ」をタップ{'\n'}
+                4. 「通知を許可」をオンにする
+              </Text>
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() => {
+                  Alert.alert(
+                    '設定アプリを開く',
+                    '設定アプリで通知の許可を有効にしてください。',
+                    [
+                      { text: 'キャンセル', style: 'cancel' },
+                      { text: '設定を開く', onPress: () => {
+                        // iOSの設定アプリを開く
+                        if (Platform.OS === 'ios') {
+                          Linking.openURL('app-settings:');
+                        }
+                      }}
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.settingsButtonText}>設定アプリを開く</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* 通知の重要性説明 */}
+        {!permissionGranted && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>通知の重要性</Text>
+            <View style={styles.importanceContent}>
+              <Text style={styles.importanceText}>
+                通知を有効にすることで、以下の機能が利用できます：
+              </Text>
+              <View style={styles.importanceList}>
+                <Text style={styles.importanceItem}>• 対局リマインダー（定期的な対局の思い出し）</Text>
+                <Text style={styles.importanceItem}>• 週次・月次統計の通知</Text>
+                <Text style={styles.importanceItem}>• アチーブメント達成の通知</Text>
+                <Text style={styles.importanceItem}>• 重要なアプリ更新情報</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* 通知の有効/無効 */}
         <View style={styles.section}>
           <View style={styles.settingRow}>
@@ -484,6 +596,73 @@ const styles = StyleSheet.create({
   },
   dayButtonTextActive: {
     color: '#FFFFFF',
+  },
+  permissionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  permissionButton: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  permissionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  permissionHelp: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  permissionHelpTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 8,
+  },
+  permissionHelpText: {
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  settingsButton: {
+    backgroundColor: '#F59E0B',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+  },
+  settingsButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  importanceContent: {
+    paddingVertical: 8,
+  },
+  importanceText: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  importanceList: {
+    marginLeft: 8,
+  },
+  importanceItem: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 6,
+    lineHeight: 18,
   },
   testButton: {
     flexDirection: 'row',

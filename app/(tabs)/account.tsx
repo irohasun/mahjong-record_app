@@ -236,11 +236,7 @@ export default function AccountScreen() {
           
           <TouchableOpacity 
             style={styles.menuItem}
-            onPress={() => {
-              // 利用規約画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/terms-of-service');
-            }}
+            onPress={() => router.push('/(tabs)/terms-of-service')}
           >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIcon}>
@@ -256,11 +252,7 @@ export default function AccountScreen() {
 
           <TouchableOpacity 
             style={styles.menuItem}
-            onPress={() => {
-              // プライバシーポリシー画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/privacy-policy');
-            }}
+            onPress={() => router.push('/(tabs)/privacy-policy')}
           >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIcon}>
@@ -276,11 +268,7 @@ export default function AccountScreen() {
 
           <TouchableOpacity 
             style={styles.menuItem}
-            onPress={() => {
-              // データ処理について画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/data-processing');
-            }}
+            onPress={() => router.push('/(tabs)/data-processing')}
           >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIcon}>
