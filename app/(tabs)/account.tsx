@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, Linking } from 'react-native';
-import { User, Star, Download, Upload, Shield, LogOut, Mail, Settings, Lock, Eye, Bell, HelpCircle } from 'lucide-react-native';
+import { User, Star, Download, Upload, Shield, LogOut, Mail, Lock, HelpCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { MonetizationService } from '@/services/MonetizationService';
@@ -131,10 +131,10 @@ export default function AccountScreen() {
         contentContainerStyle={styles.scrollContent}
       >
 
-        {/* 認証情報セクション */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>認証情報</Text>
+          <Text style={styles.sectionTitle}>プロフィール設定</Text>
           
+          {/* 認証情報（プロフィール設定内に内包） */}
           {isAnonymousUser ? (
             <View style={styles.anonymousWarning}>
               <Shield size={20} color="#F59E0B" />
@@ -162,20 +162,6 @@ export default function AccountScreen() {
             </View>
           )}
           
-          {!isAnonymousUser && (
-            <TouchableOpacity 
-              style={styles.signOutButton}
-              onPress={handleSignOut}
-            >
-              <LogOut size={20} color="#EF4444" />
-              <Text style={styles.signOutButtonText}>ログアウト</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>プロフィール設定</Text>
-          
           <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/profile-edit')}
@@ -192,43 +178,9 @@ export default function AccountScreen() {
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => {
-              router.push('/(tabs)/notification-settings');
-            }}
-          >
-            <View style={styles.menuItemLeft}>
-              <View style={styles.menuIcon}>
-                <Settings size={20} color="#3B82F6" />
-              </View>
-              <View style={styles.menuItemContent}>
-                <Text style={styles.menuItemTitle}>通知設定</Text>
-                <Text style={styles.menuItemSubtitle}>プッシュ通知の設定</Text>
-              </View>
-            </View>
-            <Text style={styles.menuItemArrow}>›</Text>
-          </TouchableOpacity>
+          {/* 通知設定は不要のため削除しました */}
 
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => {
-              // プライバシー設定画面に遷移（実装予定）
-              Alert.alert('開発中', 'この機能は開発中です');
-              // router.push('/(tabs)/privacy-settings');
-            }}
-          >
-            <View style={styles.menuItemLeft}>
-              <View style={styles.menuIcon}>
-                <Eye size={20} color="#10B981" />
-              </View>
-              <View style={styles.menuItemContent}>
-                <Text style={styles.menuItemTitle}>プライバシー設定</Text>
-                <Text style={styles.menuItemSubtitle}>データ共有の設定</Text>
-              </View>
-            </View>
-            <Text style={styles.menuItemArrow}>›</Text>
-          </TouchableOpacity>
+          {/* プライバシー設定は不要のため削除しました */}
         </View>
 
         <View style={styles.section}>
@@ -322,6 +274,17 @@ export default function AccountScreen() {
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
+          
+          {/* プロフィール設定内のログアウト */}
+          {!isAnonymousUser && (
+            <TouchableOpacity 
+              style={[styles.signOutButton, { marginTop: 8 }]}
+              onPress={handleSignOut}
+            >
+              <LogOut size={20} color="#EF4444" />
+              <Text style={styles.signOutButtonText}>ログアウト</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
 
