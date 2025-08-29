@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image, Keyboard, LayoutAnimation, UIManager } from 'react-native';
-import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
+import { Save, Calendar, Plus, X, Camera, Check, ArrowLeft } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GameService } from '@/services/GameService';
@@ -335,9 +335,11 @@ export default function EditGameScreen() {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
         >
-        {/* ヘッダー */}
+        {/* ヘッダー（タイトル非表示・左上に戻る矢印） */}
         <View style={styles.header}>
-          <Text style={styles.title}>記録修正</Text>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/history')} style={styles.backButton}>
+            <ArrowLeft size={24} color="#000000" />
+          </TouchableOpacity>
         </View>
 
         {/* 日付 */}
@@ -656,6 +658,9 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
     backgroundColor: '#FFF',
+  },
+  backButton: {
+    padding: 8,
   },
   title: {
     fontSize: 28,

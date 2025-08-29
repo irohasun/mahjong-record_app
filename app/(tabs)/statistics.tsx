@@ -540,6 +540,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1C1E',
     marginBottom: 16,
+    textAlign: 'center',
   },
   periodSelectorContainer: {
     flexDirection: 'row',

@@ -318,20 +318,7 @@ export default function HistoryScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.title}>対局履歴</Text>
-            <Text style={styles.subtitle}>
-              {games.length}回の対局記録
-            </Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.addButton}
-            onPress={() => router.push('/(tabs)/add-game')}
-            activeOpacity={0.7}
-          >
-            <Plus size={20} color="#FF6B35" />
-            <Text style={styles.addButtonText}>対局記録</Text>
-          </TouchableOpacity>
+          <Text style={styles.title}>履歴</Text>
         </View>
 
         {games.length === 0 ? (
@@ -405,6 +392,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1C1E',
     marginBottom: 4,
+    textAlign: 'center',
+    width: '100%',
+    alignSelf: 'center',
   },
   subtitle: {
     fontSize: 16,

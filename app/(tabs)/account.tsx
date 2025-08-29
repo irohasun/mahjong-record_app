@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, Linking } from 'react-native';
-import { User, Star, Download, Upload, Shield, LogOut, Mail, Lock, HelpCircle } from 'lucide-react-native';
+import { User, Download, Upload, Shield, LogOut, Lock, HelpCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
-import { MonetizationService } from '@/services/MonetizationService';
+// 仕様変更: プラン管理機能は不要のため関連インポートを削除
 import { AuthService } from '@/services/AuthService';
-import { PremiumModal } from '@/components/PremiumModal';
+// 仕様変更: プレミアム関連UIは不要のため削除
 import { ensureAuthenticated } from '@/utils/authUtils';
 
 export default function AccountScreen() {
@@ -13,7 +13,7 @@ export default function AccountScreen() {
   const [account, setAccount] = useState<any>(null);
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
-  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  // 仕様変更: プラン管理機能削除に伴い状態を削除
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -119,12 +119,7 @@ export default function AccountScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
       <View style={styles.header}>
         <Text style={styles.title}>アカウント</Text>
-        <View style={styles.planBadge}>
-          <Star size={16} color={account.isPremium ? '#FFD700' : '#8E8E93'} />
-          <Text style={styles.planText}>
-            {account.isPremium ? 'プレミアム' : 'フリー'}
-          </Text>
-        </View>
+        {/* 仕様変更: プランバッジは削除 */}
       </View>
       <ScrollView 
         style={styles.container}
@@ -134,8 +129,8 @@ export default function AccountScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>プロフィール設定</Text>
           
-          {/* 認証情報（プロフィール設定内に内包） */}
-          {isAnonymousUser ? (
+          {/* 認証情報（プロフィール設定内に内包）: ゲスト警告のみ表示 */}
+          {isAnonymousUser && (
             <View style={styles.anonymousWarning}>
               <Shield size={20} color="#F59E0B" />
               <View style={styles.anonymousWarningContent}>
@@ -147,21 +142,9 @@ export default function AccountScreen() {
                 </Text>
               </View>
             </View>
-          ) : (
-            <View style={styles.emailInfo}>
-              <Mail size={20} color="#FF6B35" />
-              <View style={styles.emailContent}>
-                <Text style={styles.emailLabel}>メールアドレス</Text>
-                <Text style={styles.emailValue}>{user?.email || 'なし'}</Text>
-                {user?.email_confirmed_at ? (
-                  <Text style={styles.verifiedText}>✓ 確認済み</Text>
-                ) : (
-                  <Text style={styles.unverifiedText}>未確認</Text>
-                )}
-              </View>
-            </View>
           )}
           
+          {/* 仕様追加: お客様情報（名前・アイコン編集、メール閲覧） */}
           <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/profile-edit')}
@@ -171,8 +154,8 @@ export default function AccountScreen() {
                 <User size={20} color="#FF6B35" />
               </View>
               <View style={styles.menuItemContent}>
-                <Text style={styles.menuItemTitle}>プロフィール編集</Text>
-                <Text style={styles.menuItemSubtitle}>{account.username}</Text>
+                <Text style={styles.menuItemTitle}>お客様情報</Text>
+                <Text style={styles.menuItemSubtitle}>名前・アイコン・メール</Text>
               </View>
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
@@ -196,7 +179,6 @@ export default function AccountScreen() {
               </View>
               <View style={styles.menuItemContent}>
                 <Text style={styles.menuItemTitle}>利用規約</Text>
-                <Text style={styles.menuItemSubtitle}>アプリの利用条件</Text>
               </View>
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
@@ -212,7 +194,6 @@ export default function AccountScreen() {
               </View>
               <View style={styles.menuItemContent}>
                 <Text style={styles.menuItemTitle}>プライバシーポリシー</Text>
-                <Text style={styles.menuItemSubtitle}>データ保護方針</Text>
               </View>
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
@@ -228,7 +209,6 @@ export default function AccountScreen() {
               </View>
               <View style={styles.menuItemContent}>
                 <Text style={styles.menuItemTitle}>データ処理について</Text>
-                <Text style={styles.menuItemSubtitle}>データの取り扱い</Text>
               </View>
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
@@ -275,50 +255,11 @@ export default function AccountScreen() {
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
           
-          {/* プロフィール設定内のログアウト */}
-          {!isAnonymousUser && (
-            <TouchableOpacity 
-              style={[styles.signOutButton, { marginTop: 8 }]}
-              onPress={handleSignOut}
-            >
-              <LogOut size={20} color="#EF4444" />
-              <Text style={styles.signOutButtonText}>ログアウト</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
 
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>プラン管理</Text>
-          
-          {!account.isPremium ? (
-            <TouchableOpacity 
-              style={styles.premiumButton}
-              onPress={() => setShowPremiumModal(true)}
-            >
-              <Star size={20} color="#FFD700" />
-              <Text style={styles.premiumButtonText}>プレミアムにアップグレード</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.premiumStatus}>
-              <Star size={20} color="#FFD700" />
-              <Text style={styles.premiumStatusText}>プレミアムプランを利用中</Text>
-            </View>
-          )}
-
-          <View style={styles.planDetails}>
-            <Text style={styles.planDetailsTitle}>
-              {account.isPremium ? 'プレミアム特典' : 'フリープラン制限'}
-            </Text>
-            <Text style={styles.planDetailsText}>
-              {account.isPremium 
-                ? '• 無制限の対局記録\n• 広告なし\n• 高度な統計分析\n• データエクスポート'
-                : '• 無制限の対局記録\n• 広告表示あり\n• 基本統計のみ'
-              }
-            </Text>
-          </View>
-        </View>
+        {/* 仕様変更: プラン管理は不要のためセクションを削除しました */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>データ管理</Text>
@@ -342,14 +283,20 @@ export default function AccountScreen() {
           </TouchableOpacity>
         </View>
 
-        <PremiumModal
-          visible={showPremiumModal}
-          onClose={() => setShowPremiumModal(false)}
-          onPurchase={() => {
-            setShowPremiumModal(false);
-            loadAccountData();
-          }}
-        />
+        {/* 仕様変更: プレミアムモーダルは廃止 */}
+
+        {/* 最下部に独立したログアウト */}
+        {!isAnonymousUser && (
+          <View style={[styles.section, { marginTop: 12 }]}> 
+            <TouchableOpacity 
+              style={styles.signOutButton}
+              onPress={handleSignOut}
+            >
+              <LogOut size={20} color="#EF4444" />
+              <Text style={styles.signOutButtonText}>ログアウト</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -389,21 +336,11 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#1C1C1E',
+    textAlign: 'center',
+    width: '100%',
+    alignSelf: 'center',
   },
-  planBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F2F2F7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  planText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
+  // 仕様変更: プラン表示関連のスタイルは不要になったため削除可（残骸があれば段階的に整理）
   section: {
     backgroundColor: '#FFF',
     marginTop: 20,
@@ -489,53 +426,6 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     marginTop: 2,
   },
-
-  premiumButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF6B35',
-    borderRadius: 12,
-    paddingVertical: 16,
-    gap: 8,
-    marginBottom: 16,
-  },
-  premiumButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  premiumStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    paddingVertical: 16,
-    gap: 8,
-    marginBottom: 16,
-  },
-  premiumStatusText: {
-    color: '#1C1C1E',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  planDetails: {
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 16,
-  },
-  planDetailsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 8,
-  },
-  planDetailsText: {
-    fontSize: 14,
-    color: '#6D6D70',
-    lineHeight: 20,
-  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -582,41 +472,7 @@ const styles = StyleSheet.create({
     color: '#B45309',
     lineHeight: 20,
   },
-  emailInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  emailContent: {
-    flex: 1,
-  },
-  emailLabel: {
-    fontSize: 12,
-    color: '#6D6D70',
-    fontWeight: '500',
-  },
-  emailValue: {
-    fontSize: 16,
-    color: '#1C1C1E',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  verifiedText: {
-    fontSize: 12,
-    color: '#10B981',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  unverifiedText: {
-    fontSize: 12,
-    color: '#EF4444',
-    fontWeight: '500',
-    marginTop: 2,
-  },
+  // メールアドレス表示は仕様により削除
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',

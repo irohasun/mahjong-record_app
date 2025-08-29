@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, SafeAreaView, ScrollView, TextInput } from 'react-native';
+import { ArrowLeft } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
@@ -10,6 +11,7 @@ export default function ProfileEditScreen() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [email, setEmail] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -21,6 +23,12 @@ export default function ProfileEditScreen() {
           const url = StorageService.getPublicUrl((account as any).avatar_url);
           if (url) setAvatarUri(url);
         }
+        // メールアドレスを取得（閲覧のみ）
+        try {
+          const { supabase } = await import('@/lib/supabase');
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email) setEmail(user.email);
+        } catch {}
       } catch (e) {
         console.error(e);
       }
@@ -84,8 +92,14 @@ export default function ProfileEditScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
+      {/* ヘッダー（タイトル非表示・左上に戻る矢印） */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)/account')} style={styles.backButton}>
+          <ArrowLeft size={24} color="#000000" />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView contentContainerStyle={{ padding: 20 }}>
-        <Text style={styles.title}>プロフィール編集</Text>
         <View style={styles.avatarContainer}>
           <TouchableOpacity onPress={pickAvatar}>
             {avatarUri ? (
@@ -106,6 +120,14 @@ export default function ProfileEditScreen() {
             maxLength={20}
           />
         </View>
+        <View style={styles.field}>
+          <Text style={styles.label}>メールアドレス（閲覧のみ）</Text>
+          <TextInput
+            value={email}
+            editable={false}
+            style={styles.input}
+          />
+        </View>
         <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={save}>
           <Text style={styles.saveText}>保存</Text>
         </TouchableOpacity>
@@ -115,6 +137,16 @@ export default function ProfileEditScreen() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    padding: 8,
+  },
   title: {
     fontSize: 24,
     fontWeight: '700',

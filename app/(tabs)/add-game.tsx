@@ -738,6 +738,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#1C1C1E',
+    textAlign: 'center',
   },
   saveButtonContainer: {
     paddingHorizontal: 20,
