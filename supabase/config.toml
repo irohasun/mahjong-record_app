@@ -81,7 +81,9 @@ enabled = true
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
-api_url = "http://192.168.0.77"
+# NOTE: Expo 実機/エミュレータからローカル Supabase に接続するため、
+#       127.0.0.1 ではなくホスト端末の LAN 内 IP (例: 192.168.0.74) を指定します。
+api_url = "http://192.168.0.74"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 

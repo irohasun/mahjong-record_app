@@ -17,14 +17,16 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mahjongrecord.app"
+      "bundleIdentifier": "com.mahjongrecord.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.mahjongrecord.app"
+      "package": "com.mahjongrecord.app",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
@@ -33,15 +35,27 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "useAndroidX": true,
+            "enableJetifier": true
+          }
+        }
+      ],
+      "./plugins/withAndroidManifestFix.js",
       [
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",
           "color": "#FF6B35",
-          "sounds": ["./assets/sounds/notification.wav"]
+          "sounds": [
+            "./assets/sounds/notification.wav"
+          ]
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "notification": {
       "icon": "./assets/images/notification-icon.png",
@@ -49,6 +63,13 @@
       "iosDisplayInForeground": true,
       "androidMode": "default",
       "androidCollapsedTitle": "新しい通知"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "38ea6434-be87-4148-84df-c73cfda620f2"
+      }
+    },
+    "owner": "koyake"
   }
 }
