@@ -284,4 +284,225 @@ export class SyncService {
     await LocalStorageService.saveLastSync(0); // キャッシュを無効化
     await this.backgroundSync();
   }
+
+  /**
+   * ローカルストレージのデータをSupabaseに同期
+   * 匿名ユーザーがアップグレードされた後に呼び出される
+   * @returns 同期されたゲーム数
+   */
+  static async syncLocalDataToSupabase(): Promise<number> {
+    if (!isSupabaseConfigured) {
+      console.log('⚠️ Supabase not configured, skipping sync');
+      return 0;
+    }
+
+    try {
+      console.log('🔄 Syncing local data to Supabase');
+
+      // 現在のユーザーを取得
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('認証されていません');
+      }
+
+      // ダミーユーザーや匿名ユーザーの場合はスキップ
+      if (user.id === 'dummy-user-id' || user.is_anonymous) {
+        console.log('⚠️ User is still anonymous, skipping sync');
+        return 0;
+      }
+
+      // ローカルストレージからすべてのゲームを取得
+      const localGames = await LocalStorageService.getAllGames();
+      
+      if (localGames.length === 0) {
+        console.log('ℹ️ No local games to sync');
+        return 0;
+      }
+
+      console.log(`📦 Found ${localGames.length} local games to sync`);
+
+      // 各ゲームをSupabaseにアップロード
+      let syncedCount = 0;
+      for (const game of localGames) {
+        try {
+          // ゲームデータを準備
+          const gameData = {
+            id: game.id,
+            account_id: user.id,
+            date: game.date,
+            photo_path: game.photoPath || null,
+            created_at: game.createdAt || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          // ゲームを挿入（既に存在する場合は更新）
+          const { error: gameError } = await supabase
+            .from('games')
+            .upsert(gameData, { onConflict: 'id' });
+
+          if (gameError) {
+            console.error('❌ Failed to sync game:', game.id, gameError);
+            continue;
+          }
+
+          // プレイヤーレコードを挿入
+          if (game.players && game.players.length > 0) {
+            const playerRecords = game.players.map((player) => ({
+              game_id: game.id,
+              player_name: player.name,
+              rank: player.rank,
+              score: player.score,
+              final_score: player.finalScore,
+              is_main_account: player.isMainAccount,
+            }));
+
+            const { error: playerError } = await supabase
+              .from('player_records')
+              .upsert(playerRecords);
+
+            if (playerError) {
+              console.error('❌ Failed to sync player records for game:', game.id, playerError);
+            }
+          }
+
+          // ラウンドレコードを挿入
+          if (game.rounds && game.rounds.length > 0) {
+            const roundRecords = game.rounds.map((round, index) => ({
+              game_id: game.id,
+              round_number: index + 1,
+              points: round.points,
+            }));
+
+            const { error: roundError } = await supabase
+              .from('round_records')
+              .upsert(roundRecords);
+
+            if (roundError) {
+              console.error('❌ Failed to sync round records for game:', game.id, roundError);
+            }
+          }
+
+          syncedCount++;
+          console.log(`✅ Synced game ${syncedCount}/${localGames.length}`);
+        } catch (error) {
+          console.error('❌ Error syncing game:', game.id, error);
+        }
+      }
+
+      console.log(`✅ Sync completed: ${syncedCount}/${localGames.length} games synced`);
+
+      // 同期後、最終同期時刻を更新
+      await LocalStorageService.saveLastSync(Date.now());
+
+      return syncedCount;
+    } catch (error) {
+      console.error('❌ Data sync failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 匿名ユーザーのローカルデータを新しいアカウントに移行
+   * @deprecated upgradeAnonymousUserを使用してください
+   * @param newUserId 新しいユーザーID
+   * @returns 移行されたゲーム数
+   */
+  static async migrateAnonymousDataToAccount(newUserId: string): Promise<number> {
+    if (!isSupabaseConfigured) {
+      console.log('⚠️ Supabase not configured, skipping data migration');
+      return 0;
+    }
+
+    try {
+      console.log('🔄 Starting anonymous data migration to account:', newUserId);
+
+      // ローカルストレージからすべてのゲームを取得
+      const localGames = await LocalStorageService.getAllGames();
+      
+      if (localGames.length === 0) {
+        console.log('ℹ️ No local games to migrate');
+        return 0;
+      }
+
+      console.log(`📦 Found ${localGames.length} local games to migrate`);
+
+      // 各ゲームをSupabaseにアップロード
+      let migratedCount = 0;
+      for (const game of localGames) {
+        try {
+          // ゲームのaccount_idを新しいユーザーIDに更新
+          const gameData = {
+            id: game.id,
+            account_id: newUserId,
+            date: game.date,
+            photo_path: game.photoPath || null,
+            created_at: game.createdAt || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          // ゲームを挿入
+          const { error: gameError } = await supabase
+            .from('games')
+            .upsert(gameData, { onConflict: 'id' });
+
+          if (gameError) {
+            console.error('❌ Failed to migrate game:', game.id, gameError);
+            continue;
+          }
+
+          // プレイヤーレコードを挿入
+          if (game.players && game.players.length > 0) {
+            const playerRecords = game.players.map((player) => ({
+              game_id: game.id,
+              player_name: player.name,
+              rank: player.rank,
+              score: player.score,
+              final_score: player.finalScore,
+              is_main_account: player.isMainAccount,
+            }));
+
+            const { error: playerError } = await supabase
+              .from('player_records')
+              .upsert(playerRecords);
+
+            if (playerError) {
+              console.error('❌ Failed to migrate player records for game:', game.id, playerError);
+            }
+          }
+
+          // ラウンドレコードを挿入
+          if (game.rounds && game.rounds.length > 0) {
+            const roundRecords = game.rounds.map((round, index) => ({
+              game_id: game.id,
+              round_number: index + 1,
+              points: round.points,
+            }));
+
+            const { error: roundError } = await supabase
+              .from('round_records')
+              .upsert(roundRecords);
+
+            if (roundError) {
+              console.error('❌ Failed to migrate round records for game:', game.id, roundError);
+            }
+          }
+
+          migratedCount++;
+          console.log(`✅ Migrated game ${migratedCount}/${localGames.length}`);
+        } catch (error) {
+          console.error('❌ Error migrating game:', game.id, error);
+        }
+      }
+
+      console.log(`✅ Migration completed: ${migratedCount}/${localGames.length} games migrated`);
+
+      // 移行後、最終同期時刻を更新
+      await LocalStorageService.saveLastSync(Date.now());
+
+      return migratedCount;
+    } catch (error) {
+      console.error('❌ Data migration failed:', error);
+      throw error;
+    }
+  }
 }

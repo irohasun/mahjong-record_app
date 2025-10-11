@@ -25,7 +25,36 @@ export default function SignInScreen() {
       router.replace('/(tabs)/history');
     } catch (error: any) {
       console.error('❌ DEBUG: Sign in error:', error);
-      Alert.alert('ログインエラー', error.message || 'ログインに失敗しました');
+      
+      // メール未確認エラーの場合は、確認メール再送のオプションを表示
+      if (error.code === 'EMAIL_NOT_VERIFIED') {
+        Alert.alert(
+          'メールアドレス未確認',
+          'メールアドレスの確認が完了していません。\n\n確認メールを再送信しますか？',
+          [
+            {
+              text: 'キャンセル',
+              style: 'cancel',
+            },
+            {
+              text: '再送信',
+              onPress: async () => {
+                try {
+                  await AuthService.resendVerificationEmail(error.email || email.trim());
+                  Alert.alert(
+                    '確認メールを送信しました',
+                    `${error.email || email.trim()} に確認メールを送信しました。\n\nメールをご確認ください。`
+                  );
+                } catch (resendError: any) {
+                  Alert.alert('エラー', resendError.message || '確認メールの送信に失敗しました');
+                }
+              },
+            }
+          ]
+        );
+      } else {
+        Alert.alert('ログインエラー', error.message || 'ログインに失敗しました');
+      }
     } finally {
       setLoading(false);
     }

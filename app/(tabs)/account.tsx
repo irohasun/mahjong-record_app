@@ -210,24 +210,87 @@ export default function AccountScreen() {
           <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => {
+              // 第1段階: 削除されるデータの詳細を表示
               Alert.alert(
-                'アカウント削除',
-                'アカウントと全データを削除します。よろしいですか？',
+                'アカウント削除の確認',
+                '以下のデータが完全に削除されます：\n\n' +
+                '• 対局記録（すべての履歴）\n' +
+                '• 統計データ\n' +
+                '• プロフィール情報\n' +
+                '• アカウント情報\n' +
+                '• アップロードした写真\n\n' +
+                'この操作は取り消せません。\n' +
+                '本当に削除しますか？',
                 [
-                  { text: 'キャンセル', style: 'cancel' },
                   { 
-                    text: '削除', 
+                    text: 'キャンセル', 
+                    style: 'cancel' 
+                  },
+                  { 
+                    text: '削除する', 
                     style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        // 全データ削除
-                        await DeletionService.deleteAllUserData();
-                        // サインアウトして新規登録へ
-                        await AuthService.signOut();
-                        router.replace('/(auth)/sign-up');
-                      } catch (error) {
-                        Alert.alert('エラー', 'アカウント削除に失敗しました');
-                      }
+                    onPress: () => {
+                      // 第2段階: 最終確認
+                      Alert.alert(
+                        '最終確認',
+                        'すべてのデータが完全に削除されます。\n' +
+                        'この操作は絶対に取り消せません。\n\n' +
+                        '本当によろしいですか？',
+                        [
+                          { 
+                            text: 'キャンセル', 
+                            style: 'cancel' 
+                          },
+                          { 
+                            text: '完全に削除', 
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                // ローディング表示（簡易）
+                                Alert.alert('削除中', 'データを削除しています...');
+                                
+                                // 全データ削除
+                                await DeletionService.deleteAllUserData();
+                                
+                                // サインアウト
+                                await AuthService.signOut();
+                                
+                                // 完了メッセージ
+                                Alert.alert(
+                                  '削除完了',
+                                  'アカウントとすべてのデータが削除されました。',
+                                  [
+                                    {
+                                      text: 'OK',
+                                      onPress: async () => {
+                                        try {
+                                          // 匿名ユーザーとしてログイン
+                                          console.log('🔄 Signing in as anonymous user after account deletion');
+                                          await AuthService.signInAnonymously();
+                                          
+                                          // 履歴画面に遷移
+                                          router.replace('/(tabs)/history');
+                                        } catch (error) {
+                                          console.error('Failed to sign in anonymously:', error);
+                                          // 匿名ログイン失敗時は会員登録画面へ
+                                          router.replace('/(auth)/sign-up');
+                                        }
+                                      }
+                                    }
+                                  ]
+                                );
+                              } catch (error) {
+                                console.error('Account deletion error:', error);
+                                Alert.alert(
+                                  'エラー', 
+                                  'アカウント削除に失敗しました。\n' +
+                                  'もう一度お試しいただくか、サポートにお問い合わせください。'
+                                );
+                              }
+                            }
+                          }
+                        ]
+                      );
                     }
                   }
                 ]

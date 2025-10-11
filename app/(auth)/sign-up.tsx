@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff, UserPlus, Check, ArrowLeft } from 'lucide-react-native';
 import { AuthService } from '@/services/AuthService';
+import { SyncService } from '@/services/SyncService';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -48,24 +49,69 @@ export default function SignUpScreen() {
 
     setLoading(true);
     try {
-      const result = await AuthService.signUp(email.trim(), password);
+      // 匿名ユーザーの場合はアップグレード、そうでない場合は新規登録
+      console.log('🔄 Attempting to upgrade anonymous user or create new account');
+      const result = await AuthService.upgradeAnonymousUser(email.trim(), password);
 
-      // 登録完了後、アカウント画面へ遷移
-      Alert.alert(
-        '登録完了',
-        'アカウントの登録が完了しました。',
-        [
-          {
-            text: 'OK',
-            // アカウント画面に戻って、登録済み表示に切り替える
-            onPress: () => {
-              // 会員登録画面から来た場合は、アカウント画面に戻る
-              router.back();
-            },
-          }
-        ]
-      );
+      // メール確認が必要な場合（sessionがnullの場合）
+      const hasSession = 'session' in result ? result.session : null;
+      if (!hasSession && result.user) {
+        Alert.alert(
+          '確認メールを送信しました',
+          `${email} に確認メールを送信しました。\n\nメールに記載されているリンクをクリックして、アカウントを有効化してください。\n\n既存のデータはそのまま保持されます。`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // ログイン画面に遷移
+                router.replace('/(auth)/sign-in');
+              },
+            }
+          ]
+        );
+      } else if (result.user) {
+        // アップグレード成功（開発環境でメール確認不要の場合）
+        console.log('✅ Anonymous user upgraded successfully');
+        
+        // ローカルデータをSupabaseに同期
+        try {
+          const syncedCount = await SyncService.syncLocalDataToSupabase();
+          
+          Alert.alert(
+            '登録完了',
+            syncedCount > 0 
+              ? `アカウントの登録が完了しました。\n\n${syncedCount}件の対局記録をクラウドに保存しました。`
+              : 'アカウントの登録が完了しました。',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // 履歴画面に遷移
+                  router.replace('/(tabs)/history');
+                },
+              }
+            ]
+          );
+        } catch (syncError) {
+          console.error('❌ Data sync failed:', syncError);
+          // 同期失敗でもアカウント登録は成功しているので、ユーザーに通知して続行
+          Alert.alert(
+            '登録完了',
+            'アカウントの登録が完了しました。\n\nデータの同期中にエラーが発生しました。履歴画面で再読み込みしてください。',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // 履歴画面に遷移
+                  router.replace('/(tabs)/history');
+                },
+              }
+            ]
+          );
+        }
+      }
     } catch (error: any) {
+      console.error('❌ Sign up error:', error);
       Alert.alert('エラー', error.message || 'アカウント作成に失敗しました');
     } finally {
       setLoading(false);

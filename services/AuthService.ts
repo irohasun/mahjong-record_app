@@ -37,9 +37,10 @@ initializeAuthState();
 export class AuthService {
   /**
    * メールアドレスとパスワードでユーザー登録
+   * メール認証が必要で、確認メールが送信されます
    * @param email メールアドレス
    * @param password パスワード
-   * @returns ユーザー情報
+   * @returns ユーザー情報とセッション情報
    */
   static async signUp(email: string, password: string) {
     if (!isSupabaseConfigured) {
@@ -51,7 +52,8 @@ export class AuthService {
         email,
         password,
         options: {
-          emailRedirectTo: undefined, // メール確認後のリダイレクト先（オプション）
+          // メール確認後のリダイレクト先（アプリのディープリンク）
+          emailRedirectTo: undefined,
         }
       });
 
@@ -61,9 +63,14 @@ export class AuthService {
         throw new Error(message);
       }
 
-      // 認証状態をローカルに保存
+      // メール確認が必要な場合、セッションは作成されない
+      // data.user は存在するが、data.session は null の可能性がある
       if (data.user) {
-        await this.saveAuthState(data.user, data.session);
+        // メール未確認の場合でも、ユーザー情報は保存
+        // ただし、セッションがない場合はログイン状態にはならない
+        if (data.session) {
+          await this.saveAuthState(data.user, data.session);
+        }
       }
 
       return data;
@@ -78,9 +85,10 @@ export class AuthService {
 
   /**
    * メールアドレスとパスワードでログイン
+   * メール確認が完了していない場合はエラーを返します
    * @param email メールアドレス  
    * @param password パスワード
-   * @returns ユーザー情報
+   * @returns ユーザー情報とセッション情報
    */
   static async signIn(email: string, password: string) {
     if (!isSupabaseConfigured) {
@@ -96,6 +104,15 @@ export class AuthService {
       if (error) {
         const message = this.translateAuthError(error.message);
         throw new Error(message);
+      }
+
+      // メール確認が完了していない場合はエラー
+      if (data.user && !data.user.email_confirmed_at) {
+        // メール未確認エラーを特別に処理
+        const unverifiedError = new Error('メールアドレスの確認が完了していません');
+        (unverifiedError as any).code = 'EMAIL_NOT_VERIFIED';
+        (unverifiedError as any).email = email;
+        throw unverifiedError;
       }
 
       // 認証状態をローカルに保存
@@ -284,6 +301,95 @@ export class AuthService {
       return user?.email_confirmed_at != null;
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * メール確認メールを再送信
+   * @param email メールアドレス
+   */
+  static async resendVerificationEmail(email: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+    
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+      });
+
+      if (error) {
+        const message = this.translateAuthError(error.message);
+        throw new Error(message);
+      }
+    } catch (error) {
+      console.error('Failed to resend verification email:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('確認メールの再送信に失敗しました');
+    }
+  }
+
+  /**
+   * 匿名ユーザーを正式アカウントにアップグレード
+   * 既存の匿名ユーザーにメールアドレスとパスワードを設定
+   * @param email メールアドレス
+   * @param password パスワード
+   * @returns ユーザー情報とセッション情報
+   */
+  static async upgradeAnonymousUser(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabaseが設定されていません');
+    }
+
+    try {
+      console.log('🔄 Upgrading anonymous user to permanent account');
+
+      // 現在のユーザーを確認
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      
+      if (!currentUser) {
+        throw new Error('認証されていません');
+      }
+
+      // 匿名ユーザーでない場合はエラー
+      if (!currentUser.is_anonymous && currentUser.id !== 'dummy-user-id') {
+        throw new Error('このアカウントは既に登録済みです');
+      }
+
+      // ダミーユーザーの場合は通常の登録を行う
+      if (currentUser.id === 'dummy-user-id') {
+        console.log('⚠️ Dummy user detected, performing normal sign up');
+        return await this.signUp(email, password);
+      }
+
+      // 匿名ユーザーを更新（メールアドレスとパスワードを設定）
+      const { data, error } = await supabase.auth.updateUser({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        const message = this.translateAuthError(error.message);
+        throw new Error(message);
+      }
+
+      console.log('✅ Anonymous user upgraded successfully');
+
+      // 認証状態を更新
+      if (data.user) {
+        await this.saveAuthState(data.user, null);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Failed to upgrade anonymous user:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('アカウントのアップグレードに失敗しました');
     }
   }
 
