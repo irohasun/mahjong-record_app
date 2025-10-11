@@ -33,7 +33,16 @@ export function useAuth() {
 
     const initAuth = async () => {
       try {
-        const currentUser = await AuthService.getCurrentUser();
+        let currentUser = await AuthService.getCurrentUser();
+        if (!currentUser) {
+          try {
+            const anon = await AuthService.signInAnonymously();
+            // supabase-js の戻りは { user, session }
+            currentUser = (anon as any)?.user ?? null;
+          } catch {
+            // 無視して続行
+          }
+        }
         setUserSafe(currentUser);
       } catch (error) {
         console.error('Failed to get current user:', error);

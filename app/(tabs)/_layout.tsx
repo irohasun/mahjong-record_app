@@ -23,6 +23,8 @@ export default function TabLayout() {
           paddingTop: 8,
           paddingBottom: 25,
         },
+        // 各タブを均等幅にして左右の偏りを解消
+        tabBarItemStyle: { flex: 1 },
         tabBarActiveTintColor: colors.tabBarActiveColor,
         tabBarInactiveTintColor: colors.tabBarInactiveColor,
         tabBarLabelStyle: {
@@ -64,6 +66,38 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <User size={size} color={color} />
           ),
+        }}
+      />
+      {/** 編集画面 / プロフィール編集 / データの取り扱い をタブから完全に除外（スペース消滅） */}
+      <Tabs.Screen
+        name="edit-game"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profile-edit"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="data-processing"
+        options={{
+          href: null,
+        }}
+      />
+      {/** 非表示にするタブ（プライバシーポリシー / 利用規約） */}
+      <Tabs.Screen
+        name="privacy-policy"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="terms-of-service"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

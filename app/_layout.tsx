@@ -49,18 +49,14 @@ export default function RootLayout() {
       try {
         const user = await AuthService.getCurrentUser();
         const inAuthGroup = segments[0] === '(auth)';
+        const isAnonymous = (user as any)?.is_anonymous || (user as any)?.id === 'dummy-user-id';
         
-        if (!user && !inAuthGroup) {
-          // ユーザーが認証されていない場合はログイン画面へ
-          router.replace('/(auth)/sign-in');
-        } else if (user && inAuthGroup) {
-          // ユーザーが認証済みで認証画面にいる場合はメイン画面へ
+        // 匿名・未認証はリダイレクトしない（登録フローを妨げない）
+        if (user && inAuthGroup && !isAnonymous) {
           router.replace('/(tabs)/history');
         }
       } catch (error) {
         console.error('Auth check failed:', error);
-        // エラーの場合はログイン画面へ
-        router.replace('/(auth)/sign-in');
       } finally {
         setIsLoading(false);
       }
@@ -71,10 +67,10 @@ export default function RootLayout() {
     // 認証状態の変更を監視
     const unsubscribe = AuthService.onAuthStateChange((user) => {
       const inAuthGroup = segments[0] === '(auth)';
+      const isAnonymous = (user as any)?.is_anonymous || (user as any)?.id === 'dummy-user-id';
       
-      if (!user && !inAuthGroup) {
-        router.replace('/(auth)/sign-in');
-      } else if (user && inAuthGroup) {
+      // 匿名・未認証はリダイレクトしない
+      if (user && inAuthGroup && !isAnonymous) {
         router.replace('/(tabs)/history');
       }
       

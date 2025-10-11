@@ -1,6 +1,7 @@
--- Create public bucket for game photos if not exists
-insert into storage.buckets (id, name, public)
-values ('game-photos', 'game-photos', true)
+-- Supabase Storage v3 以降では storage.buckets に public 列が存在しないため、
+-- id/name のみを指定してバケットを作成し、公開可否はRLSポリシーで制御します。
+insert into storage.buckets (id, name)
+values ('game-photos', 'game-photos')
 on conflict (id) do nothing;
 
 -- Policies: Public read, authenticated write limited to own folder
@@ -47,9 +48,9 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
--- Profile photos bucket (public read)
-insert into storage.buckets (id, name, public)
-values ('profile-photos', 'profile-photos', true)
+-- Supabase Storage v3 以降に合わせ、public 列は使用しない
+insert into storage.buckets (id, name)
+values ('profile-photos', 'profile-photos')
 on conflict (id) do nothing;
 
 do $$ begin

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView, Linking } from 'react-native';
-import { User, Download, Upload, Shield, LogOut, Lock, HelpCircle } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView } from 'react-native';
+import { User, Shield, LogOut, Lock, Cloud, CheckCircle } from 'lucide-react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
+import { DeletionService } from '@/services/DeletionService';
 // 仕様変更: プラン管理機能は不要のため関連インポートを削除
 import { AuthService } from '@/services/AuthService';
 // 仕様変更: プレミアム関連UIは不要のため削除
@@ -19,6 +20,13 @@ export default function AccountScreen() {
   useEffect(() => {
     loadAccountData();
   }, []);
+
+  // 画面がフォーカスされた時にデータを再読み込み（会員登録後の遷移に対応）
+  useFocusEffect(
+    React.useCallback(() => {
+      loadAccountData();
+    }, [])
+  );
 
   const loadAccountData = async () => {
     try {
@@ -48,40 +56,7 @@ export default function AccountScreen() {
     }
   };
 
-  const handleExportData = async () => {
-    try {
-      const user = await ensureAuthenticated();
-      Alert.alert('エクスポート完了', 'データをエクスポートしました');
-    } catch (error) {
-      Alert.alert('エラー', 'データのエクスポートに失敗しました');
-    }
-  };
-
-  const handleResetData = () => {
-    Alert.alert(
-      'データリセット',
-      '全ての対局データを削除します。この操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        { 
-          text: '削除', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const user = await ensureAuthenticated();
-              
-              // データリセット機能は一時的に無効化
-              console.log('Data reset requested for user:', user.id);
-              loadAccountData();
-              Alert.alert('完了', 'データをリセットしました');
-            } catch (error) {
-              Alert.alert('エラー', 'データのリセットに失敗しました');
-            }
-          }
-        }
-      ]
-    );
-  };
+  // 仕様変更: データ管理機能（エクスポート/インポート/リセット）は削除
 
   const handleSignOut = () => {
     Alert.alert(
@@ -129,8 +104,8 @@ export default function AccountScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>プロフィール設定</Text>
           
-          {/* 認証情報（プロフィール設定内に内包）: ゲスト警告のみ表示 */}
-          {isAnonymousUser && (
+          {/* 認証情報: ゲスト警告または正式アカウント表示 */}
+          {isAnonymousUser ? (
             <View style={styles.anonymousWarning}>
               <Shield size={20} color="#F59E0B" />
               <View style={styles.anonymousWarningContent}>
@@ -139,6 +114,18 @@ export default function AccountScreen() {
                 </Text>
                 <Text style={styles.anonymousWarningText}>
                   データの永続保存のため、アカウント登録をおすすめします
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.registeredBanner}>
+              <CheckCircle size={20} color="#10B981" />
+              <View style={styles.registeredBannerContent}>
+                <Text style={styles.registeredBannerTitle}>
+                  アカウント登録済み
+                </Text>
+                <Text style={styles.registeredBannerText}>
+                  データはクラウドに安全に保存されています
                 </Text>
               </View>
             </View>
@@ -160,6 +147,25 @@ export default function AccountScreen() {
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
+
+          {/* 仕様追加: データをバックアップする（匿名ユーザー向けに会員登録へ遷移） */}
+          {isAnonymousUser && (
+            <TouchableOpacity 
+              style={styles.menuItem}
+              onPress={() => router.push('/(auth)/sign-up')}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={styles.menuIcon}>
+                  <Cloud size={20} color="#0EA5E9" />
+                </View>
+                <View style={styles.menuItemContent}>
+                  <Text style={styles.menuItemTitle}>データをバックアップする</Text>
+                  <Text style={styles.menuItemSubtitle}>会員登録してクラウドに保存</Text>
+                </View>
+              </View>
+              <Text style={styles.menuItemArrow}>›</Text>
+            </TouchableOpacity>
+          )}
 
           {/* 通知設定は不要のため削除しました */}
 
@@ -199,44 +205,29 @@ export default function AccountScreen() {
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => router.push('/(tabs)/data-processing')}
-          >
-            <View style={styles.menuItemLeft}>
-              <View style={styles.menuIcon}>
-                <HelpCircle size={20} color="#F59E0B" />
-              </View>
-              <View style={styles.menuItemContent}>
-                <Text style={styles.menuItemTitle}>データ処理について</Text>
-              </View>
-            </View>
-            <Text style={styles.menuItemArrow}>›</Text>
-          </TouchableOpacity>
+          {/* 仕様変更: データ処理に関する案内リンクは削除 */}
 
           <TouchableOpacity 
             style={styles.menuItem}
             onPress={() => {
               Alert.alert(
                 'アカウント削除',
-                'アカウントを削除しますか？\n\nこの操作により、すべての対局記録とデータが完全に削除されます。この操作は取り消せません。',
+                'アカウントと全データを削除します。よろしいですか？',
                 [
                   { text: 'キャンセル', style: 'cancel' },
                   { 
                     text: '削除', 
                     style: 'destructive',
-                    onPress: () => {
-                      Alert.alert('確認', '本当にアカウントを削除しますか？', [
-                        { text: 'キャンセル', style: 'cancel' },
-                        { 
-                          text: '削除', 
-                          style: 'destructive',
-                          onPress: () => {
-                            // アカウント削除処理（実装が必要）
-                            Alert.alert('削除完了', 'アカウントを削除しました');
-                          }
-                        }
-                      ]);
+                    onPress: async () => {
+                      try {
+                        // 全データ削除
+                        await DeletionService.deleteAllUserData();
+                        // サインアウトして新規登録へ
+                        await AuthService.signOut();
+                        router.replace('/(auth)/sign-up');
+                      } catch (error) {
+                        Alert.alert('エラー', 'アカウント削除に失敗しました');
+                      }
                     }
                   }
                 ]
@@ -261,27 +252,7 @@ export default function AccountScreen() {
 
         {/* 仕様変更: プラン管理は不要のためセクションを削除しました */}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>データ管理</Text>
-          
-          <TouchableOpacity style={styles.actionButton} onPress={handleExportData}>
-            <Download size={20} color="#3B82F6" />
-            <Text style={styles.actionButtonText}>データエクスポート</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton}>
-            <Upload size={20} color="#10B981" />
-            <Text style={styles.actionButtonText}>データインポート</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.dangerButton]} 
-            onPress={handleResetData}
-          >
-            <Shield size={20} color="#EF4444" />
-            <Text style={[styles.actionButtonText, styles.dangerText]}>データリセット</Text>
-          </TouchableOpacity>
-        </View>
+        {/* 仕様変更: データ管理セクション（エクスポート/インポート/リセット）は削除 */}
 
         {/* 仕様変更: プレミアムモーダルは廃止 */}
 
@@ -470,6 +441,30 @@ const styles = StyleSheet.create({
   anonymousWarningText: {
     fontSize: 14,
     color: '#B45309',
+    lineHeight: 20,
+  },
+  // 登録済みアカウント用のバナー
+  registeredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D1FAE5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  registeredBannerContent: {
+    flex: 1,
+  },
+  registeredBannerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#065F46',
+    marginBottom: 4,
+  },
+  registeredBannerText: {
+    fontSize: 14,
+    color: '#047857',
     lineHeight: 20,
   },
   // メールアドレス表示は仕様により削除

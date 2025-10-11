@@ -62,7 +62,44 @@ export class StorageService {
     }
   }
 
-  static getPublicUrl(storagePath: string): string | null {
+  /**
+   * ストレージパスから表示可能なURLを取得
+   * ローカル環境: 署名付きURL（signed URL）を使用
+   * 本番環境: バケットの公開設定に応じて署名付きURLまたはパブリックURLを使用
+   * @param storagePath ストレージパス（例: "game-photos/games/xxx/xxx.jpg"）
+   * @returns 画像URL
+   */
+  static async getPublicUrl(storagePath: string): Promise<string | null> {
+    try {
+      const [bucket, ...rest] = storagePath.split('/');
+      const path = rest.join('/');
+      
+      // 署名付きURLを取得（7日間有効）
+      // ローカル環境・本番環境両方で動作する
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(path, 60 * 60 * 24 * 7); // 7日間有効
+      
+      if (error) {
+        console.error('❌ DEBUG: Failed to create signed URL:', error);
+        // フォールバックとしてパブリックURLを試す
+        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(path);
+        return publicData?.publicUrl || null;
+      }
+      
+      console.log('✅ DEBUG: Signed URL created:', data.signedUrl);
+      return data.signedUrl;
+    } catch (error) {
+      console.error('❌ DEBUG: Error in getPublicUrl:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * 同期的にパブリックURLを取得する（後方互換性のため）
+   * 注意: 署名付きURLが必要な場合は getPublicUrl を使用してください
+   */
+  static getPublicUrlSync(storagePath: string): string | null {
     const [bucket, ...rest] = storagePath.split('/');
     const path = rest.join('/');
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);

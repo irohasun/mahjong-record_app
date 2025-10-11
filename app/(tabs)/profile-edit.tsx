@@ -20,7 +20,8 @@ export default function ProfileEditScreen() {
         const account = await AccountService.getAccount();
         setUsername(account.username || '');
         if ((account as any).avatar_url) {
-          const url = StorageService.getPublicUrl((account as any).avatar_url);
+          // 非同期でURLを取得
+          const url = await StorageService.getPublicUrl((account as any).avatar_url);
           if (url) setAvatarUri(url);
         }
         // メールアドレスを取得（閲覧のみ）
@@ -75,8 +76,9 @@ export default function ProfileEditScreen() {
         // accounts.avatar_url を更新
         await (async () => {
           const { data: { user: u } } = await (await import('@/lib/supabase')).supabase.auth.getUser();
-          if (!u || u.id === 'dummy-user-id') return;
+          if (!u || u.id === 'dummy-user-id' || !avatarPath) return;
           const { supabase } = await import('@/lib/supabase');
+          // @ts-ignore - avatar_url is a valid field in accounts table
           await supabase.from('accounts').update({ avatar_url: avatarPath }).eq('id', u.id);
         })();
       }

@@ -22,9 +22,10 @@ BEGIN
   END IF;
 END $$;
 
--- Storage bucket for profile photos (idempotent)
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('profile-photos', 'profile-photos', true)
+-- Supabase Storage v3 以降では storage.buckets に public 列がないため、
+-- id/name のみ指定で作成し、公開可否はポリシーで制御します。
+INSERT INTO storage.buckets (id, name)
+VALUES ('profile-photos', 'profile-photos')
 ON CONFLICT (id) DO NOTHING;
 
 -- Policies for profile photos (idempotent)

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image, Modal } from 'react-native';
 import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -607,21 +607,6 @@ export default function AddGameScreen() {
           </View>
         </View>
 
-                {showDatePicker && (
-          <DateTimePicker
-            value={gameDate}
-            mode="date"
-            display="default"
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(false);
-              if (selectedDate) {
-                setGameDate(selectedDate);
-              }
-            }}
-          />
-        )}
-
-
       </ScrollView>
       
       {/* 保存ボタン */}
@@ -719,6 +704,51 @@ export default function AddGameScreen() {
         </Animated.View>
       )}
     </KeyboardAvoidingView>
+    
+    {/* 日付ピッカー（モーダル表示） */}
+    {Platform.OS === 'ios' ? (
+      <Modal
+        visible={showDatePicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.datePickerContainer}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.datePickerDone}>完了</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={gameDate}
+              mode="date"
+              display="spinner"
+              onChange={(event, selectedDate) => {
+                if (selectedDate) {
+                  setGameDate(selectedDate);
+                }
+              }}
+              locale="ja-JP"
+            />
+          </View>
+        </View>
+      </Modal>
+    ) : (
+      showDatePicker && (
+        <DateTimePicker
+          value={gameDate}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (selectedDate) {
+              setGameDate(selectedDate);
+            }
+          }}
+        />
+      )
+    )}
   </SafeAreaView>
   );
 }
@@ -1091,6 +1121,31 @@ const styles = StyleSheet.create({
   },
   addPhotoText: {
     fontSize: 16,
+    fontWeight: '600',
+    color: '#FF6B35',
+  },
+  // 日付ピッカーモーダル用スタイル
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  datePickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  datePickerDone: {
+    fontSize: 17,
     fontWeight: '600',
     color: '#FF6B35',
   },

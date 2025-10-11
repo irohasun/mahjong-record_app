@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, RefreshControl, Animated, Image } from 'react-native';
 import { Calendar, Trash2, Plus } from 'lucide-react-native';
@@ -77,7 +78,7 @@ export default function HistoryScreen() {
     });
   };
 
-  const handleDeleteGame = async (gameId: string, swipeableRef?: React.RefObject<Swipeable>) => {
+  const handleDeleteGame = async (gameId: string, swipeableRef?: React.RefObject<Swipeable | null>) => {
     // console.log('🔍 DEBUG: handleDeleteGame called with gameId:', gameId);
     
     Alert.alert(
@@ -151,6 +152,20 @@ export default function HistoryScreen() {
   const GameCard = ({ game }: { game: GameRecord }) => {
     // Swipeableのrefを作成
     const swipeableRef = React.useRef<Swipeable>(null);
+    // 画像URLの状態管理
+    const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+    
+    // 画像URLを非同期で取得
+    React.useEffect(() => {
+      if (game.photoPath) {
+        StorageService.getPublicUrl(game.photoPath).then(url => {
+          setImageUrl(url);
+        }).catch(error => {
+          console.error('Failed to get image URL:', error);
+          setImageUrl(null);
+        });
+      }
+    }, [game.photoPath]);
     
     // プレイヤー情報から統計を計算
     const mainPlayer = game.players.find(p => p.isMainAccount);
@@ -240,9 +255,9 @@ export default function HistoryScreen() {
                   {month}月{day}日
                 </Text>
               </View>
-              {game.photoPath && (
+              {game.photoPath && imageUrl && (
                 <Image
-                  source={{ uri: (StorageService.getPublicUrl(game.photoPath) || '') }}
+                  source={{ uri: imageUrl }}
                   style={{ width: 72, height: 72, borderRadius: 8, backgroundColor: '#F2F2F7' }}
                 />
               )}

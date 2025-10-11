@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff, UserPlus, Check } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, UserPlus, Check, ArrowLeft } from 'lucide-react-native';
 import { AuthService } from '@/services/AuthService';
 
 export default function SignUpScreen() {
@@ -50,13 +50,18 @@ export default function SignUpScreen() {
     try {
       const result = await AuthService.signUp(email.trim(), password);
 
+      // 登録完了後、アカウント画面へ遷移
       Alert.alert(
         '登録完了',
-        undefined,
+        'アカウントの登録が完了しました。',
         [
           {
             text: 'OK',
-            onPress: () => router.replace('/(auth)/sign-in')
+            // アカウント画面に戻って、登録済み表示に切り替える
+            onPress: () => {
+              // 会員登録画面から来た場合は、アカウント画面に戻る
+              router.back();
+            },
           }
         ]
       );
@@ -73,6 +78,16 @@ export default function SignUpScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* ユーザーが登録をやめて戻れるように、上部に戻る導線を追加 */}
+        <View style={styles.backRow}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={18} color="#6D6D70" />
+            <Text style={styles.backButtonText}>戻る</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.header}>
           <View style={styles.logoContainer}>
             <UserPlus size={48} color="#FF6B35" />
@@ -219,6 +234,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 40,
+  },
+  backRow: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  backButtonText: {
+    marginLeft: 6,
+    color: '#6D6D70',
+    fontSize: 14,
   },
   header: {
     alignItems: 'center',

@@ -16,19 +16,27 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const currentUser = await AuthService.getCurrentUser();
+        // 起動時に匿名サインインを試行し、失敗しても続行（ダミーで動作）
+        let currentUser = await AuthService.getCurrentUser();
+        if (!currentUser) {
+          try {
+            const anon = await AuthService.signInAnonymously();
+            currentUser = anon?.user ?? null;
+          } catch {
+            // 無視して続行
+          }
+        }
         setUser(currentUser);
         
+        // 強制リダイレクトは廃止。
+        // 認証画面にいる場合でも「匿名ユーザー or ダミーユーザー」はリダイレクトしない（登録フローを妨げないため）
         const inAuthGroup = segments[0] === '(auth)';
-        
-        if (!currentUser && !inAuthGroup) {
-          router.replace('/(auth)/sign-in');
-        } else if (currentUser && inAuthGroup) {
+        const isAnonymous = (currentUser as any)?.is_anonymous || (currentUser as any)?.id === 'dummy-user-id';
+        if (currentUser && inAuthGroup && !isAnonymous) {
           router.replace('/(tabs)/history');
         }
       } catch (error) {
         console.error('Auth check failed:', error);
-        router.replace('/(auth)/sign-in');
       } finally {
         setLoading(false);
       }
@@ -40,10 +48,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     const unsubscribe = AuthService.onAuthStateChange((newUser) => {
       setUser(newUser);
       const inAuthGroup = segments[0] === '(auth)';
-      
-      if (!newUser && !inAuthGroup) {
-        router.replace('/(auth)/sign-in');
-      } else if (newUser && inAuthGroup) {
+      const isAnonymous = (newUser as any)?.is_anonymous || (newUser as any)?.id === 'dummy-user-id';
+      if (newUser && inAuthGroup && !isAnonymous) {
         router.replace('/(tabs)/history');
       }
     });

@@ -5,6 +5,12 @@ type Account = Database['public']['Tables']['accounts']['Row'];
 type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
 type AccountUpdate = Database['public']['Tables']['accounts']['Update'];
 
+type AccountsTable = Database['public']['Tables']['accounts'];
+
+type PostgrestInsertArg = AccountsTable['Insert'];
+
+type PostgrestUpdateArg = AccountsTable['Update'];
+
 import { MockDataService } from './MockDataService';
 
 export class AccountService {
@@ -19,15 +25,27 @@ export class AccountService {
       // ダミーユーザーの場合はデフォルトアカウントを返す
       if (user.id === 'dummy-user-id') {
         const mockAccount = MockDataService.generateMockAccount();
+        const now = new Date().toISOString();
         return {
           id: 'dummy-user-id',
           username: mockAccount.username,
-          created_at: mockAccount.createdDate,
+          email: null,
+          email_verified: false,
+          avatar_url: null,
+          phone: null,
+          date_of_birth: null,
+          preferred_language: 'ja',
+          timezone: 'Asia/Tokyo',
+          last_login_at: now,
+          status: 'active',
+          metadata: {},
           is_premium: mockAccount.isPremium,
+          purchase_date: mockAccount.purchaseDate ?? null,
           monthly_game_count: mockAccount.monthlyGameCount,
           last_reset_date: mockAccount.lastResetDate,
-          purchase_date: mockAccount.purchaseDate,
-        };
+          created_at: mockAccount.createdDate,
+          updated_at: now,
+        } as Account;
       }
 
       const { data: account, error } = await supabase
@@ -42,7 +60,7 @@ export class AccountService {
 
       if (!account) {
         // 新しいアカウントを作成
-        const newAccount: AccountInsert = {
+        const newAccount: PostgrestInsertArg = {
           id: user.id,
           username: 'プレイヤー',
           created_at: new Date().toISOString(),
@@ -51,7 +69,7 @@ export class AccountService {
           last_reset_date: new Date().toISOString(),
         };
 
-        const { data: createdAccount, error: createError } = await supabase
+        const { data: createdAccount, error: createError } = await (supabase as any)
           .from('accounts')
           .insert(newAccount)
           .select()
@@ -61,10 +79,10 @@ export class AccountService {
           throw createError;
         }
 
-        return createdAccount;
+        return createdAccount as Account;
       }
 
-      return account;
+      return account as Account;
     } catch (error) {
       console.error('Failed to get account:', error);
       throw new Error('アカウントの取得に失敗しました');
@@ -84,9 +102,11 @@ export class AccountService {
         return;
       }
 
-      const { error } = await supabase
+      const updateArg: PostgrestUpdateArg = { username };
+
+      const { error } = await (supabase as any)
         .from('accounts')
-        .update({ username })
+        .update(updateArg)
         .eq('id', user.id);
 
       if (error) {
@@ -111,7 +131,7 @@ export class AccountService {
         return;
       }
 
-      const updateData: AccountUpdate = {
+      const updateData: PostgrestUpdateArg = {
         is_premium: isPremium,
       };
 
@@ -119,7 +139,7 @@ export class AccountService {
         updateData.purchase_date = new Date().toISOString();
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('accounts')
         .update(updateData)
         .eq('id', user.id);
@@ -156,12 +176,14 @@ export class AccountService {
         newResetDate = now.toISOString();
       }
 
-      const { error } = await supabase
+      const updateArg: PostgrestUpdateArg = {
+        monthly_game_count: newCount,
+        last_reset_date: newResetDate,
+      };
+
+      const { error } = await (supabase as any)
         .from('accounts')
-        .update({
-          monthly_game_count: newCount,
-          last_reset_date: newResetDate,
-        })
+        .update(updateArg)
         .eq('id', account.id);
 
       if (error) {

@@ -76,10 +76,13 @@ export default function EditGameScreen() {
         
         // スコアデータを設定（各半荘をそのままの行として表示）
         if (game.rounds && game.rounds.length > 0) {
-        // 写真の事前表示
+        // 写真の事前表示（非同期で取得）
         if (game.photoPath) {
-          const url = StorageService.getPublicUrl(game.photoPath);
-          if (url) setGamePhoto(url);
+          StorageService.getPublicUrl(game.photoPath).then(url => {
+            if (url) setGamePhoto(url);
+          }).catch(error => {
+            console.error('Failed to get image URL:', error);
+          });
         }
           const roundCount = game.rounds.length;
           setHanchanCount(roundCount);

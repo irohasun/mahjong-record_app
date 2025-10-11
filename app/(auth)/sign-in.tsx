@@ -31,20 +31,7 @@ export default function SignInScreen() {
     }
   };
 
-  const handleAnonymousSignIn = async () => {
-    setLoading(true);
-    try {
-      console.log('🔍 DEBUG: Attempting anonymous sign in');
-      await AuthService.signInAnonymously();
-      console.log('🔍 DEBUG: Anonymous sign in successful');
-      router.replace('/(tabs)/history');
-    } catch (error: any) {
-      console.error('❌ DEBUG: Anonymous sign in error:', error);
-      Alert.alert('エラー', '匿名ログインに失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 仕様変更: ゲスト利用（匿名ログイン）は廃止
 
   return (
     <KeyboardAvoidingView 
@@ -127,23 +114,7 @@ export default function SignInScreen() {
             </Link>
           </TouchableOpacity>
 
-          {/* 区切り線 */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>または</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* 匿名ログインボタン */}
-          <TouchableOpacity
-            style={[styles.anonymousButton, loading && styles.buttonDisabled]}
-            onPress={handleAnonymousSignIn}
-            disabled={loading}
-          >
-            <Text style={styles.anonymousButtonText}>
-              ゲストとして利用する
-            </Text>
-          </TouchableOpacity>
+          {/* 仕様変更: ゲストとして利用する（匿名ログイン）は削除 */}
 
           {/* サインアップリンク */}
           <View style={styles.signUpPrompt}>
