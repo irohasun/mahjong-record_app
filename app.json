@@ -17,7 +17,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mahjongrecord.app",
+      "bundleIdentifier": "org.name.MahjongRecord",
       "buildNumber": "1"
     },
     "android": {
