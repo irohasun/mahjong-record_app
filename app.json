@@ -41,6 +41,9 @@
           "android": {
             "useAndroidX": true,
             "enableJetifier": true
+          },
+          "ios": {
+            "useFrameworks": "static"
           }
         }
       ],
@@ -54,8 +57,7 @@
             "./assets/sounds/notification.wav"
           ]
         }
-      ],
-      "expo-build-properties"
+      ]
     ],
     "notification": {
       "icon": "./assets/images/notification-icon.png",
