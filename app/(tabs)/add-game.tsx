@@ -34,7 +34,7 @@ export default function AddGameScreen() {
         resetForm();
         (async () => {
           try {
-            const account = await AccountService.getAccount();
+            const { account } = await AccountService.getAccount();
             setPlayers([account.username || '自分', '', '', '']);
           } catch {}
         })();

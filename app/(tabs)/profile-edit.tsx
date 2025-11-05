@@ -17,7 +17,7 @@ export default function ProfileEditScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const account = await AccountService.getAccount();
+        const { account } = await AccountService.getAccount();
         setUsername(account.username || '');
         if ((account as any).avatar_url) {
           // 非同期でURLを取得

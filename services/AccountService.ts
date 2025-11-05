@@ -12,9 +12,63 @@ type PostgrestInsertArg = AccountsTable['Insert'];
 type PostgrestUpdateArg = AccountsTable['Update'];
 
 import { MockDataService } from './MockDataService';
+import { LocalStorageService } from './LocalStorageService';
 
 export class AccountService {
-  static async getAccount(): Promise<Account> {
+  /**
+   * アカウントデータを取得（キャッシュ対応）
+   * キャッシュが有効な場合はキャッシュから返し、無効な場合はサーバーから取得してキャッシュに保存
+   * @param forceRefresh キャッシュを無視して強制的にサーバーから取得する場合はtrue
+   * @returns アカウントデータとユーザー情報
+   */
+  static async getAccount(forceRefresh: boolean = false): Promise<{ account: Account; user: any }> {
+    try {
+      // 強制更新でない場合、キャッシュから取得を試みる
+      if (!forceRefresh) {
+        const isCacheValid = await LocalStorageService.isAccountCacheValid();
+        if (isCacheValid) {
+          const cachedAccount = await LocalStorageService.getAccount();
+          if (cachedAccount) {
+            console.log('✅ Using cached account data');
+            // キャッシュ使用時もユーザー情報を取得（軽量）
+            const { data: { user } } = await supabase.auth.getUser();
+            return { account: cachedAccount as Account, user: user || null };
+          }
+        }
+      }
+
+      // キャッシュが無効または強制更新の場合はサーバーから取得
+      const { account, user } = await this.fetchAccountFromServer();
+      
+      // 取得したデータをキャッシュに保存
+      await LocalStorageService.saveAccount(account);
+      
+      return { account, user };
+    } catch (error) {
+      console.error('Failed to get account:', error);
+      
+      // エラー時はキャッシュから取得を試みる
+      const cachedAccount = await LocalStorageService.getAccount();
+      if (cachedAccount) {
+        console.log('⚠️ Using cached account data due to error');
+        // エラー時もユーザー情報を取得を試みる
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          return { account: cachedAccount as Account, user: user || null };
+        } catch {
+          return { account: cachedAccount as Account, user: null };
+        }
+      }
+      
+      throw new Error('アカウントの取得に失敗しました');
+    }
+  }
+
+  /**
+   * サーバーからアカウントデータを取得（内部メソッド）
+   * @returns アカウントデータとユーザー情報
+   */
+  private static async fetchAccountFromServer(): Promise<{ account: Account; user: any }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -26,7 +80,7 @@ export class AccountService {
       if (user.id === 'dummy-user-id') {
         const mockAccount = MockDataService.generateMockAccount();
         const now = new Date().toISOString();
-        return {
+        const account = {
           id: 'dummy-user-id',
           username: mockAccount.username,
           email: null,
@@ -46,6 +100,7 @@ export class AccountService {
           created_at: mockAccount.createdDate,
           updated_at: now,
         } as Account;
+        return { account, user };
       }
 
       const { data: account, error } = await supabase
@@ -79,14 +134,21 @@ export class AccountService {
           throw createError;
         }
 
-        return createdAccount as Account;
+        return { account: createdAccount as Account, user };
       }
 
-      return account as Account;
+      return { account: account as Account, user };
     } catch (error) {
-      console.error('Failed to get account:', error);
-      throw new Error('アカウントの取得に失敗しました');
+      console.error('Failed to fetch account from server:', error);
+      throw error;
     }
+  }
+
+  /**
+   * アカウントデータを更新した後にキャッシュをクリア
+   */
+  static async invalidateCache(): Promise<void> {
+    await LocalStorageService.clearAccountCache();
   }
 
   static async updateUsername(username: string): Promise<void> {
@@ -112,6 +174,9 @@ export class AccountService {
       if (error) {
         throw error;
       }
+
+      // ユーザー名更新後はキャッシュを無効化
+      await this.invalidateCache();
     } catch (error) {
       console.error('Failed to update username:', error);
       throw new Error('ユーザー名の更新に失敗しました');
@@ -162,7 +227,7 @@ export class AccountService {
         return;
       }
 
-      const account = await this.getAccount();
+      const { account } = await this.getAccount();
       
       // 月が変わったかチェック
       const now = new Date();
@@ -204,7 +269,7 @@ export class AccountService {
         return 0;
       }
 
-      const account = await this.getAccount();
+      const { account } = await this.getAccount();
       
       // 月が変わったかチェック
       const now = new Date();

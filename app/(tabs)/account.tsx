@@ -7,7 +7,8 @@ import { DeletionService } from '@/services/DeletionService';
 // 仕様変更: プラン管理機能は不要のため関連インポートを削除
 import { AuthService } from '@/services/AuthService';
 // 仕様変更: プレミアム関連UIは不要のため削除
-import { ensureAuthenticated } from '@/utils/authUtils';
+import { supabase } from '@/lib/supabase';
+import { LocalStorageService } from '@/services/LocalStorageService';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -16,29 +17,85 @@ export default function AccountScreen() {
   const [newUsername, setNewUsername] = useState('');
   // 仕様変更: プラン管理機能削除に伴い状態を削除
   const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const lastLoadTimeRef = React.useRef<number>(0);
+  const isLoadingRef = React.useRef<boolean>(false);
 
-  useEffect(() => {
-    loadAccountData();
-  }, []);
+  /**
+   * アカウントデータを読み込む
+   * @param isInitialLoad 初回読み込みの場合はtrue
+   */
+  const loadAccountData = React.useCallback(async (isInitialLoad: boolean = false) => {
+    // 重複読み込みを防止
+    if (isLoadingRef.current) {
+      return;
+    }
 
-  // 画面がフォーカスされた時にデータを再読み込み（会員登録後の遷移に対応）
-  useFocusEffect(
-    React.useCallback(() => {
-      loadAccountData();
-    }, [])
-  );
-
-  const loadAccountData = async () => {
     try {
-      const user = await ensureAuthenticated();
-      setUser(user);
-      const accountData = await AccountService.getAccount();
+      isLoadingRef.current = true;
+      
+      if (isInitialLoad) {
+        setIsLoading(true);
+        
+        // 初回読み込み時はキャッシュから即座に表示
+        const cachedAccount = await LocalStorageService.getAccount();
+        if (cachedAccount) {
+          setAccount(cachedAccount);
+          setNewUsername(cachedAccount.username);
+          setIsLoading(false);
+        }
+      }
+
+      // AccountService.getAccount()が認証チェックとアカウント取得を同時に行う
+      // ensureAuthenticated()の重複呼び出しを削除してパフォーマンスを改善
+      const { account: accountData, user: userData } = await AccountService.getAccount(!isInitialLoad);
+
+      setUser(userData);
       setAccount(accountData);
       setNewUsername(accountData.username);
+      lastLoadTimeRef.current = Date.now();
     } catch (error) {
       console.error('Failed to load account data:', error);
+      // エラー時もキャッシュがあれば表示
+      if (!account) {
+        const cachedAccount = await LocalStorageService.getAccount();
+        if (cachedAccount) {
+          setAccount(cachedAccount);
+          setNewUsername(cachedAccount.username);
+          // ユーザー情報のみ取得を試みる（軽量）
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            setUser(user);
+          } catch {
+            // 無視
+          }
+        }
+      }
+    } finally {
+      setIsLoading(false);
+      isLoadingRef.current = false;
     }
-  };
+  }, []);
+
+  // 初回マウント時のみ実行
+  useEffect(() => {
+    loadAccountData(true);
+  }, [loadAccountData]);
+
+  // 画面がフォーカスされた時にデータを再読み込み（条件付き）
+  // 前回の読み込みから5分以上経過した場合のみ再読み込み
+  useFocusEffect(
+    React.useCallback(() => {
+      const now = Date.now();
+      const timeSinceLastLoad = now - lastLoadTimeRef.current;
+      const FIVE_MINUTES = 5 * 60 * 1000; // 5分
+
+      // 初回読み込み後、かつ5分以上経過している場合のみ再読み込み
+      if (lastLoadTimeRef.current > 0 && timeSinceLastLoad > FIVE_MINUTES) {
+        loadAccountData(false);
+      }
+    }, [loadAccountData])
+  );
 
   const handleUsernameChange = async () => {
     if (!newUsername.trim()) {
@@ -49,7 +106,8 @@ export default function AccountScreen() {
     try {
       await AccountService.updateUsername(newUsername.trim());
       setEditing(false);
-      loadAccountData();
+      // ユーザー名更新後は強制更新でデータを再読み込み
+      await loadAccountData(false);
       Alert.alert('成功', 'ユーザー名を変更しました');
     } catch (error) {
       Alert.alert('エラー', 'ユーザー名の変更に失敗しました');
@@ -82,10 +140,20 @@ export default function AccountScreen() {
 
   const isAnonymousUser = user?.id === 'dummy-user-id' || user?.is_anonymous;
 
-  if (!account) {
+  // 初回読み込み中で、キャッシュもない場合はローディング表示
+  if (isLoading && !account) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>読み込み中...</Text>
+      </View>
+    );
+  }
+
+  // アカウントデータがない場合（エラー時など）
+  if (!account) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>データの読み込みに失敗しました</Text>
       </View>
     );
   }
