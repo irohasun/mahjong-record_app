@@ -17,8 +17,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mahjongrecord.app",
-      "buildNumber": "1"
+      "bundleIdentifier": "org.name.MahjongRecord",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "麻雀の対局記録を撮影するために、カメラへのアクセスが必要です。撮影した写真は対局記録と一緒に保存され、後から対局の詳細を確認する際に表示されます。",
+        "NSMicrophoneUsageDescription": "音声メモを録音するために、マイクへのアクセスが必要です。録音した音声は対局記録のメモとして保存されます。",
+        "NSPhotoLibraryUsageDescription": "対局記録の写真を保存・選択するために、フォトライブラリへのアクセスが必要です。例えば、対局終了時の点棒状況や牌譜の写真を選択して記録に添付できます。",
+        "NSPhotoLibraryAddUsageDescription": "撮影した対局記録の写真をフォトライブラリに保存するために、アクセスが必要です。保存した写真は後から対局の振り返りに使用できます。"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -41,6 +47,9 @@
           "android": {
             "useAndroidX": true,
             "enableJetifier": true
+          },
+          "ios": {
+            "useFrameworks": "static"
           }
         }
       ],
@@ -54,8 +63,7 @@
             "./assets/sounds/notification.wav"
           ]
         }
-      ],
-      "expo-build-properties"
+      ]
     ],
     "notification": {
       "icon": "./assets/images/notification-icon.png",

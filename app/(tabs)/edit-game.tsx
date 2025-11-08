@@ -68,7 +68,7 @@ export default function EditGameScreen() {
         
         // プレイヤー名を設定（自分=アカウント名、他= P2/P3/P4）
         try {
-          const account = await AccountService.getAccount();
+          const { account } = await AccountService.getAccount();
           setPlayers([account.username || '自分', 'P2', 'P3', 'P4']);
         } catch {
           setPlayers(['自分', 'P2', 'P3', 'P4']);

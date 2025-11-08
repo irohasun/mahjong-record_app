@@ -7,7 +7,7 @@ const FREE_GAME_LIMIT = 3;
 export class MonetizationService {
   static async canAddGame(): Promise<boolean> {
     try {
-      const account = await AccountService.getAccount();
+      const { account } = await AccountService.getAccount();
       
       if (account.isPremium) {
         return true;
@@ -23,7 +23,7 @@ export class MonetizationService {
 
   static async isPremium(): Promise<boolean> {
     try {
-      const account = await AccountService.getAccount();
+      const { account } = await AccountService.getAccount();
       return account.isPremium;
     } catch (error) {
       console.error('Failed to check premium status:', error);

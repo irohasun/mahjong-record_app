@@ -1,10 +1,12 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { GameRecord, PlayerStats } from '@/types/GameRecord';
 import { LocalStorageService } from './LocalStorageService';
 import { SyncService } from './SyncService';
+import { MockDataService } from './MockDataService';
+import { GameRecord, Player, PlayerStats, RoundRecord as GameRoundRecord } from '@/types/GameRecord';
 
+// データベースの型定義
 type Game = Database['public']['Tables']['games']['Row'];
 type GameInsert = Database['public']['Tables']['games']['Insert'];
 type PlayerRecord = Database['public']['Tables']['player_records']['Row'];
@@ -12,19 +14,330 @@ type PlayerRecordInsert = Database['public']['Tables']['player_records']['Insert
 type RoundRecord = Database['public']['Tables']['round_records']['Row'];
 type RoundRecordInsert = Database['public']['Tables']['round_records']['Insert'];
 
-import { MockDataService } from './MockDataService';
-
 export class GameService {
+  // ============================================
+  // プライベートヘルパーメソッド
+  // ============================================
+
+  /**
+   * ダミーユーザーIDかどうかを判定
+   */
+  private static isDummyUser(accountId: string): boolean {
+    return accountId === 'dummy-user-id';
+  }
+
+  /**
+   * データベースから取得したプレイヤー記録をPlayer型に変換
+   */
+  private static mapPlayerRecordFromDb(playerRecord: any): Player {
+    return {
+      name: playerRecord.player_name,
+      isMainAccount: playerRecord.is_main_account,
+      finalScore: playerRecord.final_score,
+      rank: playerRecord.rank,
+      startingPosition: playerRecord.starting_position as 'East' | 'South' | 'West' | 'North',
+    };
+  }
+
+  /**
+   * データベースから取得した局記録をGameRoundRecord型に変換
+   */
+  private static mapRoundRecordFromDb(roundRecord: any): GameRoundRecord {
+    return {
+      round: roundRecord.round,
+      honba: roundRecord.honba,
+      riichiSticks: roundRecord.riichi_sticks,
+      winner: roundRecord.winner,
+      loser: roundRecord.loser,
+      handType: roundRecord.hand_type as 'ron' | 'tsumo' | 'draw' | 'abort',
+      points: roundRecord.points as number[],
+      han: roundRecord.han,
+      fu: roundRecord.fu,
+      yakuman: roundRecord.yakuman,
+      memo: roundRecord.memo || '',
+    };
+  }
+
+  /**
+   * データベースから取得したゲームデータをGameRecord型に変換
+   */
+  private static mapGameFromDb(game: any): GameRecord {
+    return {
+      id: game.id,
+      accountId: game.account_id,
+      date: game.date,
+      location: game.location || '',
+      gameType: game.game_type as '東風戦' | '東南戦',
+      rules: game.rules as any,
+      memo: game.memo || '',
+      duration: game.duration_minutes || undefined,
+      gameEndCondition: game.game_end_condition as 'normal' | 'bankruptcy' | 'timeout' | 'time_limit',
+      finalRiichiSticks: game.final_riichi_sticks,
+      finalHonba: game.final_honba,
+      photoPath: game.photo_path || undefined,
+      players: (game.player_records || []).map((p: any) => this.mapPlayerRecordFromDb(p)),
+      rounds: (game.round_records || []).map((r: any) => this.mapRoundRecordFromDb(r)),
+    };
+  }
+
+  /**
+   * ゲームデータをデータベース形式に変換
+   */
+  private static mapGameToDb(gameData: GameRecord): GameInsert {
+    return {
+      account_id: gameData.accountId,
+      date: gameData.date,
+      location: gameData.location,
+      game_type: gameData.gameType,
+      rules: gameData.rules as any,
+      memo: gameData.memo,
+      duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
+      game_end_condition: gameData.gameEndCondition,
+      final_riichi_sticks: gameData.finalRiichiSticks,
+      final_honba: gameData.finalHonba,
+      photo_path: gameData.photoPath || null,
+    };
+  }
+
+  /**
+   * プレイヤーデータをデータベース形式に変換
+   */
+  private static mapPlayerToDb(player: Player, gameId: string): PlayerRecordInsert {
+    return {
+      game_id: gameId,
+      player_name: player.name,
+      is_main_account: player.isMainAccount,
+      final_score: player.finalScore,
+      rank: player.rank,
+      starting_position: player.startingPosition,
+    };
+  }
+
+  /**
+   * 局データをデータベース形式に変換
+   */
+  private static mapRoundToDb(round: GameRoundRecord, gameId: string): RoundRecordInsert {
+    return {
+      game_id: gameId,
+      round: round.round,
+      honba: round.honba,
+      riichi_sticks: round.riichiSticks,
+      winner: round.winner,
+      loser: round.loser,
+      hand_type: round.handType,
+      points: round.points as any,
+      han: round.han,
+      fu: round.fu,
+      yakuman: round.yakuman,
+      memo: round.memo,
+    };
+  }
+
+  /**
+   * デフォルトのPlayerStatsを返す
+   */
+  private static getDefaultPlayerStats(): PlayerStats {
+    return {
+      totalGames: 0,
+      averageRank: 0,
+      averageScore: 0,
+      firstPlaceRate: 0,
+      topTwoRate: 0,
+      avoidLastRate: 0,
+      highestScore: 0,
+      lowestScore: 0,
+      maxConsecutiveWins: 0,
+      rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
+    };
+  }
+
+  /**
+   * Supabaseのゲーム取得クエリを構築（共通処理）
+   */
+  private static buildGamesQuery(accountId: string) {
+    return supabase
+      .from('games')
+      .select(`
+        *,
+        player_records (*),
+        round_records (*)
+      `)
+      .eq('account_id', accountId);
+  }
+
+  /**
+   * ゲームの関連レコード（プレイヤー記録と局記録）を更新
+   */
+  private static async updateGameRelatedRecords(gameId: string, gameData: GameRecord): Promise<void> {
+    // 既存のプレイヤー記録を削除
+    console.log('🔍 DEBUG: Deleting existing player records...');
+    const { error: deletePlayersError } = await supabase
+      .from('player_records')
+      .delete()
+      .eq('game_id', gameId);
+
+    if (deletePlayersError) {
+      console.error('❌ DEBUG: Failed to delete existing player records:', deletePlayersError);
+      throw deletePlayersError;
+    }
+    console.log('🔍 DEBUG: Existing player records deleted successfully');
+
+    // 新しいプレイヤー記録を挿入
+    console.log('🔍 DEBUG: Creating new player insert data...');
+    const playerInserts = gameData.players.map(player => 
+      this.mapPlayerToDb(player, gameId)
+    );
+    console.log('🔍 DEBUG: Player insert data created:', playerInserts);
+
+    console.log('🔍 DEBUG: Inserting new player records...');
+    const { error: playersError } = await supabase
+      .from('player_records')
+      .insert(playerInserts as any);
+
+    if (playersError) {
+      console.error('❌ DEBUG: Failed to insert new player records:', playersError);
+      throw playersError;
+    }
+    console.log('🔍 DEBUG: New player records inserted successfully');
+
+    // 既存の局記録を削除
+    console.log('🔍 DEBUG: Deleting existing round records...');
+    const { error: deleteRoundsError } = await supabase
+      .from('round_records')
+      .delete()
+      .eq('game_id', gameId);
+
+    if (deleteRoundsError) {
+      console.error('❌ DEBUG: Failed to delete existing round records:', deleteRoundsError);
+      throw deleteRoundsError;
+    }
+    console.log('🔍 DEBUG: Existing round records deleted successfully');
+
+    // 新しい局記録を挿入（もしあれば）
+    if (gameData.rounds.length > 0) {
+      console.log('🔍 DEBUG: Creating new round insert data...');
+      const roundInserts = gameData.rounds.map(round => 
+        this.mapRoundToDb(round, gameId)
+      );
+      console.log('🔍 DEBUG: Round insert data created:', roundInserts);
+
+      console.log('🔍 DEBUG: Inserting new round records...');
+      const { error: roundsError } = await supabase
+        .from('round_records')
+        .insert(roundInserts as any);
+
+      if (roundsError) {
+        console.error('❌ DEBUG: Failed to insert new round records:', roundsError);
+        throw roundsError;
+      }
+      console.log('🔍 DEBUG: New round records inserted successfully');
+    } else {
+      console.log('🔍 DEBUG: No round records to insert');
+    }
+  }
+
+  /**
+   * 期間でフィルタリングする関数
+   */
+  private static filterByPeriod(date: Date, period: 'month' | 'year' | 'all', selectedDate: Date): boolean {
+    if (period === 'all') return true;
+    if (period === 'year') return date.getFullYear() === selectedDate.getFullYear();
+    // month
+    return (
+      date.getFullYear() === selectedDate.getFullYear() &&
+      date.getMonth() === selectedDate.getMonth()
+    );
+  }
+
+  /**
+   * 有効な局記録かどうかを判定（4人分の点数が揃っている）
+   */
+  private static isValidRoundRecord(points: any[]): boolean {
+    if (!points || points.length < 4) return false;
+    return !points.some((v) => v === null || v === undefined || v === '');
+  }
+
+  /**
+   * 点数配列から順位を計算（0番目のプレイヤーの順位）
+   */
+  private static calculateRankFromPoints(points: number[]): number {
+    const my = points[0] ?? 0;
+    const uniqueSorted = Array.from(new Set(points)).sort((a, b) => b - a);
+    return (uniqueSorted.indexOf(my) + 1) || 4;
+  }
+
+  /**
+   * 統計データを計算する共通関数
+   */
+  private static calculateStats(
+    records: Array<{ rank: number; score: number }>
+  ): PlayerStats {
+    if (records.length === 0) {
+      return this.getDefaultPlayerStats();
+    }
+
+    const totalGames = records.length;
+    const totalRank = records.reduce((sum, r) => sum + r.rank, 0);
+    const totalScore = records.reduce((sum, r) => sum + r.score, 0);
+    const scores = records.map(r => r.score);
+    const highestScore = Math.max(...scores);
+    const lowestScore = Math.min(...scores);
+    
+    const firstPlaceCount = records.filter(r => r.rank === 1).length;
+    const topTwoCount = records.filter(r => r.rank <= 2).length;
+    const avoidLastCount = records.filter(r => r.rank < 4).length;
+    
+    // 最大連荘を計算
+    let maxConsecutiveWins = 0;
+    let currentConsecutiveWins = 0;
+    for (const record of records) {
+      if (record.rank === 1) {
+        currentConsecutiveWins++;
+        maxConsecutiveWins = Math.max(maxConsecutiveWins, currentConsecutiveWins);
+      } else {
+        currentConsecutiveWins = 0;
+      }
+    }
+    
+    const rankDistribution = records.reduce((acc, r) => {
+      acc[r.rank] = (acc[r.rank] || 0) + 1;
+      return acc;
+    }, {} as { [key: number]: number });
+
+    return {
+      totalGames,
+      averageRank: totalRank / totalGames,
+      averageScore: totalScore / totalGames,
+      firstPlaceRate: firstPlaceCount / totalGames,
+      topTwoRate: topTwoCount / totalGames,
+      avoidLastRate: avoidLastCount / totalGames,
+      highestScore,
+      lowestScore,
+      maxConsecutiveWins,
+      rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
+    };
+  }
+
+  /**
+   * 現在のユーザーを取得（認証チェック付き）
+   */
+  private static async getCurrentUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('認証されていません');
+    }
+    return user;
+  }
+
+  // ============================================
+  // パブリックメソッド
+  // ============================================
   static async addGame(gameData: Omit<GameRecord, 'id'>): Promise<GameRecord> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('認証されていません');
-      }
+      const user = await this.getCurrentUser();
 
       // Supabaseが設定されていない場合やダミーユーザーの場合はローカル保存として扱う
-      if (!isSupabaseConfigured || user.id === 'dummy-user-id') {
+      if (!isSupabaseConfigured || this.isDummyUser(user.id)) {
         const dummyId = `dummy-game-${Date.now()}`;
         return {
           ...gameData,
@@ -33,43 +346,34 @@ export class GameService {
       }
 
       // ゲーム記録を挿入
-      const gameInsert: GameInsert = {
-        account_id: user.id,
-        date: gameData.date,
-        location: gameData.location,
-        game_type: gameData.gameType,
-        rules: gameData.rules as any, // as Json
-        memo: gameData.memo,
-        duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
-        game_end_condition: gameData.gameEndCondition,
-        final_riichi_sticks: gameData.finalRiichiSticks,
-        final_honba: gameData.finalHonba,
-        photo_path: (gameData as any).photoPath || null,
-      };
+      const gameInsert = this.mapGameToDb({
+        ...gameData,
+        id: '', // 一時的な値、DBで生成される
+        accountId: user.id,
+      });
 
-      const { data: game, error: gameError } = await supabase
+      const gameInsertResult = await supabase
         .from('games')
-        .insert(gameInsert)
+        .insert(gameInsert as any)
         .select()
         .single();
+      
+      const { data: insertedGame, error: gameError } = gameInsertResult as any;
 
-      if (gameError) {
-        throw gameError;
+      if (gameError || !insertedGame) {
+        throw gameError || new Error('ゲームの挿入に失敗しました');
       }
 
+      const gameId = insertedGame.id;
+
       // プレイヤー記録を挿入
-      const playerInserts: PlayerRecordInsert[] = gameData.players.map(player => ({
-        game_id: game.id,
-        player_name: player.name,
-        is_main_account: player.isMainAccount,
-        final_score: player.finalScore,
-        rank: player.rank,
-        starting_position: player.startingPosition,
-      }));
+      const playerInserts = gameData.players.map(player => 
+        this.mapPlayerToDb(player, gameId)
+      );
 
       const { error: playersError } = await supabase
         .from('player_records')
-        .insert(playerInserts);
+        .insert(playerInserts as any);
 
       if (playersError) {
         throw playersError;
@@ -77,33 +381,23 @@ export class GameService {
 
       // 局記録を挿入（もしあれば）
       if (gameData.rounds.length > 0) {
-        const roundInserts: RoundRecordInsert[] = gameData.rounds.map(round => ({
-          game_id: game.id,
-          round: round.round,
-          honba: round.honba,
-          riichi_sticks: round.riichiSticks,
-          winner: round.winner,
-          loser: round.loser,
-          hand_type: round.handType,
-          points: round.points,
-          han: round.han,
-          fu: round.fu,
-          yakuman: round.yakuman,
-          memo: round.memo,
-        }));
+        const roundInserts = gameData.rounds.map(round => 
+          this.mapRoundToDb(round, gameId)
+        );
 
         const { error: roundsError } = await supabase
           .from('round_records')
-          .insert(roundInserts);
+          .insert(roundInserts as any);
 
         if (roundsError) {
           throw roundsError;
         }
       }
 
-      const savedGame = {
+      const savedGame: GameRecord = {
         ...gameData,
-        id: game.id,
+        id: gameId,
+        accountId: user.id,
       };
 
       // ローカルに保存（即座に表示可能）
@@ -138,11 +432,7 @@ export class GameService {
         return MockDataService.generateMockGameRecords();
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('認証されていません');
-      }
+      const user = await this.getCurrentUser();
 
       // バックグラウンドで同期を実行
       SyncService.backgroundSync().catch(error => {
@@ -156,54 +446,17 @@ export class GameService {
       }
 
       // ローカルデータがない場合はリモートから取得
-      const { data: games, error } = await supabase
-        .from('games')
-        .select(`
-          *,
-          player_records (*),
-          round_records (*)
-        `)
-        .eq('account_id', user.id)
+      const selRes = await this.buildGamesQuery(user.id)
         .order('date', { ascending: false });
 
+      const { data: games, error } = selRes as any;
       if (error) {
         throw error;
       }
 
-      const remoteGames = games?.map((game: any) => ({
-        id: game.id,
-        accountId: game.account_id,
-        date: game.date,
-        location: game.location || '',
-        gameType: game.game_type,
-        rules: game.rules,
-        memo: game.memo || '',
-        duration: game.duration_minutes,
-        gameEndCondition: game.game_end_condition,
-        finalRiichiSticks: game.final_riichi_sticks,
-        finalHonba: game.final_honba,
-        photoPath: game.photo_path,
-        players: game.player_records?.map((pr: any) => ({
-          name: pr.player_name,
-          isMainAccount: pr.is_main_account,
-          finalScore: pr.final_score,
-          rank: pr.rank,
-          startingPosition: pr.starting_position,
-        })) || [],
-        rounds: game.round_records?.map((rr: any) => ({
-          round: rr.round,
-          honba: rr.honba,
-          riichiSticks: rr.riichi_sticks,
-          winner: rr.winner,
-          loser: rr.loser,
-          handType: rr.hand_type,
-          points: rr.points,
-          han: rr.han,
-          fu: rr.fu,
-          yakuman: rr.yakuman,
-          memo: rr.memo || '',
-        })) || [],
-      })) || [];
+      const remoteGames = (games || []).map((game: any) => 
+        this.mapGameFromDb(game)
+      );
 
       // ローカルに保存
       await LocalStorageService.saveGames(remoteGames);
@@ -226,73 +479,47 @@ export class GameService {
       }
 
       // ゲームデータを取得
-      const { data: game, error: gameError } = await supabase
+      const gameSelRes = await supabase
         .from('games')
         .select('*')
         .eq('id', gameId)
         .eq('account_id', accountId)
         .single();
 
+      const { data: game, error: gameError } = gameSelRes as any;
       if (gameError || !game) {
         return null;
       }
 
       // プレイヤー記録を取得
-      const { data: players, error: playersError } = await supabase
+      const playersSelRes = await supabase
         .from('player_records')
         .select('*')
         .eq('game_id', gameId);
 
+      const { data: players, error: playersError } = playersSelRes as any;
       if (playersError) {
         throw playersError;
       }
 
       // 局記録を取得
-      const { data: rounds, error: roundsError } = await supabase
+      const roundsSelRes = await supabase
         .from('round_records')
         .select('*')
         .eq('game_id', gameId)
         .order('round');
 
+      const { data: rounds, error: roundsError } = roundsSelRes as any;
       if (roundsError) {
         throw roundsError;
       }
 
       // GameRecord形式に変換
-      const gameRecord: GameRecord = {
-        id: game.id,
-        accountId: accountId,
-        date: game.date,
-        location: game.location || '',
-        gameType: game.game_type,
-        rules: game.rules as any,
-        memo: game.memo || '',
-        duration: game.duration_minutes || 0,
-        gameEndCondition: game.game_end_condition,
-        finalRiichiSticks: game.final_riichi_sticks,
-        finalHonba: game.final_honba,
-        photoPath: (game as any).photo_path || undefined,
-        players: players.map(p => ({
-          name: p.player_name,
-          isMainAccount: p.is_main_account,
-          finalScore: p.final_score,
-          rank: p.rank,
-          startingPosition: p.starting_position,
-        })),
-        rounds: rounds.map(r => ({
-          round: r.round,
-          honba: r.honba,
-          riichiSticks: r.riichi_sticks,
-          winner: r.winner,
-          loser: r.loser,
-          handType: r.hand_type,
-          points: r.points as any,
-          han: r.han,
-          fu: r.fu,
-          yakuman: r.yakuman,
-          memo: r.memo || '',
-        })),
-      };
+      const gameRecord: GameRecord = this.mapGameFromDb({
+        ...game,
+        player_records: players || [],
+        round_records: rounds || [],
+      });
 
       return gameRecord;
     } catch (error) {
@@ -361,22 +588,10 @@ export class GameService {
 
       // ゲームデータを更新
       console.log('🔍 DEBUG: Updating game record in Supabase...');
-      const updatePayload: any = {
-        date: gameData.date,
-        location: gameData.location,
-        game_type: gameData.gameType,
-        rules: gameData.rules as any,
-        memo: gameData.memo,
-        duration_minutes: gameData.duration && gameData.duration > 0 ? gameData.duration : null,
-        game_end_condition: gameData.gameEndCondition,
-        final_riichi_sticks: gameData.finalRiichiSticks,
-        final_honba: gameData.finalHonba,
-      };
-      if ((gameData as any).photoPath !== undefined) {
-        updatePayload.photo_path = (gameData as any).photoPath;
-      }
+      const updatePayload = this.mapGameToDb(gameData);
 
-      const { error: gameError } = await supabase
+      // Supabaseの型定義の問題を回避するため、as anyを使用
+      const { error: gameError } = await (supabase as any)
         .from('games')
         .update(updatePayload)
         .eq('id', gameId)
@@ -388,87 +603,8 @@ export class GameService {
       }
       console.log('🔍 DEBUG: Game record updated successfully');
 
-      // 既存のプレイヤー記録を削除
-      console.log('🔍 DEBUG: Deleting existing player records...');
-      const { error: deletePlayersError } = await supabase
-        .from('player_records')
-        .delete()
-        .eq('game_id', gameId);
-
-      if (deletePlayersError) {
-        console.error('❌ DEBUG: Failed to delete existing player records:', deletePlayersError);
-        throw deletePlayersError;
-      }
-      console.log('🔍 DEBUG: Existing player records deleted successfully');
-
-      // 新しいプレイヤー記録を挿入
-      console.log('🔍 DEBUG: Creating new player insert data...');
-      const playerInserts: PlayerRecordInsert[] = gameData.players.map(player => ({
-        game_id: gameId,
-        player_name: player.name,
-        is_main_account: player.isMainAccount,
-        final_score: player.finalScore,
-        rank: player.rank,
-        starting_position: player.startingPosition,
-      }));
-      console.log('🔍 DEBUG: Player insert data created:', playerInserts);
-
-      console.log('🔍 DEBUG: Inserting new player records...');
-      const { error: playersError } = await supabase
-        .from('player_records')
-        .insert(playerInserts);
-
-      if (playersError) {
-        console.error('❌ DEBUG: Failed to insert new player records:', playersError);
-        throw playersError;
-      }
-      console.log('🔍 DEBUG: New player records inserted successfully');
-
-      // 既存の局記録を削除
-      console.log('🔍 DEBUG: Deleting existing round records...');
-      const { error: deleteRoundsError } = await supabase
-        .from('round_records')
-        .delete()
-        .eq('game_id', gameId);
-
-      if (deleteRoundsError) {
-        console.error('❌ DEBUG: Failed to delete existing round records:', deleteRoundsError);
-        throw deleteRoundsError;
-      }
-      console.log('🔍 DEBUG: Existing round records deleted successfully');
-
-      // 新しい局記録を挿入（もしあれば）
-      if (gameData.rounds.length > 0) {
-        console.log('🔍 DEBUG: Creating new round insert data...');
-        const roundInserts: RoundRecordInsert[] = gameData.rounds.map(round => ({
-          game_id: gameId,
-          round: round.round,
-          honba: round.honba,
-          riichi_sticks: round.riichiSticks,
-          winner: round.winner,
-          loser: round.loser,
-          hand_type: round.handType,
-          points: round.points,
-          han: round.han,
-          fu: round.fu,
-          yakuman: round.yakuman,
-          memo: round.memo,
-        }));
-        console.log('🔍 DEBUG: Round insert data created:', roundInserts);
-
-        console.log('🔍 DEBUG: Inserting new round records...');
-        const { error: roundsError } = await supabase
-          .from('round_records')
-          .insert(roundInserts);
-
-        if (roundsError) {
-          console.error('❌ DEBUG: Failed to insert new round records:', roundsError);
-          throw roundsError;
-        }
-        console.log('🔍 DEBUG: New round records inserted successfully');
-      } else {
-        console.log('🔍 DEBUG: No round records to insert');
-      }
+      // 関連レコード（プレイヤー記録と局記録）を更新
+      await this.updateGameRelatedRecords(gameId, gameData);
       
       // ローカルキャッシュを更新
       console.log('🔍 DEBUG: Updating local cache...');
@@ -490,62 +626,25 @@ export class GameService {
 
   static async getAllGames(accountId: string): Promise<GameRecord[]> {
     try {
-      // ダミーユーザーの場合は空配列を返す
-      if (accountId === 'dummy-user-id') {
+      // ダミーユーザーの場合はモックデータを返す
+      if (this.isDummyUser(accountId)) {
         return MockDataService.generateMockGameRecords();
       }
 
       console.log('🔍 DEBUG: getAllGames called for accountId:', accountId);
 
-      const { data: games, error: gamesError } = await supabase
-        .from('games')
-        .select(`
-          *,
-          player_records (*),
-          round_records (*)
-        `)
-        .eq('account_id', accountId)
+      const allRes = await this.buildGamesQuery(accountId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false });
 
+      const { data: games, error: gamesError } = allRes as any;
       if (gamesError) {
         throw gamesError;
       }
 
-      const mappedGames = games.map((game: any) => ({
-        id: game.id,
-        accountId: game.account_id,
-        date: game.date,
-        location: game.location || '',
-        gameType: game.game_type as '東風戦' | '東南戦',
-        rules: game.rules as any,
-        photoPath: game.photo_path || undefined,
-        players: game.player_records.map((p: any) => ({
-          name: p.player_name,
-          finalScore: p.final_score,
-          rank: p.rank,
-          isMainAccount: p.is_main_account,
-          startingPosition: p.starting_position as 'East' | 'South' | 'West' | 'North',
-        })),
-        rounds: game.round_records.map((r: any) => ({
-          round: r.round,
-          honba: r.honba,
-          riichiSticks: r.riichi_sticks,
-          winner: r.winner,
-          loser: r.loser,
-          handType: r.hand_type as 'ron' | 'tsumo' | 'draw' | 'abort',
-          points: r.points as number[],
-          han: r.han,
-          fu: r.fu,
-          yakuman: r.yakuman,
-          memo: r.memo,
-        })),
-        finalRiichiSticks: game.final_riichi_sticks,
-        finalHonba: game.final_honba,
-        memo: game.memo,
-        duration: game.duration_minutes,
-        gameEndCondition: game.game_end_condition as 'normal' | 'bankruptcy' | 'timeout' | 'time_limit',
-      }));
+      const mappedGames = (games || []).map((game: any) => 
+        this.mapGameFromDb(game)
+      );
 
       // ローカルキャッシュを更新
       await LocalStorageService.saveGames(mappedGames);
@@ -560,61 +659,24 @@ export class GameService {
 
   static async getRecentGames(accountId: string, limit: number = 5): Promise<GameRecord[]> {
     try {
-      // ダミーユーザーの場合は空配列を返す
-      if (accountId === 'dummy-user-id') {
+      // ダミーユーザーの場合はモックデータを返す
+      if (this.isDummyUser(accountId)) {
         return MockDataService.generateMockGameRecords().slice(0, limit);
       }
 
-      const { data: games, error } = await supabase
-        .from('games')
-        .select(`
-          *,
-          player_records (*),
-          round_records (*)
-        `)
-        .eq('account_id', accountId)
+      const recentRes = await this.buildGamesQuery(accountId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limit);
 
+      const { data: games, error } = recentRes as any;
       if (error) {
         throw error;
       }
 
-      return games.map(game => ({
-        id: game.id,
-        accountId: game.account_id,
-        date: game.date,
-        location: game.location || '',
-        gameType: game.game_type as '東風戦' | '東南戦',
-        rules: game.rules as any,
-        photoPath: (game as any).photo_path || undefined,
-        players: game.player_records.map((p: any) => ({
-          name: p.player_name,
-          finalScore: p.final_score,
-          rank: p.rank,
-          isMainAccount: p.is_main_account,
-          startingPosition: p.starting_position as 'East' | 'South' | 'West' | 'North',
-        })),
-        rounds: game.round_records.map((r: any) => ({
-          round: r.round,
-          honba: r.honba,
-          riichiSticks: r.riichi_sticks,
-          winner: r.winner,
-          loser: r.loser,
-          handType: r.hand_type as 'ron' | 'tsumo' | 'draw' | 'abort',
-          points: r.points as number[],
-          han: r.han,
-          fu: r.fu,
-          yakuman: r.yakuman,
-          memo: r.memo,
-        })),
-        finalRiichiSticks: game.final_riichi_sticks,
-        finalHonba: game.final_honba,
-        memo: game.memo,
-        duration: game.duration_minutes,
-        gameEndCondition: game.game_end_condition as 'normal' | 'bankruptcy' | 'timeout' | 'time_limit',
-      }));
+      return (games || []).map((game: any) => 
+        this.mapGameFromDb(game)
+      );
     } catch (error) {
       console.error('Failed to get recent games:', error);
       return [];
@@ -625,14 +687,14 @@ export class GameService {
     console.log('🔍 DEBUG: GameService.getPlayerStats called with accountId:', accountId);
     
     try {
-      // ダミーユーザーの場合はデフォルト統計を返す
-      if (accountId === 'dummy-user-id') {
+      // ダミーユーザーの場合はモック統計を返す
+      if (this.isDummyUser(accountId)) {
         console.log('🔍 DEBUG: Using mock player stats for dummy user');
         return MockDataService.generateMockPlayerStats();
       }
 
       console.log('🔍 DEBUG: Fetching player records from Supabase...');
-      const { data: playerRecords, error } = await supabase
+      const playerRes = await supabase
         .from('player_records')
         .select(`
           *,
@@ -644,7 +706,7 @@ export class GameService {
         `)
         .eq('games.account_id', accountId)
         .eq('is_main_account', true);
-
+      const { data: playerRecords, error } = playerRes as any;
       if (error) {
         console.error('❌ DEBUG: Failed to fetch player records:', error);
         throw error;
@@ -652,66 +714,17 @@ export class GameService {
       console.log('🔍 DEBUG: Player records fetched successfully, count:', playerRecords?.length || 0);
 
       // games.dateで降順ソート
-      const sortedRecords = (playerRecords as any[]).sort(
+      const sortedRecords = (playerRecords || []).sort(
         (a: any, b: any) => new Date(b.games.date).getTime() - new Date(a.games.date).getTime()
       );
 
-      if (sortedRecords.length === 0) {
-        console.log('🔍 DEBUG: No player records found, returning default stats');
-        return {
-          totalGames: 0,
-          averageRank: 0,
-          averageScore: 0,
-          firstPlaceRate: 0,
-          topTwoRate: 0,
-          avoidLastRate: 0,
-          highestScore: 0,
-          lowestScore: 0,
-          maxConsecutiveWins: 0,
-          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
-        };
-      }
+      // 統計計算用のレコードに変換
+      const statsRecords = sortedRecords.map((p: any) => ({
+        rank: p.rank,
+        score: p.final_score,
+      }));
 
-      const totalGames = sortedRecords.length;
-      const totalRank = (sortedRecords as any[]).reduce((sum, p: any) => sum + p.rank, 0);
-      const totalScore = (sortedRecords as any[]).reduce((sum, p: any) => sum + p.final_score, 0);
-      const firstPlaceCount = (sortedRecords as any[]).filter((p: any) => p.rank === 1).length;
-      const topTwoCount = (sortedRecords as any[]).filter((p: any) => p.rank <= 2).length;
-      const avoidLastCount = (sortedRecords as any[]).filter((p: any) => p.rank < 4).length;
-      const scores = (sortedRecords as any[]).map((p: any) => p.final_score);
-      const highestScore = Math.max(...scores);
-      const lowestScore = Math.min(...scores);
-      
-      // 最大連荘を計算
-      let maxConsecutiveWins = 0;
-      let currentConsecutiveWins = 0;
-      for (const record of sortedRecords) {
-        if (record.rank === 1) {
-          currentConsecutiveWins++;
-          maxConsecutiveWins = Math.max(maxConsecutiveWins, currentConsecutiveWins);
-        } else {
-          currentConsecutiveWins = 0;
-        }
-      }
-      
-      const rankDistribution = (sortedRecords as any[]).reduce((acc: any, p: any) => {
-        acc[p.rank] = (acc[p.rank] || 0) + 1;
-        return acc;
-      }, {} as { [key: number]: number });
-
-      const averageScore = totalScore / totalGames;
-      const result = {
-        totalGames,
-        averageRank: totalRank / totalGames,
-        averageScore,
-        firstPlaceRate: firstPlaceCount / totalGames,
-        topTwoRate: topTwoCount / totalGames,
-        avoidLastRate: avoidLastCount / totalGames,
-        highestScore,
-        lowestScore,
-        maxConsecutiveWins,
-        rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
-      };
+      const result = this.calculateStats(statsRecords);
       
       console.log('🔍 DEBUG: Player stats calculated successfully:', {
         totalGames: result.totalGames,
@@ -737,11 +750,11 @@ export class GameService {
     selectedDate: Date
   ): Promise<PlayerStats> {
     try {
-      if (accountId === 'dummy-user-id') {
+      if (this.isDummyUser(accountId)) {
         return MockDataService.generateMockPlayerStats();
       }
 
-      const { data: rounds, error } = await supabase
+      const hanRes = await supabase
         .from('round_records')
         .select(`
           points,
@@ -752,43 +765,25 @@ export class GameService {
           )
         `)
         .eq('games.account_id', accountId);
-
+      const { data: rounds, error } = hanRes as any;
       if (error) {
         throw error;
       }
 
       // フィルタ: 期間
-      const filtered = (rounds as any[]).filter((r: any) => {
+      const filtered = (rounds || []).filter((r: any) => {
         const d = new Date(r.games.date);
-        if (period === 'all') return true;
-        if (period === 'year') return d.getFullYear() === selectedDate.getFullYear();
-        // month
-        return (
-          d.getFullYear() === selectedDate.getFullYear() &&
-          d.getMonth() === selectedDate.getMonth()
-        );
+        return this.filterByPeriod(d, period, selectedDate);
       });
 
       // 有効半荘のみ（4人分そろっており、null/空でない）
       const valid = filtered.filter((r: any) => {
-        const pts = (r.points as any[]) || [];
-        if (pts.length < 4) return false;
-        return !pts.some((v) => v === null || v === undefined || v === '');
+        const pts = r.points || [];
+        return this.isValidRoundRecord(pts);
       });
 
       if (valid.length === 0) {
-        return {
-          totalGames: 0,
-          averageRank: 0,
-          averageScore: 0,
-          firstPlaceRate: 0,
-          topTwoRate: 0,
-          avoidLastRate: 0,
-          highestScore: 0,
-          lowestScore: 0,
-          maxConsecutiveWins: 0,
-          rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
-        };
+        return this.getDefaultPlayerStats();
       }
 
       // 日付・作成時刻順でソート（連荘計算用）
@@ -796,59 +791,27 @@ export class GameService {
         (a: any, b: any) => new Date(a.games.date).getTime() - new Date(b.games.date).getTime() || new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
-      let totalRounds = 0;
-      let totalRank = 0;
-      let totalScore = 0;
-      let firstPlaceCount = 0;
-      let topTwoCount = 0;
-      let avoidLastCount = 0;
-      let highestScore = -Infinity;
-      let lowestScore = Infinity;
-      const rankDistribution: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0 };
+      // 統計計算用のレコードに変換
+      const statsRecords = sorted.map((r: any) => {
+        const pts = (r.points || []).map((v: any) => Number(v) || 0);
+        const myRank = this.calculateRankFromPoints(pts);
+        return {
+          rank: myRank,
+          score: pts[0] ?? 0,
+        };
+      });
 
-      // 連荘（連続1位）
-      let maxConsecutiveWins = 0;
-      let currentConsecutiveWins = 0;
-
-      for (const r of sorted) {
-        const pts = (r.points as any[]).map((v) => Number(v) || 0);
-        const my = pts[0];
-        const uniqueSorted = Array.from(new Set(pts)).sort((a, b) => b - a);
-        const myRank = (uniqueSorted.indexOf(my) + 1) || 4;
-
-        totalRounds += 1;
-        totalRank += myRank;
-        totalScore += my;
-        highestScore = Math.max(highestScore, my);
-        lowestScore = Math.min(lowestScore, my);
-        rankDistribution[myRank] = (rankDistribution[myRank] || 0) + 1;
-        if (myRank === 1) firstPlaceCount += 1;
-        if (myRank <= 2) topTwoCount += 1;
-        if (myRank < 4) avoidLastCount += 1;
-
-        if (myRank === 1) {
-          currentConsecutiveWins += 1;
-          if (currentConsecutiveWins > maxConsecutiveWins) maxConsecutiveWins = currentConsecutiveWins;
-        } else {
-          currentConsecutiveWins = 0;
-        }
+      const result = this.calculateStats(statsRecords);
+      
+      // Infinityチェック
+      if (!isFinite(result.highestScore)) {
+        result.highestScore = 0;
+      }
+      if (!isFinite(result.lowestScore)) {
+        result.lowestScore = 0;
       }
 
-      const averageRank = totalRounds > 0 ? totalRank / totalRounds : 0;
-      const averageScore = totalRounds > 0 ? totalScore / totalRounds : 0;
-
-      return {
-        totalGames: totalRounds,
-        averageRank,
-        averageScore,
-        firstPlaceRate: totalRounds > 0 ? firstPlaceCount / totalRounds : 0,
-        topTwoRate: totalRounds > 0 ? topTwoCount / totalRounds : 0,
-        avoidLastRate: totalRounds > 0 ? avoidLastCount / totalRounds : 0,
-        highestScore: isFinite(highestScore) ? highestScore : 0,
-        lowestScore: isFinite(lowestScore) ? lowestScore : 0,
-        maxConsecutiveWins,
-        rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
-      };
+      return result;
     } catch (error) {
       console.error('Failed to get hanchan stats:', error);
       throw new Error('統計データの取得に失敗しました');
@@ -859,14 +822,14 @@ export class GameService {
     console.log('🔍 DEBUG: GameService.getChartData called with:', { accountId, period, selectedDate });
     
     try {
-      // ダミーユーザーの場合は空のチャートデータを返す
-      if (accountId === 'dummy-user-id') {
+      // ダミーユーザーの場合はモックチャートデータを返す
+      if (this.isDummyUser(accountId)) {
         console.log('🔍 DEBUG: Using mock chart data for dummy user');
         return MockDataService.generateChartData(period);
       }
 
       console.log('🔍 DEBUG: Fetching games with rounds for rank progression...');
-      const { data: gamesData, error } = await supabase
+      const chartRes = await supabase
         .from('games')
         .select(`
           id,
@@ -875,7 +838,7 @@ export class GameService {
           round_records (points, created_at)
         `)
         .eq('account_id', accountId);
-
+      const { data: gamesData, error } = chartRes as any;
       if (error) {
         console.error('❌ DEBUG: Failed to fetch games for chart:', error);
         throw error;
@@ -885,17 +848,9 @@ export class GameService {
       const posOrder: Record<string, number> = { East: 0, South: 1, West: 2, North: 3 } as const;
 
       // 期間でフィルタリング（選択された日付に基づく）
-      const base = new Date(selectedDate);
-      const filteredGames = (gamesData as any[]).filter((g: any) => {
+      const filteredGames = (gamesData || []).filter((g: any) => {
         const d = new Date(g.date);
-        switch (period) {
-          case 'month':
-            return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth();
-          case 'year':
-            return d.getFullYear() === base.getFullYear();
-          default:
-            return true;
-        }
+        return this.filterByPeriod(d, period, selectedDate);
       });
 
       // 昇順にしてから各局の順位を抽出
@@ -908,13 +863,13 @@ export class GameService {
 
         const rounds = (g.round_records || []).slice().sort((a: any, b: any) => new Date(a.created_at || g.date).getTime() - new Date(b.created_at || g.date).getTime());
         for (const r of rounds) {
-          const raw = (r.points as any[]) || [];
-          if (raw.length < 4) continue;
-          if (raw.some((v) => v === null || v === undefined || v === '')) continue;
-          const pts = raw.map((v) => Number(v) || 0);
-          const uniqueSorted = Array.from(new Set(pts)).sort((a, b) => b - a);
-          const my = pts[mainIdx] ?? 0;
-          const myRank = (uniqueSorted.indexOf(my) + 1) || 4;
+          const raw = r.points || [];
+          if (!this.isValidRoundRecord(raw)) continue;
+          const pts = raw.map((v: any) => Number(v) || 0);
+          // メインアカウントの点数を先頭に移動してから順位計算
+          const mainPoints = pts[mainIdx] ?? 0;
+          const reorderedPoints = [mainPoints, ...pts.filter((_: number, idx: number) => idx !== mainIdx)];
+          const myRank = this.calculateRankFromPoints(reorderedPoints);
           ranks.push(myRank);
         }
       }
@@ -936,7 +891,7 @@ export class GameService {
   static async exportData(accountId: string): Promise<string> {
     try {
       // ダミーユーザーの場合は空のJSONを返す
-      if (accountId === 'dummy-user-id') {
+      if (this.isDummyUser(accountId)) {
         return JSON.stringify([], null, 2);
       }
 
@@ -950,7 +905,7 @@ export class GameService {
 
   static async getYearRange(accountId: string): Promise<{ minYear: number; maxYear: number } | null> {
     try {
-      if (!isSupabaseConfigured || accountId === 'dummy-user-id') {
+      if (!isSupabaseConfigured || this.isDummyUser(accountId)) {
         const mock = MockDataService.generateMockGameRecords();
         if (mock.length === 0) return null;
         const years = mock.map(g => new Date(g.date).getFullYear());
@@ -958,23 +913,23 @@ export class GameService {
       }
 
       // 最古の年
-      const { data: oldest, error: errOldest } = await supabase
+      const oldestRes = await supabase
         .from('games')
         .select('date')
         .eq('account_id', accountId)
         .order('date', { ascending: true })
         .limit(1);
-
+      const { data: oldest, error: errOldest } = oldestRes as any;
       if (errOldest) throw errOldest;
 
       // 最新の年
-      const { data: newest, error: errNewest } = await supabase
+      const newestRes = await supabase
         .from('games')
         .select('date')
         .eq('account_id', accountId)
         .order('date', { ascending: false })
         .limit(1);
-
+      const { data: newest, error: errNewest } = newestRes as any;
       if (errNewest) throw errNewest;
 
       if (!oldest || oldest.length === 0 || !newest || newest.length === 0) return null;
@@ -991,7 +946,7 @@ export class GameService {
   static async resetData(accountId: string): Promise<void> {
     try {
       // ダミーユーザーの場合は何もしない
-      if (accountId === 'dummy-user-id') {
+      if (this.isDummyUser(accountId)) {
         return;
       }
 
