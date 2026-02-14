@@ -258,16 +258,16 @@ export interface Database {
       get_player_stats: {
         Args: {
           user_id: string
-          period_start?: string
-          period_end?: string
+          period_start?: string | null
+          period_end?: string | null
         }
         Returns: Json
       }
       get_chart_data: {
         Args: {
           user_id: string
-          period_start?: string
-          period_end?: string
+          period_start?: string | null
+          period_end?: string | null
         }
         Returns: Json
       }

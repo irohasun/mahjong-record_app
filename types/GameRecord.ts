@@ -45,16 +45,8 @@ export interface GameRules {
   oka: number; // オカ（返し点との差額）
   riichiStick: number; // 立直棒（通常1000点）
   honbaValue: number; // 本場の価値（通常300点）
-}
-
-export interface Account {
-  accountId: string;
-  username: string;
-  createdDate: string;
-  isPremium: boolean;
-  purchaseDate?: string;
-  monthlyGameCount: number;
-  lastResetDate: string;
+  tobiBonusEnabled?: boolean; // 飛び賞の有効/無効
+  tobiBonus?: number; // 飛び賞の点数
 }
 
 export interface PlayerStats {

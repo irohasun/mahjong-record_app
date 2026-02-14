@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, SafeAreaView, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ScrollView, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -29,9 +30,9 @@ export default function ProfileEditScreen() {
           const { supabase } = await import('@/lib/supabase');
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.email) setEmail(user.email);
-        } catch {}
-      } catch (e) {
-        console.error(e);
+        } catch { }
+      } catch {
+        // Failed to load profile data
       }
     })();
   }, []);
@@ -52,8 +53,7 @@ export default function ProfileEditScreen() {
       if (!result.canceled && result.assets[0]) {
         setAvatarUri(result.assets[0].uri);
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
       Alert.alert('エラー', '画像の選択に失敗しました');
     }
   };
@@ -84,8 +84,7 @@ export default function ProfileEditScreen() {
       }
 
       Alert.alert('保存完了', 'プロフィールを更新しました', [{ text: 'OK', onPress: () => router.back() }]);
-    } catch (e) {
-      console.error(e);
+    } catch {
       Alert.alert('エラー', 'プロフィールの更新に失敗しました');
     } finally {
       setSaving(false);

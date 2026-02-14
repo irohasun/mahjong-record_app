@@ -8,10 +8,20 @@ const STORAGE_KEYS = {
   LAST_SYNC: 'mahjong_last_sync',
   PENDING_CHANGES: 'mahjong_pending_changes',
   CACHE_TIMESTAMP: 'mahjong_cache_timestamp',
+  ACCOUNT: 'mahjong_account',
+  ACCOUNT_CACHE_TIMESTAMP: 'mahjong_account_cache_timestamp',
+  STATS_CACHE_PREFIX: 'mahjong_stats_cache_',
+  STATS_CACHE_TIMESTAMP_PREFIX: 'mahjong_stats_cache_ts_',
 } as const;
 
 // キャッシュ有効期限（24時間）
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000;
+
+// アカウントキャッシュ有効期限（30分）
+const ACCOUNT_CACHE_EXPIRY = 30 * 60 * 1000;
+
+// 統計キャッシュ有効期限（5分）
+const STATS_CACHE_EXPIRY = 5 * 60 * 1000;
 
 export class LocalStorageService {
   // ゲームデータの保存
@@ -19,9 +29,7 @@ export class LocalStorageService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.GAMES, JSON.stringify(games));
       await AsyncStorage.setItem(STORAGE_KEYS.CACHE_TIMESTAMP, Date.now().toString());
-      console.log('✅ DEBUG: Games saved to local storage:', games.length);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save games to local storage:', error);
       throw error;
     }
   }
@@ -31,12 +39,8 @@ export class LocalStorageService {
     try {
       const gamesJson = await AsyncStorage.getItem(STORAGE_KEYS.GAMES);
       if (!gamesJson) return [];
-      
-      const games = JSON.parse(gamesJson) as GameRecord[];
-      console.log('✅ DEBUG: Games loaded from local storage:', games.length);
-      return games;
+      return JSON.parse(gamesJson) as GameRecord[];
     } catch (error) {
-      console.error('❌ DEBUG: Failed to load games from local storage:', error);
       return [];
     }
   }
@@ -46,17 +50,13 @@ export class LocalStorageService {
     try {
       const games = await this.getGames();
       const existingIndex = games.findIndex(g => g.id === game.id);
-      
-      if (existingIndex >= 0) {
-        games[existingIndex] = game;
-      } else {
-        games.push(game);
-      }
-      
-      await this.saveGames(games);
-      console.log('✅ DEBUG: Game saved to local storage:', game.id);
+
+      const updatedGames = existingIndex >= 0
+        ? games.map((g, i) => (i === existingIndex ? game : g))
+        : [...games, game];
+
+      await this.saveGames(updatedGames);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save game to local storage:', error);
       throw error;
     }
   }
@@ -65,10 +65,8 @@ export class LocalStorageService {
   static async getGame(gameId: string): Promise<GameRecord | null> {
     try {
       const games = await this.getGames();
-      const game = games.find(g => g.id === gameId);
-      return game || null;
+      return games.find(g => g.id === gameId) || null;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to get game from local storage:', error);
       return null;
     }
   }
@@ -77,9 +75,7 @@ export class LocalStorageService {
   static async saveStats(stats: PlayerStats): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(stats));
-      console.log('✅ DEBUG: Stats saved to local storage');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save stats to local storage:', error);
       throw error;
     }
   }
@@ -89,12 +85,8 @@ export class LocalStorageService {
     try {
       const statsJson = await AsyncStorage.getItem(STORAGE_KEYS.STATS);
       if (!statsJson) return null;
-      
-      const stats = JSON.parse(statsJson) as PlayerStats;
-      console.log('✅ DEBUG: Stats loaded from local storage');
-      return stats;
+      return JSON.parse(statsJson) as PlayerStats;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to load stats from local storage:', error);
       return null;
     }
   }
@@ -104,7 +96,7 @@ export class LocalStorageService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, timestamp.toString());
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save last sync timestamp:', error);
+      // silent failure
     }
   }
 
@@ -114,7 +106,6 @@ export class LocalStorageService {
       const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC);
       return timestamp ? parseInt(timestamp, 10) : 0;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to get last sync timestamp:', error);
       return 0;
     }
   }
@@ -124,15 +115,10 @@ export class LocalStorageService {
     try {
       const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.CACHE_TIMESTAMP);
       if (!timestamp) return false;
-      
+
       const cacheTime = parseInt(timestamp, 10);
-      const now = Date.now();
-      const isValid = (now - cacheTime) < CACHE_EXPIRY;
-      
-      console.log('🔍 DEBUG: Cache validity check:', { cacheTime, now, isValid });
-      return isValid;
+      return (Date.now() - cacheTime) < CACHE_EXPIRY;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to check cache validity:', error);
       return false;
     }
   }
@@ -141,9 +127,8 @@ export class LocalStorageService {
   static async savePendingChanges(changes: any[]): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.PENDING_CHANGES, JSON.stringify(changes));
-      console.log('✅ DEBUG: Pending changes saved:', changes.length);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save pending changes:', error);
+      // silent failure
     }
   }
 
@@ -152,12 +137,8 @@ export class LocalStorageService {
     try {
       const changesJson = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_CHANGES);
       if (!changesJson) return [];
-      
-      const changes = JSON.parse(changesJson);
-      console.log('✅ DEBUG: Pending changes loaded:', changes.length);
-      return changes;
+      return JSON.parse(changesJson);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to load pending changes:', error);
       return [];
     }
   }
@@ -166,9 +147,8 @@ export class LocalStorageService {
   static async clearPendingChanges(): Promise<void> {
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.PENDING_CHANGES);
-      console.log('✅ DEBUG: Pending changes cleared');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to clear pending changes:', error);
+      // silent failure
     }
   }
 
@@ -176,9 +156,8 @@ export class LocalStorageService {
   static async clearAll(): Promise<void> {
     try {
       await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
-      console.log('✅ DEBUG: All local data cleared');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to clear all data:', error);
+      // silent failure
     }
   }
 
@@ -186,9 +165,87 @@ export class LocalStorageService {
   static async clearCacheTimestamp(): Promise<void> {
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.CACHE_TIMESTAMP);
-      console.log('✅ DEBUG: Cache timestamp cleared');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to clear cache timestamp:', error);
+      // silent failure
+    }
+  }
+
+  // アカウントデータの保存
+  static async saveAccount(account: any): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNT, JSON.stringify(account));
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNT_CACHE_TIMESTAMP, Date.now().toString());
+    } catch (error) {
+      throw new Error('Failed to save account to local storage');
+    }
+  }
+
+  // アカウントデータの取得
+  static async getAccount(): Promise<any | null> {
+    try {
+      const accountJson = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNT);
+      if (!accountJson) return null;
+      return JSON.parse(accountJson);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // アカウントキャッシュが有効かチェック
+  static async isAccountCacheValid(): Promise<boolean> {
+    try {
+      const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNT_CACHE_TIMESTAMP);
+      if (!timestamp) return false;
+
+      const cacheTime = parseInt(timestamp, 10);
+      return (Date.now() - cacheTime) < ACCOUNT_CACHE_EXPIRY;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // アカウントキャッシュをクリア
+  static async clearAccountCache(): Promise<void> {
+    try {
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.ACCOUNT,
+        STORAGE_KEYS.ACCOUNT_CACHE_TIMESTAMP,
+      ]);
+    } catch (error) {
+      // silent failure
+    }
+  }
+
+  // 統計データのキャッシュ保存（期間キー付き）
+  static async saveStatsForPeriod(key: string, data: any): Promise<void> {
+    try {
+      const storageKey = STORAGE_KEYS.STATS_CACHE_PREFIX + key;
+      const tsKey = STORAGE_KEYS.STATS_CACHE_TIMESTAMP_PREFIX + key;
+      await AsyncStorage.setItem(storageKey, JSON.stringify(data));
+      await AsyncStorage.setItem(tsKey, Date.now().toString());
+    } catch (error) {
+      // silent failure
+    }
+  }
+
+  // 統計データのキャッシュ取得（期間キー付き）
+  static async getStatsForPeriod(key: string): Promise<any | null> {
+    try {
+      const storageKey = STORAGE_KEYS.STATS_CACHE_PREFIX + key;
+      const tsKey = STORAGE_KEYS.STATS_CACHE_TIMESTAMP_PREFIX + key;
+
+      const timestamp = await AsyncStorage.getItem(tsKey);
+      if (!timestamp) return null;
+
+      const cacheTime = parseInt(timestamp, 10);
+      if ((Date.now() - cacheTime) >= STATS_CACHE_EXPIRY) return null;
+
+      const dataJson = await AsyncStorage.getItem(storageKey);
+      if (!dataJson) return null;
+
+      return JSON.parse(dataJson);
+    } catch (error) {
+      return null;
     }
   }
 }

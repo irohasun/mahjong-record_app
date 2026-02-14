@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, SafeAreaView } from 'react-native';
-import { User, Shield, LogOut, Lock, Cloud, CheckCircle } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { User, Shield, LogOut, Lock, Cloud, CheckCircle, Trash2 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { DeletionService } from '@/services/DeletionService';
@@ -13,8 +14,6 @@ import { LocalStorageService } from '@/services/LocalStorageService';
 export default function AccountScreen() {
   const router = useRouter();
   const [account, setAccount] = useState<any>(null);
-  const [editing, setEditing] = useState(false);
-  const [newUsername, setNewUsername] = useState('');
   // 仕様変更: プラン管理機能削除に伴い状態を削除
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,15 +32,15 @@ export default function AccountScreen() {
 
     try {
       isLoadingRef.current = true;
-      
+
       if (isInitialLoad) {
         setIsLoading(true);
-        
+
         // 初回読み込み時はキャッシュから即座に表示
         const cachedAccount = await LocalStorageService.getAccount();
         if (cachedAccount) {
           setAccount(cachedAccount);
-          setNewUsername(cachedAccount.username);
+
           setIsLoading(false);
         }
       }
@@ -52,16 +51,15 @@ export default function AccountScreen() {
 
       setUser(userData);
       setAccount(accountData);
-      setNewUsername(accountData.username);
       lastLoadTimeRef.current = Date.now();
     } catch (error) {
-      console.error('Failed to load account data:', error);
+      // Error loading account data - fall through to cache
       // エラー時もキャッシュがあれば表示
       if (!account) {
         const cachedAccount = await LocalStorageService.getAccount();
         if (cachedAccount) {
           setAccount(cachedAccount);
-          setNewUsername(cachedAccount.username);
+
           // ユーザー情報のみ取得を試みる（軽量）
           try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -97,24 +95,52 @@ export default function AccountScreen() {
     }, [loadAccountData])
   );
 
-  const handleUsernameChange = async () => {
-    if (!newUsername.trim()) {
-      Alert.alert('エラー', 'ユーザー名を入力してください');
-      return;
-    }
-
+  // 開発専用: データクリア機能
+  const executeClearDevData = async () => {
     try {
-      await AccountService.updateUsername(newUsername.trim());
-      setEditing(false);
-      // ユーザー名更新後は強制更新でデータを再読み込み
-      await loadAccountData(false);
-      Alert.alert('成功', 'ユーザー名を変更しました');
-    } catch (error) {
-      Alert.alert('エラー', 'ユーザー名の変更に失敗しました');
+      await LocalStorageService.clearAll();
+
+      Alert.alert(
+        '削除完了',
+        'ローカルデータを削除しました。\n\n変更を反映するには:\nExpo Goアプリを一度終了して、再起動してください。',
+        [{ text: 'OK' }]
+      );
+    } catch {
+      Alert.alert(
+        'エラー',
+        'データの削除に失敗しました。\nもう一度お試しください。'
+      );
     }
   };
 
-  // 仕様変更: データ管理機能（エクスポート/インポート/リセット）は削除
+  const confirmClearDevData = () => {
+    Alert.alert(
+      '最終確認',
+      '本当にローカルデータを削除しますか？\n\nこの操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '完全に削除', style: 'destructive', onPress: executeClearDevData }
+      ]
+    );
+  };
+
+  const handleClearDevData = () => {
+    Alert.alert(
+      '開発用データクリア',
+      '以下のローカルデータが削除されます:\n\n' +
+      '• 対局記録（ローカルキャッシュ）\n' +
+      '• 統計データ\n' +
+      '• アカウントキャッシュ\n\n' +
+      '⚠️ この機能は開発環境専用です\n' +
+      '• Supabaseのデータは削除されません\n' +
+      '• 認証状態は保持されます\n\n' +
+      '本当に削除しますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除する', style: 'destructive', onPress: confirmClearDevData }
+      ]
+    );
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -122,8 +148,8 @@ export default function AccountScreen() {
       'ログアウトしますか？',
       [
         { text: 'キャンセル', style: 'cancel' },
-        { 
-          text: 'ログアウト', 
+        {
+          text: 'ログアウト',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -134,6 +160,68 @@ export default function AccountScreen() {
             }
           }
         }
+      ]
+    );
+  };
+
+  const executeAccountDeletion = async () => {
+    try {
+      Alert.alert('削除中', 'データを削除しています...');
+
+      await DeletionService.deleteAllUserData();
+      await AuthService.signOut();
+
+      Alert.alert(
+        '削除完了',
+        'アカウントとすべてのデータが削除されました。',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              try {
+                await AuthService.signInAnonymously();
+                router.replace('/(tabs)/history');
+              } catch {
+                router.replace('/(auth)/sign-up');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました';
+
+      Alert.alert(
+        'エラー',
+        `アカウント削除に失敗しました。\n\n詳細: ${errorMessage}\n\nもう一度お試しいただくか、サポートにお問い合わせください。`
+      );
+    }
+  };
+
+  const confirmFinalDeletion = () => {
+    Alert.alert(
+      '最終確認',
+      'すべてのデータが完全に削除されます。\nこの操作は絶対に取り消せません。\n\n本当によろしいですか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '完全に削除', style: 'destructive', onPress: executeAccountDeletion }
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'アカウント削除の確認',
+      '以下のデータが完全に削除されます：\n\n' +
+      '• 対局記録（すべての履歴）\n' +
+      '• 統計データ\n' +
+      '• プロフィール情報\n' +
+      '• アカウント情報\n' +
+      '• アップロードした写真\n\n' +
+      'この操作は取り消せません。\n本当に削除しますか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除する', style: 'destructive', onPress: confirmFinalDeletion }
       ]
     );
   };
@@ -164,14 +252,14 @@ export default function AccountScreen() {
         <Text style={styles.title}>アカウント</Text>
         {/* 仕様変更: プランバッジは削除 */}
       </View>
-      <ScrollView 
+      <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
       >
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>プロフィール設定</Text>
-          
+
           {/* 認証情報: ゲスト警告または正式アカウント表示 */}
           {isAnonymousUser ? (
             <View style={styles.anonymousWarning}>
@@ -198,9 +286,9 @@ export default function AccountScreen() {
               </View>
             </View>
           )}
-          
+
           {/* 仕様追加: お客様情報（名前・アイコン編集、メール閲覧） */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/profile-edit')}
           >
@@ -218,7 +306,7 @@ export default function AccountScreen() {
 
           {/* 仕様追加: データをバックアップする（匿名ユーザー向けに会員登録へ遷移） */}
           {isAnonymousUser && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
               onPress={() => router.push('/(auth)/sign-up')}
             >
@@ -242,8 +330,27 @@ export default function AccountScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>セキュリティ・プライバシー</Text>
-          
-          <TouchableOpacity 
+
+          {/* 開発専用: データクリア機能 */}
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleClearDevData}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={styles.menuIcon}>
+                  <Trash2 size={20} color="#F97316" />
+                </View>
+                <View style={styles.menuItemContent}>
+                  <Text style={[styles.menuItemTitle, { color: '#F97316' }]}>開発用データクリア</Text>
+                  <Text style={styles.menuItemSubtitle}>AsyncStorageのテストデータを削除</Text>
+                </View>
+              </View>
+              <Text style={styles.menuItemArrow}>›</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/terms-of-service')}
           >
@@ -258,7 +365,7 @@ export default function AccountScreen() {
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/privacy-policy')}
           >
@@ -275,95 +382,9 @@ export default function AccountScreen() {
 
           {/* 仕様変更: データ処理に関する案内リンクは削除 */}
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => {
-              // 第1段階: 削除されるデータの詳細を表示
-              Alert.alert(
-                'アカウント削除の確認',
-                '以下のデータが完全に削除されます：\n\n' +
-                '• 対局記録（すべての履歴）\n' +
-                '• 統計データ\n' +
-                '• プロフィール情報\n' +
-                '• アカウント情報\n' +
-                '• アップロードした写真\n\n' +
-                'この操作は取り消せません。\n' +
-                '本当に削除しますか？',
-                [
-                  { 
-                    text: 'キャンセル', 
-                    style: 'cancel' 
-                  },
-                  { 
-                    text: '削除する', 
-                    style: 'destructive',
-                    onPress: () => {
-                      // 第2段階: 最終確認
-                      Alert.alert(
-                        '最終確認',
-                        'すべてのデータが完全に削除されます。\n' +
-                        'この操作は絶対に取り消せません。\n\n' +
-                        '本当によろしいですか？',
-                        [
-                          { 
-                            text: 'キャンセル', 
-                            style: 'cancel' 
-                          },
-                          { 
-                            text: '完全に削除', 
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                // ローディング表示（簡易）
-                                Alert.alert('削除中', 'データを削除しています...');
-                                
-                                // 全データ削除
-                                await DeletionService.deleteAllUserData();
-                                
-                                // サインアウト
-                                await AuthService.signOut();
-                                
-                                // 完了メッセージ
-                                Alert.alert(
-                                  '削除完了',
-                                  'アカウントとすべてのデータが削除されました。',
-                                  [
-                                    {
-                                      text: 'OK',
-                                      onPress: async () => {
-                                        try {
-                                          // 匿名ユーザーとしてログイン
-                                          console.log('🔄 Signing in as anonymous user after account deletion');
-                                          await AuthService.signInAnonymously();
-                                          
-                                          // 履歴画面に遷移
-                                          router.replace('/(tabs)/history');
-                                        } catch (error) {
-                                          console.error('Failed to sign in anonymously:', error);
-                                          // 匿名ログイン失敗時は会員登録画面へ
-                                          router.replace('/(auth)/sign-up');
-                                        }
-                                      }
-                                    }
-                                  ]
-                                );
-                              } catch (error) {
-                                console.error('Account deletion error:', error);
-                                Alert.alert(
-                                  'エラー', 
-                                  'アカウント削除に失敗しました。\n' +
-                                  'もう一度お試しいただくか、サポートにお問い合わせください。'
-                                );
-                              }
-                            }
-                          }
-                        ]
-                      );
-                    }
-                  }
-                ]
-              );
-            }}
+            onPress={handleDeleteAccount}
           >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIcon}>
@@ -376,7 +397,7 @@ export default function AccountScreen() {
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
-          
+
         </View>
 
 
@@ -389,8 +410,8 @@ export default function AccountScreen() {
 
         {/* 最下部に独立したログアウト */}
         {!isAnonymousUser && (
-          <View style={[styles.section, { marginTop: 12 }]}> 
-            <TouchableOpacity 
+          <View style={[styles.section, { marginTop: 12 }]}>
+            <TouchableOpacity
               style={styles.signOutButton}
               onPress={handleSignOut}
             >
@@ -442,7 +463,6 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
-  // 仕様変更: プラン表示関連のスタイルは不要になったため削除可（残骸があれば段階的に整理）
   section: {
     backgroundColor: '#FFF',
     marginTop: 20,
@@ -454,99 +474,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1C1E',
     marginBottom: 16,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FF6B3520',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  userDetails: {
-    flex: 1,
-  },
-  editingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  usernameInput: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  saveButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  usernameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  username: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  editButton: {
-    backgroundColor: '#F2F2F7',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  editButtonText: {
-    color: '#FF6B35',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  accountId: {
-    fontSize: 14,
-    color: '#6D6D70',
-    marginTop: 4,
-  },
-  createdDate: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginTop: 2,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    gap: 12,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
-  dangerButton: {
-    backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#EF4444',
   },
   dangerText: {
     color: '#EF4444',
@@ -598,7 +525,6 @@ const styles = StyleSheet.create({
     color: '#047857',
     lineHeight: 20,
   },
-  // メールアドレス表示は仕様により削除
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',

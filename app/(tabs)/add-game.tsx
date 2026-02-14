@@ -1,22 +1,33 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image, Modal } from 'react-native';
-import { Save, Calendar, Plus, X, Camera, Check } from 'lucide-react-native';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Settings, Check, X } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
-import { StorageService } from '@/services/StorageService';
 import { GameService } from '@/services/GameService';
-import { AuthService } from '@/services/AuthService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { AccountService } from '@/services/AccountService';
+import {
+  RuleConfig,
+  DEFAULT_RULE_CONFIG,
+  calculateAllScores,
+  autoCompleteRawScore,
+  formatScore,
+  validateTotalScore,
+  calculateFourthPlayerScore,
+  detectAutoCompleteTarget,
+} from '@/utils/ScoreCalculator';
 
-
+/**
+ * 対局記録追加画面
+ * 素点入力 → 自動計算形式
+ */
 export default function AddGameScreen() {
   const router = useRouter();
   const { editMode, gameData: gameDataStr } = useLocalSearchParams<{ editMode?: string; gameData?: string }>();
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
-  
-  // 編集モードの判定（タブからの直接アクセス時は編集モードを無視）
+
+  // 編集モードの判定
   const isEditMode = editMode === 'true' && !!gameDataStr;
   const editGameData = useMemo(() => {
     if (!isEditMode || !gameDataStr) return null;
@@ -26,296 +37,323 @@ export default function AddGameScreen() {
       return null;
     }
   }, [isEditMode, gameDataStr]);
-  
-  // 画面がフォーカスされた時にフォームをリセット（編集モードでない場合のみ）
+
+  // 基本状態
+  const [gameDate, setGameDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [players, setPlayers] = useState(['自分', 'P2', 'P3', 'P4']);
+  const [loading, setLoading] = useState(false);
+
+  // ルール設定
+  const [ruleConfig, setRuleConfig] = useState<RuleConfig>(DEFAULT_RULE_CONFIG);
+  const [showRuleSettings, setShowRuleSettings] = useState(false);
+
+  // 半荘データ（最大8半荘）
+  // rawScores[hanchanIndex][playerIndex] = 素点（文字列）
+  const [hanchanCount, setHanchanCount] = useState(5);
+  const [rawScores, setRawScores] = useState<string[][]>(
+    Array(8).fill(null).map(() => Array(4).fill(''))
+  );
+
+  // 飛ばしたプレイヤーのデータ（8半荘 × 最大4プレイヤー）
+  const [tobiWinners, setTobiWinners] = useState<number[][]>(
+    Array(8).fill(null).map(() => [])
+  );
+
+  // 入力中のセル
+  const [activeCell, setActiveCell] = useState<{ hanchan: number; player: number } | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
+
+  // プレイヤー名編集
+  const [editingPlayerIndex, setEditingPlayerIndex] = useState<number | null>(null);
+
+
+  // 画面フォーカス時のリセット
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       if (!isEditMode) {
         resetForm();
         (async () => {
           try {
             const { account } = await AccountService.getAccount();
-            setPlayers([account.username || '自分', '', '', '']);
-          } catch {}
+            setPlayers([account.username || '自分', 'P2', 'P3', 'P4']);
+          } catch { }
         })();
       } else {
         loadGameData();
       }
     }, [isEditMode, gameDataStr])
   );
-  
-  const [gameDate, setGameDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [hanchanCount, setHanchanCount] = useState(3);
-  const [premiumHanchanCount, setPremiumHanchanCount] = useState(3);
-  const [players, setPlayers] = useState(['自分', '', '', '']);
-  const [scores, setScores] = useState(Array(hanchanCount).fill(null).map(() => Array(4).fill('')));
-  const [loading, setLoading] = useState(false);
-  const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
-  const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
-  const [customKeyboardValue, setCustomKeyboardValue] = useState('');
-  const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
-  const [gamePhoto, setGamePhoto] = useState<string | null>(null);
 
-
-
-  const handlePlayerNameChange = (index: number, name: string) => {
-    const newPlayers = [...players];
-    newPlayers[index] = name;
-    setPlayers(newPlayers);
+  // フォームリセット
+  const resetForm = () => {
+    setGameDate(new Date());
+    setHanchanCount(5);
+    setRawScores(Array(8).fill(null).map(() => Array(4).fill('')));
+    setTobiWinners(Array(8).fill(null).map(() => []));
+    setPlayers(['自分', 'P2', 'P3', 'P4']);
+    setRuleConfig(DEFAULT_RULE_CONFIG);
+    setActiveCell(null);
+    setShowCustomKeyboard(false);
+    setEditingPlayerIndex(null);
   };
 
-  const handlePlayerNameEdit = (index: number) => {
-    setEditingPlayerName(index);
+  // 編集モード用データ読み込み
+  const loadGameData = () => {
+    if (!editGameData) return;
+    setGameDate(new Date(editGameData.date));
+    const playerNames = editGameData.players?.map((p: any) => p.name) || ['自分', 'P2', 'P3', 'P4'];
+    setPlayers(playerNames);
+    // 既存データは収支形式なので、素点への逆変換は行わない（新規入力を促す）
   };
 
-  const handlePlayerNameSave = (index: number) => {
-    setEditingPlayerName(null);
-  };
+  // 各半荘の計算結果を取得
+  const getCalculatedResults = useCallback((hanchanIndex: number) => {
+    const scores = rawScores[hanchanIndex].map(s => {
+      const completed = autoCompleteRawScore(s);
+      return completed;
+    });
 
-  const handleCustomKeyboardPress = (hanchanIndex: number, playerIndex: number, value: string) => {
-    setCustomKeyboardValue(value);
-    setCustomKeyboardTarget({ hanchan: hanchanIndex, player: playerIndex });
+    // 飛ばしたプレイヤー情報を渡す
+    const winners = tobiWinners[hanchanIndex];
+    return calculateAllScores(scores, ruleConfig, winners);
+  }, [rawScores, ruleConfig, tobiWinners]);
+
+  // 各半荘の検証結果を計算
+  const validationResults = useMemo(() => {
+    return Array(8).fill(null).map((_, index) => {
+      if (index >= hanchanCount) return null;
+      const rawScoreRow = rawScores[index];
+      const allEntered = rawScoreRow.every(s => s !== '');
+      if (!allEntered) return null;
+      const scores = rawScoreRow.map(s => autoCompleteRawScore(s));
+
+      // 基本的な合計点数検証
+      const totalValid = validateTotalScore(scores, ruleConfig);
+      if (!totalValid) return false;
+
+      // 飛び賞が有効な場合の追加検証
+      if (ruleConfig.tobiBonusEnabled) {
+        const { isTobi } = getCalculatedResults(index);
+        const hasTobiPlayers = isTobi.some(t => t);
+        const tobiWinnerCount = tobiWinners[index].length;
+
+        // 飛びがいるのに飛ばした人が選択されていない場合は検証失敗
+        if (hasTobiPlayers && tobiWinnerCount === 0) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [rawScores, hanchanCount, ruleConfig, getCalculatedResults, tobiWinners]);
+
+  // 合計収支を計算
+  const getTotalScores = useCallback((): (number | null)[] => {
+    const totals = [0, 0, 0, 0];
+    for (let h = 0; h < hanchanCount; h++) {
+      const { scores } = getCalculatedResults(h);
+      scores.forEach((s, i) => {
+        if (s !== null) totals[i] += s;
+      });
+    }
+    return totals;
+  }, [hanchanCount, getCalculatedResults]);
+
+  // 保存可能かチェック（エラーがある半荘がないか）
+  const hasValidationError = useMemo(() => {
+    return validationResults.some((result, index) => {
+      // 使用中の半荘でエラーがある場合
+      return index < hanchanCount && result === false;
+    });
+  }, [validationResults, hanchanCount]);
+
+  // セルタップ時
+  const handleCellPress = (hanchanIndex: number, playerIndex: number) => {
+    setActiveCell({ hanchan: hanchanIndex, player: playerIndex });
+    const currentValue = rawScores[hanchanIndex][playerIndex];
+    // 既存の値から末尾の'00'を削除して表示用の値を設定
+    // 例: "35000" → "350", "-35000" → "-350"
+    let displayValue = '';
+    if (currentValue !== '') {
+      const isNegative = currentValue.startsWith('-');
+      // マイナス記号がある場合は最低3文字（"-" + 1桁 + "00"）、ない場合は最低3文字（1桁 + "00"）
+      const minLength = isNegative ? 4 : 3;
+      // 末尾の'00'を削除
+      if (currentValue.endsWith('00') && currentValue.length >= minLength) {
+        displayValue = currentValue.slice(0, -2);
+      } else {
+        displayValue = currentValue;
+      }
+    }
+    setInputValue(displayValue);
     setShowCustomKeyboard(true);
-    
-    // アニメーション開始
     Animated.timing(keyboardAnimation, {
       toValue: 1,
-      duration: 300,
+      duration: 250,
       useNativeDriver: true,
     }).start();
   };
 
+  // カスタムキーボード入力
+  const handleKeyboardInput = (key: string) => {
+    if (!activeCell) return;
 
-
-  const handleCustomKeyboardInput = (input: string) => {
-    if (input === 'backspace') {
-      const newValue = customKeyboardValue.slice(0, -1);
-      setCustomKeyboardValue(newValue);
-      
-      // リアルタイムでスコアに反映（自動計算なし）
-      if (customKeyboardTarget) {
-        const newScores = [...scores];
-        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
-        setScores(newScores);
-      }
-    } else if (input === 'ok') {
-      // OKボタンでスコアを確定し、3つ目の入力なら自動計算を実行
-      if (customKeyboardTarget) {
-        const newScores = [...scores];
-        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = customKeyboardValue;
-        
-        // 3つ目のスコアが入力された場合のみ自動計算
-        const currentScores = newScores[customKeyboardTarget.hanchan];
-        const filledScores = currentScores.filter((score, index) => score !== '');
-        
-        if (filledScores.length === 3) {
-          // 3人分の合計を計算
-          const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
-          // 残り1人の値を計算（合計が0になるように）
-          const remainingValue = -sum;
-          
-          // 空いているプレイヤーのインデックスを見つける
-          const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
-          if (emptyPlayerIndex !== -1) {
-            newScores[customKeyboardTarget.hanchan][emptyPlayerIndex] = remainingValue.toString();
-          }
-        }
-        
-        setScores(newScores);
-      }
-      
-      // アニメーション終了
+    if (key === 'backspace') {
+      const newValue = inputValue.slice(0, -1);
+      setInputValue(newValue);
+      // 下二桁の'00'を自動追加
+      const valueWithSuffix = newValue ? newValue + '00' : '';
+      updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+    } else if (key === 'ok') {
+      // 入力確定
       Animated.timing(keyboardAnimation, {
         toValue: 0,
-        duration: 300,
+        duration: 250,
         useNativeDriver: true,
       }).start(() => {
         setShowCustomKeyboard(false);
-        setCustomKeyboardValue('');
-        setCustomKeyboardTarget(null);
+        setActiveCell(null);
+        setInputValue('');
       });
+    } else if (key === 'clear') {
+      setInputValue('');
+      updateRawScore(activeCell.hanchan, activeCell.player, '');
+    } else if (key === '-') {
+      // マイナスボタン（トグル機能）
+      if (inputValue.startsWith('-')) {
+        // マイナス記号を削除
+        const newValue = inputValue.slice(1);
+        setInputValue(newValue);
+        const valueWithSuffix = newValue ? newValue + '00' : '';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+      } else {
+        // マイナス記号を追加
+        const newValue = '-' + inputValue;
+        setInputValue(newValue);
+        const valueWithSuffix = newValue + '00';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+      }
     } else {
-      // マイナス記号は最初の文字のみ許可
-      if (input === '-' && customKeyboardValue.length > 0) return;
-      // 小数点は1つまで許可
-      if (input === '.' && customKeyboardValue.includes('.')) return;
-      // 数字、マイナス、小数点のみ許可
-      if (/^[0-9\-\.]$/.test(input)) {
-        const newValue = customKeyboardValue + input;
-        setCustomKeyboardValue(newValue);
-        
-        // リアルタイムでスコアに反映（自動計算なし）
-        if (customKeyboardTarget) {
-          const newScores = [...scores];
-          newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
-          setScores(newScores);
-        }
+      // 数字入力（最大4桁まで、'00'が自動追加されるため）
+      // マイナス記号がある場合は5文字まで（"-" + 4桁）
+      const maxLength = inputValue.startsWith('-') ? 5 : 4;
+      if (inputValue.length < maxLength) {
+        const newValue = inputValue + key;
+        setInputValue(newValue);
+        // 下二桁の'00'を自動追加
+        const valueWithSuffix = newValue + '00';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
       }
     }
   };
 
+  // 素点更新（3人入力完了時に4人目を自動計算）
+  // 素点更新
+  const updateRawScore = (hanchan: number, player: number, value: string) => {
+    setRawScores(prev => {
+      const newScores = [...prev];
+      newScores[hanchan] = [...newScores[hanchan]];
+      newScores[hanchan][player] = value;
+      return newScores;
+    });
+  };
 
+  // 自動入力ボタンのハンドラ
+  const handleAutoComplete = useCallback((hanchanIndex: number, playerIndex: number) => {
+    const rawScoreRow = rawScores[hanchanIndex];
+    const target = detectAutoCompleteTarget(rawScoreRow);
 
+    if (target !== null && target.targetIndex === playerIndex) {
+      const totalPoints = ruleConfig.startingPoints * 4;
+      const fourthScore = calculateFourthPlayerScore(target.filledScores, totalPoints);
 
+      if (fourthScore !== null) {
+        setRawScores(prev => {
+          const newScores = [...prev];
+          newScores[hanchanIndex] = [...newScores[hanchanIndex]];
+          newScores[hanchanIndex][playerIndex] = String(fourthScore);
+          return newScores;
+        });
+      }
+    }
+  }, [rawScores, ruleConfig.startingPoints]);
 
+  // 半荘追加
   const addHanchan = () => {
-    const newHanchanCount = hanchanCount + 1;
-    setHanchanCount(newHanchanCount);
-    setPremiumHanchanCount(newHanchanCount);
-    const newScores = [...scores];
-    newScores.push(Array(4).fill(''));
-    setScores(newScores);
-  };
-
-  const removeHanchan = (hanchanIndex: number) => {
-    if (hanchanCount <= 1) {
-      Alert.alert('エラー', '最低1つの半荘は必要です');
-      return;
+    if (hanchanCount < 8) {
+      setHanchanCount(hanchanCount + 1);
     }
-    
-    Alert.alert(
-      '半荘を削除',
-      `半荘${hanchanIndex + 1}を削除しますか？`,
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: () => {
-            const newHanchanCount = hanchanCount - 1;
-            setHanchanCount(newHanchanCount);
-            if (newHanchanCount < premiumHanchanCount) {
-              setPremiumHanchanCount(newHanchanCount);
-            }
-            const newScores = [...scores];
-            newScores.splice(hanchanIndex, 1);
-            setScores(newScores);
-          }
-        }
-      ]
-    );
   };
 
-  const calculateSubtotal = (playerIndex: number): number => {
-    return scores.reduce((total, hanchan) => {
-      const scoreText = hanchan[playerIndex];
-      if (!scoreText) return total;
-      const score = parseInt(scoreText) || 0;
-      return total + score;
-    }, 0);
-  };
-
-  const loadGameData = () => {
-    if (!editGameData) return;
-    
-    // console.log('🔍 DEBUG: Loading game data:', editGameData);
-    
-    // 日付を設定
-    setGameDate(new Date(editGameData.date));
-    
-    // プレイヤー名を設定
-    const playerNames = editGameData.players.map((player: any) => player.name);
-    setPlayers(playerNames);
-    
-    // 半荘数とスコアを設定
-    if (editGameData.rounds && editGameData.rounds.length > 0) {
-      const roundCount = editGameData.rounds.length;
-      setHanchanCount(roundCount);
-      setPremiumHanchanCount(Math.max(3, roundCount));
-      const tempScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
-      editGameData.rounds.forEach((round: any, idx: number) => {
-        const row = (round.points || []).map((p: any) => (p ?? 0).toString());
-        for (let i = 0; i < 4; i++) {
-          tempScores[idx][i] = row[i] ?? '';
-        }
-      });
-      setScores(tempScores);
-    } else {
-      // 既存データに半荘ごとの情報が無い場合のフォールバック（空の行）
-      setScores(Array(3).fill(null).map(() => Array(4).fill('')));
-    }
-    
-    // console.log('🔍 DEBUG: Game data loaded successfully');
-  };
-
-  const resetForm = () => {
-    setGameDate(new Date());
-    setHanchanCount(3);
-    setPremiumHanchanCount(3);
-    setPlayers(['自分', '', '', '']);
-    setScores(Array(3).fill(null).map(() => Array(4).fill('')));
-    setGamePhoto(null);
-    setEditingPlayerName(null);
-    setShowCustomKeyboard(false);
-    setCustomKeyboardValue('');
-    setCustomKeyboardTarget(null);
-  };
-
+  // 保存処理
   const handleSave = async () => {
-    // console.log('🔍 DEBUG: handleSave called - Starting game record creation');
-    
     try {
-      // console.log('🔍 DEBUG: Authenticating user...');
+      setLoading(true);
       const user = await ensureAuthenticated();
       if (!user) {
-        // console.error('❌ DEBUG: Authentication failed');
         Alert.alert('エラー', '認証に失敗しました');
         return;
       }
-      // console.log('🔍 DEBUG: User authenticated successfully:', user.id);
-      
-      // 収支をそのまま保存（ベース点の加減算はしない）
+
+      // 各半荘のデータを構築
+      const rounds: any[] = [];
+      for (let h = 0; h < hanchanCount; h++) {
+        const { scores } = getCalculatedResults(h);
+        // 有効なスコアがある半荘のみ保存
+        const hasValidScore = scores.some(s => s !== null);
+        if (hasValidScore) {
+          rounds.push({
+            round: `半荘${h + 1}`,
+            honba: 0,
+            riichiSticks: 0,
+            handType: 'draw' as const,
+            points: scores.map(s => s ?? 0),
+            // 飛ばしたプレイヤー情報を保存
+            memo: tobiWinners[h].length > 0
+              ? JSON.stringify({ tobiWinners: tobiWinners[h] })
+              : undefined,
+          });
+        }
+      }
+
+      // プレイヤーデータ構築
+      const totalScores = getTotalScores();
       const playersData = players.map((name, index) => ({
-        name: index === 0 ? (players[0] || '自分') : `P${index + 1}`,
-        finalScore: calculateSubtotal(index),
+        name: name || `P${index + 1}`,
+        finalScore: totalScores[index] ?? 0,
         rank: 1,
         isMainAccount: index === 0,
-        startingPosition: ['East', 'South', 'West', 'North'][index] as 'East' | 'South' | 'West' | 'North'
+        startingPosition: ['East', 'South', 'West', 'North'][index] as 'East' | 'South' | 'West' | 'North',
       }));
-      // console.log('🔍 DEBUG: Player data created:', playersData);
-      
-      // 同点は同順位（dense ranking）
+
+      // 順位計算（合計収支ベース）
       const sortedPlayers = [...playersData].sort((a, b) => b.finalScore - a.finalScore);
       let currentRank = 0;
       let lastScore: number | null = null;
-      sortedPlayers.forEach((player) => {
-        if (lastScore === null || player.finalScore < lastScore) {
+      sortedPlayers.forEach((p) => {
+        if (lastScore === null || p.finalScore < lastScore) {
           currentRank += 1;
-          lastScore = player.finalScore;
+          lastScore = p.finalScore;
         }
-        const originalIndex = playersData.findIndex(p => p.name === player.name && p.isMainAccount === player.isMainAccount);
+        const originalIndex = playersData.findIndex(x => x.name === p.name && x.isMainAccount === p.isMainAccount);
         playersData[originalIndex].rank = currentRank;
       });
-      // console.log('🔍 DEBUG: Player ranks calculated:', playersData);
-      
-      // console.log('🔍 DEBUG: Creating game record...');
-      // 半荘ごとの行を局レコードとして保存
-      const rounds = scores.map((row, idx) => ({
-        round: `半荘${idx + 1}`,
-        honba: 0,
-        riichiSticks: 0,
-        handType: 'draw' as const,
-        // 空欄は0で保存せず、nullとして保存して集計対象外にする
-        points: row.map((v) => {
-          const s = String(v ?? '').trim();
-          if (s === '') return null as any;
-          const n = parseInt(s);
-          return (isNaN(n) ? 0 : n) as any;
-        }),
-      }));
 
-      const gameRecord: any = {
+      const gameRecord = {
         accountId: user.id,
         date: gameDate.toISOString(),
         location: '',
         gameType: '東南戦' as const,
         rules: {
-          startingPoints: 25000,
-          uma: '+15 +5 -5 -15',
-          oka: 5000,
+          startingPoints: ruleConfig.startingPoints,
+          uma: ruleConfig.uma.join('/'),
+          oka: (ruleConfig.returnPoints - ruleConfig.startingPoints) * 4,
           riichiStick: 1000,
           honbaValue: 300,
+          tobiBonusEnabled: ruleConfig.tobiBonusEnabled,
+          tobiBonus: ruleConfig.tobiBonus,
         },
         players: playersData,
         rounds,
@@ -325,609 +363,683 @@ export default function AddGameScreen() {
         gameEndCondition: 'normal' as const,
       };
 
-      // 写真アップロード（ある場合）
-      if (gamePhoto) {
-        try {
-          const tmpId = isEditMode && editGameData ? editGameData.id : `temp-${Date.now()}`;
-          const storagePath = await StorageService.uploadGamePhoto(user.id, tmpId, gamePhoto);
-          gameRecord.photoPath = storagePath;
-        } catch {}
+      if (isEditMode && editGameData) {
+        await GameService.updateGame(user.id, editGameData.id, { ...gameRecord, id: editGameData.id });
+      } else {
+        await GameService.addGame(gameRecord);
       }
-      // console.log('🔍 DEBUG: Game record created:', {
-      //   accountId: gameRecord.accountId,
-      //   date: gameRecord.date,
-      //   gameType: gameRecord.gameType,
-      //   playerCount: gameRecord.players.length
-      // });
-      
-              if (isEditMode && editGameData) {
-          // console.log('🔍 DEBUG: Edit mode detected, updating game...');
-          // console.log('🔍 DEBUG: Original game ID:', editGameData.id);
-          // console.log('🔍 DEBUG: Updated game data:', gameRecord);
-          
-          try {
-            const updatedGameRecord: any = {
-              ...gameRecord,
-              id: editGameData.id,
-            };
-            // console.log('🔍 DEBUG: Calling GameService.updateGame...');
-            await GameService.updateGame(user.id, editGameData.id, updatedGameRecord);
-            // console.log('🔍 DEBUG: Game updated successfully');
-            
-            Alert.alert('保存完了', undefined, [{ 
-              text: 'OK', 
-              onPress: () => {
-                // console.log('🔍 DEBUG: Navigating to history screen');
-                // 履歴画面に戻る前に少し待機
-                setTimeout(() => {
-                  router.push('/(tabs)/history');
-                }, 200);
-              }
-            }]);
-          } catch (updateError) {
-            // console.error('❌ DEBUG: Update game error:', updateError);
-            // console.error('❌ DEBUG: Update error details:', {
-            //   message: updateError instanceof Error ? updateError.message : 'Unknown error',
-            //   stack: updateError instanceof Error ? updateError.stack : undefined
-            // });
-            Alert.alert('エラー', '更新に失敗しました');
-            return;
-          }
-              } else {
-          // console.log('🔍 DEBUG: Calling GameService.addGame...');
-          await GameService.addGame(gameRecord);
-          // console.log('🔍 DEBUG: Game saved successfully');
-          
-          Alert.alert('保存完了', undefined, [{ 
-            text: 'OK', 
-            onPress: () => {
-              // console.log('🔍 DEBUG: Resetting form...');
-              resetForm();
-              // console.log('🔍 DEBUG: Navigating to history screen');
-              router.push('/(tabs)/history');
-            }
-          }]);
-        }
-    } catch (error) {
-      // console.error('❌ DEBUG: Save game error:', error);
-      // console.error('❌ DEBUG: Error details:', {
-      //   message: error instanceof Error ? error.message : 'Unknown error',
-      //   stack: error instanceof Error ? error.stack : undefined
-      // });
+
+      Alert.alert('保存完了', undefined, [{
+        text: 'OK',
+        onPress: () => {
+          resetForm();
+          router.push('/(tabs)/history');
+        },
+      }]);
+    } catch {
       Alert.alert('エラー', '保存に失敗しました');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // 写真選択機能
-  const pickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setGamePhoto(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('写真選択エラー:', error);
-      Alert.alert('エラー', '写真の選択に失敗しました');
-    }
+  // 順位バッジの色を取得
+  const getRankColor = (rank: 1 | 2 | 3 | 4 | null): string => {
+    if (rank === null) return '#E5E7EB';
+    const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444'];
+    return colors[rank - 1];
   };
-
-  // 写真を削除
-  const removePhoto = () => {
-    setGamePhoto(null);
-  };
-
-  // プレイヤーカラーを取得する関数
-  const getPlayerColor = (playerIndex: number) => {
-    const colors = ['#FF6B35', '#3B82F6', '#10B981', '#F59E0B'];
-    return colors[playerIndex];
-  };
-
-
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F9F9' }}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
-          keyboardShouldPersistTaps="handled"
-        >
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <Text style={styles.title}>対局記録</Text>
-        </View>
-
-        {/* 日付とゲームタイプ */}
-        <View style={styles.infoCard}>
-          <TouchableOpacity 
-            style={styles.dateContainer}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Calendar size={18} color="#FF6B35" />
-            <Text style={styles.dateText}>
-              {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
-            </Text>
-          </TouchableOpacity>
-          
-
-        </View>
-
-        {/* 写真選択 */}
-        <View style={styles.photoCard}>
-          <Text style={styles.photoLabel}>対局写真</Text>
-          {gamePhoto ? (
-            <View style={styles.photoContainer}>
-              <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
-              <TouchableOpacity style={styles.removePhotoButton} onPress={removePhoto}>
-                <X size={16} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.addPhotoButton} onPress={pickImage}>
-              <Camera size={24} color="#FF6B35" />
-              <Text style={styles.addPhotoText}>写真を追加</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* プレイヤー名入力欄 */}
-
-        {/* スコア表 */}
-        <View style={styles.scoreSheetCard}>
-          <View style={styles.scoreHeaderRow}>
-            <View style={styles.roundColumn}>
-              <Text style={styles.headerText}>半荘</Text>
-            </View>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.playerColumn}>
-                <View style={styles.playerHeader}>
-                  {editingPlayerName === playerIndex ? (
-                    <TextInput
-                      style={styles.playerNameInput}
-                      value={players[playerIndex]}
-                      onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
-                      onBlur={() => handlePlayerNameSave(playerIndex)}
-                      onEndEditing={() => handlePlayerNameSave(playerIndex)}
-                      placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                      autoFocus={true}
-                      selectTextOnFocus={true}
-                      maxLength={10}
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => handlePlayerNameEdit(playerIndex)}
-                      style={styles.playerNameButton}
-                    >
-                      <Text style={styles.headerText}>
-                        {players[playerIndex] || (playerIndex === 0 ? '自分' : `P${playerIndex + 1}`)}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
-                </View>
-              </View>
-            ))}
-          </View>
-          {[...Array(hanchanCount)].map((_, hanchanIndex) => (
-            <View key={hanchanIndex} style={styles.scoreRow}>
-              <View style={styles.roundNumber}>
-                <View style={styles.roundNumberContainer}>
-                  <Text style={[
-                    styles.roundText,
-                    hanchanIndex >= 3 ? styles.premiumRoundText : styles.normalRoundText
-                  ]}>
-                    {hanchanIndex + 1}
-                  </Text>
-                  {hanchanCount > 1 && (
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => removeHanchan(hanchanIndex)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <X size={12} color="#FF6B35" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-              {[0, 1, 2, 3].map((playerIndex) => (
-                <View key={playerIndex} style={styles.playerScoreContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.scoreCell,
-                      customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex && styles.scoreCellSelected
-                    ]}
-                    onPress={() => handleCustomKeyboardPress(hanchanIndex, playerIndex, scores[hanchanIndex][playerIndex])}
-                  >
-                    <Text style={[
-                      styles.scoreCellText,
-                      (() => {
-                        const scoreValue = customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                          ? customKeyboardValue 
-                          : scores[hanchanIndex][playerIndex];
-                        const numValue = parseInt(scoreValue) || 0;
-                        return numValue < 0 ? styles.negativeScore : numValue > 0 ? styles.positiveScore : styles.neutralScore;
-                      })()
-                    ]}>
-                      {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                        ? (customKeyboardValue || '')
-                        : String(scores[hanchanIndex][playerIndex] ?? '')
-                      }
-                    </Text>
-                  </TouchableOpacity>
-                  {playerIndex === 3 && (() => {
-                    const row = scores[hanchanIndex] || [];
-                    const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
-                    if (!hasAny) return null;
-                    const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
-                    const ok = sum === 0;
-                    return (
-                      <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
-                        {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
-                      </View>
-                    );
-                  })()}
-                </View>
-              ))}
-            </View>
-          ))}
-          <TouchableOpacity style={styles.addHanchanButton} onPress={addHanchan}>
-            <Plus size={16} color="#FF6B35" />
-            <Text style={styles.addHanchanText}>半荘を追加</Text>
-          </TouchableOpacity>
-          <View style={[styles.scoreRow, styles.subtotalRow]}>
-            <View style={styles.roundNumber}>
-              <Text style={styles.subtotalText}>合計</Text>
-            </View>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.totalContainer}>
-                <Text style={[
-                  styles.totalText,
-                  calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
-                ]}>
-                  {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-      </ScrollView>
-      
-      {/* 保存ボタン */}
-      <View style={styles.saveButtonContainer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Save size={20} color="#FFF" />
-          <Text style={styles.saveButtonText}>{isEditMode ? '修正' : '保存'}</Text>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* ヘッダー（グリーンバー） */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity style={styles.headerCenter} onPress={() => setShowDatePicker(true)}>
+          <Text style={styles.dateText}>
+            {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日の対局
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={() => setShowRuleSettings(true)}>
+          <Settings size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      {/* カスタムキーボード */}
-      {showCustomKeyboard && (
-        <Animated.View 
-          style={[
-            styles.customKeyboardOverlay,
-            {
-              transform: [{
-                translateY: keyboardAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [300, 0], // 300px下から上にスライド
-                })
-              }]
-            }
-          ]}
-        >
-          <TouchableOpacity 
-            style={styles.overlayBackground}
-            activeOpacity={1}
-            onPress={() => {
-              Animated.timing(keyboardAnimation, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true,
-              }).start(() => {
-                setShowCustomKeyboard(false);
-                setCustomKeyboardValue('');
-                setCustomKeyboardTarget(null);
-              });
-            }}
-          />
-          <Animated.View style={styles.customKeyboard}>
-            <View style={styles.customKeyboardButtons}>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('7')}>
-                  <Text style={styles.customKeyboardButtonText}>7</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('8')}>
-                  <Text style={styles.customKeyboardButtonText}>8</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('9')}>
-                  <Text style={styles.customKeyboardButtonText}>9</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('backspace')}>
-                  <Text style={styles.customKeyboardButtonText}>←</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('4')}>
-                  <Text style={styles.customKeyboardButtonText}>4</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('5')}>
-                  <Text style={styles.customKeyboardButtonText}>5</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('6')}>
-                  <Text style={styles.customKeyboardButtonText}>6</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('-')}>
-                  <Text style={styles.customKeyboardButtonText}>-</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('1')}>
-                  <Text style={styles.customKeyboardButtonText}>1</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('2')}>
-                  <Text style={styles.customKeyboardButtonText}>2</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('3')}>
-                  <Text style={styles.customKeyboardButtonText}>3</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('.')}>
-                  <Text style={styles.customKeyboardButtonText}>.</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('0')}>
-                  <Text style={styles.customKeyboardButtonText}>0</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.customKeyboardButton, styles.customKeyboardButtonOK]} onPress={() => handleCustomKeyboardInput('ok')}>
-                  <Text style={styles.customKeyboardButtonTextOK}>OK</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        </Animated.View>
-      )}
-    </KeyboardAvoidingView>
-    
-    {/* 日付ピッカー（モーダル表示） */}
-    {Platform.OS === 'ios' ? (
-      <Modal
-        visible={showDatePicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowDatePicker(false)}
+      {/* ルール表示 */}
+      <View style={styles.ruleBar}>
+        <TouchableOpacity style={styles.ruleChip} onPress={() => setShowRuleSettings(true)}>
+          <Text style={styles.ruleChipText}>{ruleConfig.startingPoints}/{ruleConfig.returnPoints}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.ruleChip} onPress={() => setShowRuleSettings(true)}>
+          <Text style={styles.ruleChipText}>{ruleConfig.uma.join('/')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.datePickerContainer}>
-            <View style={styles.datePickerHeader}>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.datePickerDone}>完了</Text>
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* スコアテーブル */}
+          <View style={styles.scoreTable}>
+            {/* プレイヤーヘッダー */}
+            <View style={styles.tableRow}>
+              <View style={styles.rowLabel} />
+              {players.map((name, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.playerCell}
+                  onPress={() => setEditingPlayerIndex(idx)}
+                >
+                  {editingPlayerIndex === idx ? (
+                    <TextInput
+                      style={styles.playerNameInput}
+                      value={name}
+                      onChangeText={(text) => {
+                        const newPlayers = [...players];
+                        newPlayers[idx] = text;
+                        setPlayers(newPlayers);
+                      }}
+                      onBlur={() => setEditingPlayerIndex(null)}
+                      autoFocus
+                      selectTextOnFocus
+                    />
+                  ) : (
+                    <Text style={styles.playerName} numberOfLines={1}>{name}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* 各半荘 */}
+            {Array.from({ length: hanchanCount }).map((_, hIndex) => {
+              const { scores, ranks, isTobi } = getCalculatedResults(hIndex);
+              const rawScoreRow = rawScores[hIndex];
+
+              return (
+                <View key={hIndex}>
+                  {/* 素点入力行 */}
+                  <View style={styles.tableRow}>
+                    <View style={styles.rowLabel}>
+                      <Text style={styles.hanchanNumber}>{hIndex + 1}</Text>
+                      {validationResults[hIndex] === true && (
+                        <View style={styles.validationIcon}>
+                          <Check size={14} color="#10B981" />
+                        </View>
+                      )}
+                      {validationResults[hIndex] === false && (
+                        <View style={styles.validationIconError}>
+                          <X size={14} color="#EF4444" />
+                        </View>
+                      )}
+                    </View>
+                    {(() => {
+                      // 4人全員入力済みかの判定（ループ外で1回だけ計算）
+                      const allPlayersEntered = rawScoreRow.every(s => s !== '');
+
+                      return rawScoreRow.map((rawScore, pIndex) => {
+                        const isActive = activeCell?.hanchan === hIndex && activeCell?.player === pIndex;
+                        const displayScore = scores[pIndex];
+                        const rank = ranks[pIndex];
+                        const playerIsTobi = ruleConfig.tobiBonusEnabled && isTobi[pIndex];
+                        const isTobiWinner = ruleConfig.tobiBonusEnabled && tobiWinners[hIndex].includes(pIndex);
+
+                        return (
+                        <TouchableOpacity
+                          key={pIndex}
+                          style={[
+                            styles.scoreCell,
+                            isActive && styles.scoreCellActive,
+                            playerIsTobi && styles.scoreCellTobi,
+                            isTobiWinner && styles.scoreCellTobiWinner,
+                          ]}
+                          onPress={() => handleCellPress(hIndex, pIndex)}
+                          onLongPress={() => {
+                            // 飛び賞が無効、または飛んだ本人は選択不可
+                            if (!ruleConfig.tobiBonusEnabled || playerIsTobi) return;
+
+                            setTobiWinners(prev => {
+                              const newWinners = [...prev];
+                              const currentWinners = [...newWinners[hIndex]];
+
+                              if (currentWinners.includes(pIndex)) {
+                                // 選択解除
+                                newWinners[hIndex] = currentWinners.filter(i => i !== pIndex);
+                              } else {
+                                // 選択追加
+                                newWinners[hIndex] = [...currentWinners, pIndex];
+                              }
+
+                              return newWinners;
+                            });
+                          }}
+                        >
+                          {rawScore ? (
+                            <>
+                              {/* 素点表示 */}
+                              <View style={styles.rawScoreRow}>
+                                <Text style={styles.rawScoreText}>{rawScore}</Text>
+                                {playerIsTobi && (
+                                  <Text style={styles.tobiMark}>飛</Text>
+                                )}
+                                {isTobiWinner && (
+                                  <Text style={styles.tobiWinnerMark}>飛</Text>
+                                )}
+                              </View>
+
+                              {/* 順位と精算点（全員入力済みの場合のみ表示） */}
+                              {allPlayersEntered && (
+                                <View style={styles.calculatedRow}>
+                                  {rank !== null && (
+                                    <View style={[styles.rankBadge, { backgroundColor: getRankColor(rank) }]}>
+                                      <Text style={styles.rankText}>{rank}</Text>
+                                    </View>
+                                  )}
+                                  <Text style={[
+                                    styles.calculatedScore,
+                                    displayScore !== null && displayScore > 0 && styles.positiveScore,
+                                    displayScore !== null && displayScore < 0 && styles.negativeScore,
+                                  ]}>
+                                    {formatScore(displayScore)}
+                                  </Text>
+                                </View>
+                              )}
+                            </>
+                          ) : (
+                            /* プレースホルダー */
+                            <Text style={styles.placeholderText}>-</Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    });
+                    })()}
+                  </View>
+                </View>
+              );
+            })}
+
+            {/* 半荘追加ボタン */}
+            {hanchanCount < 8 && (
+              <TouchableOpacity style={styles.addHanchanBtn} onPress={addHanchan}>
+                <Text style={styles.addHanchanText}>+ 半荘を追加</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 合計行 */}
+            <View style={[styles.tableRow, styles.totalRow]}>
+              <View style={styles.rowLabel}>
+                <Text style={styles.totalLabel}>計</Text>
+              </View>
+              {getTotalScores().map((total, idx) => (
+                <View key={idx} style={styles.totalCell}>
+                  <Text style={[
+                    styles.totalScore,
+                    total !== null && total > 0 && styles.positiveScore,
+                    total !== null && total < 0 && styles.negativeScore,
+                  ]}>
+                    {formatScore(total)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* 保存ボタン */}
+        <View style={styles.footerContainer}>
+          <TouchableOpacity
+            style={[
+              styles.saveButton,
+              (loading || hasValidationError) && styles.saveButtonDisabled
+            ]}
+            onPress={handleSave}
+            disabled={loading || hasValidationError}
+          >
+            <Text style={styles.saveButtonText}>
+              {hasValidationError ? '合計エラーがあります' : '保存'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* カスタムキーボード */}
+        {showCustomKeyboard && (
+          <Animated.View
+            style={[
+              styles.keyboardContainer,
+              {
+                transform: [{
+                  translateY: keyboardAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [280, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.keyboardOverlay}
+              activeOpacity={1}
+              onPress={() => handleKeyboardInput('ok')}
+            />
+            <View style={styles.keyboard}>
+              <View style={styles.keyboardHeader}>
+                <Text style={styles.keyboardTitle}>素点入力</Text>
+                {(() => {
+                  // 自動入力ボタンの表示判定
+                  if (!activeCell) return null;
+                  const rawScoreRow = rawScores[activeCell.hanchan];
+
+                  // ケース1: 3人入力済み、1人未入力（既存のロジック）
+                  const target = detectAutoCompleteTarget(rawScoreRow);
+                  const canAutoComplete = target !== null && target.targetIndex === activeCell.player;
+
+                  if (canAutoComplete && target) {
+                    const fourthScore = calculateFourthPlayerScore(
+                      target.filledScores,
+                      ruleConfig.startingPoints * 4
+                    );
+
+                    return (
+                      <TouchableOpacity
+                        style={styles.autoCompleteButtonContainer}
+                        onPress={() => {
+                          handleAutoComplete(activeCell.hanchan, activeCell.player);
+                          handleKeyboardInput('ok');
+                        }}
+                      >
+                        <Text style={styles.autoCompleteButtonText}>
+                          自動入力 {fourthScore !== null ? (fourthScore >= 0 ? `+${fourthScore}` : fourthScore) : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  // ケース2: 4人全員入力済みだが、検証エラーがある場合（新規ロジック）
+                  const allEntered = rawScoreRow.every(s => s !== '');
+                  const hasValidationError = validationResults[activeCell.hanchan] === false;
+                  const activeCellHasValue = rawScoreRow[activeCell.player] !== '';
+
+                  if (allEntered && hasValidationError && activeCellHasValue) {
+                    // アクティブセル以外の3人の素点を取得
+                    const otherScores = rawScoreRow
+                      .map((s, idx) => idx === activeCell.player ? null : autoCompleteRawScore(s))
+                      .filter((s): s is number => s !== null);
+
+                    if (otherScores.length === 3) {
+                      const correctScore = calculateFourthPlayerScore(
+                        otherScores,
+                        ruleConfig.startingPoints * 4
+                      );
+
+                      return (
+                        <TouchableOpacity
+                          style={styles.autoCompleteButtonContainer}
+                          onPress={() => {
+                            if (correctScore !== null) {
+                              const newRawScores = [...rawScores];
+                              newRawScores[activeCell.hanchan][activeCell.player] = String(correctScore);
+                              setRawScores(newRawScores);
+                              handleKeyboardInput('ok');
+                            }
+                          }}
+                        >
+                          <Text style={styles.autoCompleteButtonText}>
+                            自動入力 {correctScore !== null ? (correctScore >= 0 ? `+${correctScore}` : correctScore) : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                  }
+
+                  return null;
+                })()}
+                <TouchableOpacity onPress={() => handleKeyboardInput('clear')}>
+                  <Text style={styles.clearButton}>クリア</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.keyboardDisplay}>
+                <Text style={styles.keyboardDisplayText}>
+                  {inputValue ? inputValue + '00' : '00'}
+                </Text>
+              </View>
+              <View style={styles.keyboardButtons}>
+                {['7', '8', '9', '4', '5', '6', '1', '2', '3', '-', '0', 'backspace'].map((key) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.keyboardButton}
+                    onPress={() => handleKeyboardInput(key)}
+                  >
+                    <Text style={styles.keyboardButtonText}>
+                      {key === 'backspace' ? '←' : key}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={styles.keyboardOkButton}
+                onPress={() => handleKeyboardInput('ok')}
+              >
+                <Text style={styles.keyboardOkText}>OK</Text>
               </TouchableOpacity>
             </View>
-            <DateTimePicker
-              value={gameDate}
-              mode="date"
-              display="spinner"
-              onChange={(event, selectedDate) => {
-                if (selectedDate) {
-                  setGameDate(selectedDate);
-                }
-              }}
-              locale="ja-JP"
-            />
+          </Animated.View>
+        )}
+      </KeyboardAvoidingView>
+
+      {/* 日付ピッカー */}
+      {Platform.OS === 'ios' ? (
+        <Modal visible={showDatePicker} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.datePickerContainer}>
+              <View style={styles.datePickerHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.datePickerDone}>完了</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={gameDate}
+                mode="date"
+                display="spinner"
+                onChange={(_, date) => date && setGameDate(date)}
+                locale="ja-JP"
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        showDatePicker && (
+          <DateTimePicker
+            value={gameDate}
+            mode="date"
+            display="default"
+            onChange={(_, date) => {
+              setShowDatePicker(false);
+              if (date) setGameDate(date);
+            }}
+          />
+        )
+      )}
+
+      {/* ルール設定モーダル */}
+      <Modal visible={showRuleSettings} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.ruleSettingsModal}>
+            <Text style={styles.ruleSettingsTitle}>ルール設定</Text>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>開始持ち点</Text>
+              <TextInput
+                style={styles.ruleSettingsInput}
+                value={String(ruleConfig.startingPoints)}
+                onChangeText={(t) => setRuleConfig({ ...ruleConfig, startingPoints: parseInt(t) || 25000 })}
+                keyboardType="number-pad"
+              />
+            </View>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>返し点</Text>
+              <TextInput
+                style={styles.ruleSettingsInput}
+                value={String(ruleConfig.returnPoints)}
+                onChangeText={(t) => setRuleConfig({ ...ruleConfig, returnPoints: parseInt(t) || 30000 })}
+                keyboardType="number-pad"
+              />
+            </View>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>ウマ (1位/2位/3位/4位)</Text>
+            </View>
+            <View style={styles.umaRow}>
+              {ruleConfig.uma.map((val, idx) => (
+                <TextInput
+                  key={idx}
+                  style={styles.umaInput}
+                  value={String(val)}
+                  onChangeText={(t) => {
+                    const newUma = [...ruleConfig.uma] as [number, number, number, number];
+                    newUma[idx] = parseInt(t) || 0;
+                    setRuleConfig({ ...ruleConfig, uma: newUma });
+                  }}
+                  keyboardType="numbers-and-punctuation"
+                />
+              ))}
+            </View>
+
+            {/* 飛び賞ON/OFFチェックボックス */}
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>飛び賞を使用</Text>
+              <TouchableOpacity
+                style={[
+                  styles.checkbox,
+                  ruleConfig.tobiBonusEnabled && styles.checkboxChecked
+                ]}
+                onPress={() => setRuleConfig({
+                  ...ruleConfig,
+                  tobiBonusEnabled: !ruleConfig.tobiBonusEnabled
+                })}
+              >
+                {ruleConfig.tobiBonusEnabled && (
+                  <Check size={16} color="#FFF" />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* 飛び賞の点数入力（チェックボックスONの場合のみ有効） */}
+            <View style={styles.ruleSettingsRow}>
+              <Text style={[
+                styles.ruleSettingsLabel,
+                !ruleConfig.tobiBonusEnabled && styles.disabledText
+              ]}>
+                飛び賞の点数
+              </Text>
+              <TextInput
+                style={[
+                  styles.ruleSettingsInput,
+                  !ruleConfig.tobiBonusEnabled && styles.disabledInput
+                ]}
+                value={String(ruleConfig.tobiBonus)}
+                onChangeText={(t) => setRuleConfig({
+                  ...ruleConfig,
+                  tobiBonus: parseInt(t) || 0
+                })}
+                keyboardType="number-pad"
+                editable={ruleConfig.tobiBonusEnabled}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.ruleSettingsCloseBtn}
+              onPress={() => setShowRuleSettings(false)}
+            >
+              <Text style={styles.ruleSettingsCloseText}>反映する</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    ) : (
-      showDatePicker && (
-        <DateTimePicker
-          value={gameDate}
-          mode="date"
-          display="default"
-          onChange={(event, selectedDate) => {
-            setShowDatePicker(false);
-            if (selectedDate) {
-              setGameDate(selectedDate);
-            }
-          }}
-        />
-      )
-    )}
-  </SafeAreaView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#FFF',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-    backgroundColor: '#FFF',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    textAlign: 'center',
-  },
-  saveButtonContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#FF6B35',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  saveButtonText: {
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FF6B35',
+  },
+  headerCenter: {
+    flex: 1,
+  },
+  dateText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  infoCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    margin: 12,
-    marginTop: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  scoreSheetCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    margin: 12,
-    marginTop: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  scoreHeaderRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  roundColumn: {
-    width: 60,
-    alignItems: 'center',
-  },
-  playerColumn: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
     textAlign: 'center',
   },
-  playerHeader: {
-    alignItems: 'center',
-    gap: 4,
+  iconButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 8,
   },
-  playerColorIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  ruleBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FF6B35',
+  },
+  ruleChip: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  ruleChipText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  scoreTable: {
+    margin: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  rowLabel: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    paddingVertical: 12,
+  },
+  hanchanNumber: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  validationIcon: {
+    marginTop: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 4,
+    padding: 2,
+  },
+  validationIconError: {
+    marginTop: 4,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 4,
+    padding: 2,
+  },
+  playerCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    minHeight: 48,
+  },
+  playerName: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   playerNameInput: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
+    color: '#374151',
+    fontWeight: '600',
     textAlign: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FF6B35',
+    paddingVertical: 2,
+    minWidth: 50,
+  },
+  scoreCell: {
+    flex: 1,
+    minHeight: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    paddingVertical: 8,
     backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#FF6B35',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 60,
   },
-  playerNameButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  scoreCellActive: {
+    backgroundColor: '#ECFDF5',
   },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+  scoreCellTobi: {
+    backgroundColor: '#FEF2F2',
   },
-  roundNumber: {
-    width: 60,
-    alignItems: 'center',
+  scoreCellTobiWinner: {
+    backgroundColor: '#F0FDF4',
   },
-  roundNumberContainer: {
+  rawScoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  roundText: {
-    fontSize: 16,
+  rawScoreText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  tobiMark: {
+    fontSize: 10,
+    color: '#EF4444',
     fontWeight: '700',
-    color: '#000',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  normalRoundText: {
-    color: '#000',
+  tobiWinnerMark: {
+    fontSize: 10,
+    color: '#10B981',
+    fontWeight: '700',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  premiumRoundText: {
-    color: '#FF6B35',
-  },
-  removeButton: {
-    padding: 2,
-  },
-  playerScoreContainer: {
-    flex: 1,
+  calculatedRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'relative',
+    marginTop: 4,
+    gap: 4,
   },
-  scoreCell: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minWidth: 60,
+  rankBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
-  scoreCellSelected: {
-    backgroundColor: '#FF6B3515',
-    borderColor: '#FF6B35',
+  rankText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '700',
   },
-  scoreCellText: {
-    fontSize: 16,
+  calculatedScore: {
+    fontSize: 14,
     fontWeight: '600',
+    color: '#374151',
   },
   positiveScore: {
     color: '#10B981',
@@ -935,218 +1047,255 @@ const styles = StyleSheet.create({
   negativeScore: {
     color: '#EF4444',
   },
-  neutralScore: {
-    color: '#6D6D70',
+  placeholderText: {
+    fontSize: 16,
+    color: '#D1D5DB',
   },
-  addHanchanButton: {
-    flexDirection: 'row',
+  addHanchanBtn: {
+    paddingVertical: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF6B3515',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   addHanchanText: {
     fontSize: 14,
-    fontWeight: '600',
     color: '#FF6B35',
+    fontWeight: '600',
   },
-  subtotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingTop: 12,
-    marginTop: 8,
+  totalRow: {
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 0,
   },
-  subtotalText: {
+  totalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  totalCell: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+  },
+  totalScore: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#000',
+    color: '#374151',
   },
-  totalContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  totalText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  statusBadge: {
-    marginTop: 4,
-    alignSelf: 'center',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  okBadge: {
-    backgroundColor: '#10B981',
-  },
-  ngBadge: {
-    backgroundColor: '#EF4444',
-  },
-  statusBadgeRight: {
-    position: 'absolute',
-    right: -14,
-    top: '50%',
-    transform: [{ translateY: -7 }],
-  },
-  customKeyboardOverlay: {
+  footerContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  overlayBackground: {
-    flex: 1,
-  },
-  customKeyboard: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
     padding: 16,
+    backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
   },
-  customKeyboardButtons: {
-    gap: 8,
-  },
-  customKeyboardRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  customKeyboardButton: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  customKeyboardButtonOK: {
+  saveButton: {
     backgroundColor: '#FF6B35',
-    borderColor: '#FF6B35',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  customKeyboardButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
-  customKeyboardButtonTextOK: {
-    fontSize: 18,
-    fontWeight: '600',
+  saveButtonText: {
     color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
   },
-  gameTypeContainer: {
-    marginTop: 16,
+  keyboardContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
-  gameTypeLabel: {
+  keyboardOverlay: {
+    height: 50,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  keyboard: {
+    backgroundColor: '#F9FAFB',
+    paddingBottom: 34,
+  },
+  keyboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  keyboardTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6D6D70',
-    marginBottom: 8,
+    color: '#374151',
   },
-  gameTypeButtons: {
-    flexDirection: 'row',
-    gap: 8,
+  autoCompleteButtonContainer: {
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  gameTypeButton: {
-    flex: 1,
+  autoCompleteButtonText: {
+    fontSize: 14,
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  clearButton: {
+    fontSize: 14,
+    color: '#EF4444',
+  },
+  keyboardDisplay: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F2F2F7',
-    alignItems: 'center',
-  },
-  gameTypeButtonActive: {
-    backgroundColor: '#FF6B35',
-  },
-  gameTypeButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6D6D70',
-  },
-  gameTypeButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  photoCard: {
     backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  photoLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 12,
+  keyboardDisplayText: {
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'right',
+    color: '#111827',
   },
-  photoContainer: {
-    position: 'relative',
-    alignItems: 'center',
-  },
-  gamePhoto: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    resizeMode: 'cover',
-  },
-  removePhotoButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addPhotoButton: {
+  keyboardButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 8,
+  },
+  keyboardButton: {
+    width: '33.33%',
+    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 8,
-    paddingVertical: 16,
-    gap: 8,
   },
-  addPhotoText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF6B35',
+  keyboardButtonText: {
+    fontSize: 24,
+    color: '#111827',
+    fontWeight: '500',
   },
-  // 日付ピッカーモーダル用スタイル
+  keyboardOkButton: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#FF6B35',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  keyboardOkText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   datePickerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   datePickerHeader: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: '#E5E7EB',
   },
   datePickerDone: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 16,
     color: '#FF6B35',
+    fontWeight: '600',
+  },
+  ruleSettingsModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
+  },
+  ruleSettingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  ruleSettingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  ruleSettingsLabel: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  ruleSettingsInput: {
+    width: 100,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlign: 'right',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+  },
+  checkboxChecked: {
+    backgroundColor: '#FF6B35',
+    borderColor: '#FF6B35',
+  },
+  disabledText: {
+    color: '#9CA3AF',
+  },
+  disabledInput: {
+    backgroundColor: '#F3F4F6',
+    color: '#9CA3AF',
+  },
+  umaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  umaInput: {
+    flex: 1,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  ruleSettingsCloseBtn: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  ruleSettingsCloseText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

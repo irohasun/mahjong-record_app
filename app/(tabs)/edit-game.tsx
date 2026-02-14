@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, SafeAreaView, KeyboardAvoidingView, Platform, Animated, Image, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Image, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Save, Calendar, Plus, X, Camera, Check, ArrowLeft } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -17,7 +18,7 @@ export default function EditGameScreen() {
   const params = useLocalSearchParams();
   const gameId = params.gameId as string;
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
-  
+
   const [gameData, setGameData] = useState<GameRecord | null>(null);
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -29,7 +30,7 @@ export default function EditGameScreen() {
   const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
   const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
   const [customKeyboardValue, setCustomKeyboardValue] = useState('');
-  const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{hanchan: number, player: number} | null>(null);
+  const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{ hanchan: number, player: number } | null>(null);
   // 追加画面と同一のUIに合わせる（ゲームタイプ選択は表示しない）
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
@@ -65,7 +66,7 @@ export default function EditGameScreen() {
         setGameData(game);
         setGameDate(new Date(game.date));
         // UI統一のためゲームタイプ選択は表示しない
-        
+
         // プレイヤー名を設定（自分=アカウント名、他= P2/P3/P4）
         try {
           const { account } = await AccountService.getAccount();
@@ -73,17 +74,15 @@ export default function EditGameScreen() {
         } catch {
           setPlayers(['自分', 'P2', 'P3', 'P4']);
         }
-        
+
         // スコアデータを設定（各半荘をそのままの行として表示）
         if (game.rounds && game.rounds.length > 0) {
-        // 写真の事前表示（非同期で取得）
-        if (game.photoPath) {
-          StorageService.getPublicUrl(game.photoPath).then(url => {
-            if (url) setGamePhoto(url);
-          }).catch(error => {
-            console.error('Failed to get image URL:', error);
-          });
-        }
+          // 写真の事前表示（非同期で取得）
+          if (game.photoPath) {
+            StorageService.getPublicUrl(game.photoPath).then(url => {
+              if (url) setGamePhoto(url);
+            }).catch(() => {});
+          }
           const roundCount = game.rounds.length;
           setHanchanCount(roundCount);
           const newScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
@@ -94,8 +93,7 @@ export default function EditGameScreen() {
           setScores(newScores);
         }
       }
-    } catch (error) {
-      console.error('Failed to load game data:', error);
+    } catch {
       Alert.alert('エラー', 'ゲームデータの読み込みに失敗しました');
       router.back();
     }
@@ -119,7 +117,7 @@ export default function EditGameScreen() {
     setCustomKeyboardValue(value);
     setCustomKeyboardTarget({ hanchan: hanchanIndex, player: playerIndex });
     setShowCustomKeyboard(true);
-    
+
     // アニメーション開始
     Animated.timing(keyboardAnimation, {
       toValue: 1,
@@ -132,7 +130,7 @@ export default function EditGameScreen() {
     if (input === 'backspace') {
       const newValue = customKeyboardValue.slice(0, -1);
       setCustomKeyboardValue(newValue);
-      
+
       // リアルタイムでスコアに反映（自動計算なし）
       if (customKeyboardTarget) {
         const newScores = [...scores];
@@ -144,27 +142,27 @@ export default function EditGameScreen() {
       if (customKeyboardTarget) {
         const newScores = [...scores];
         newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = customKeyboardValue;
-        
+
         // 3つ目のスコアが入力された場合のみ自動計算
         const currentScores = newScores[customKeyboardTarget.hanchan];
         const filledScores = currentScores.filter((score, index) => score !== '');
-        
+
         if (filledScores.length === 3) {
           // 3人分の合計を計算
           const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
           // 残り1人の値を計算（合計が0になるように）
           const remainingValue = -sum;
-          
+
           // 空いているプレイヤーのインデックスを見つける
           const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
           if (emptyPlayerIndex !== -1) {
             newScores[customKeyboardTarget.hanchan][emptyPlayerIndex] = remainingValue.toString();
           }
         }
-        
+
         setScores(newScores);
       }
-      
+
       // アニメーション終了
       Animated.timing(keyboardAnimation, {
         toValue: 0,
@@ -179,7 +177,7 @@ export default function EditGameScreen() {
       // 数字入力
       const newValue = customKeyboardValue + input;
       setCustomKeyboardValue(newValue);
-      
+
       // リアルタイムでスコアに反映
       if (customKeyboardTarget) {
         const newScores = [...scores];
@@ -214,17 +212,17 @@ export default function EditGameScreen() {
   };
 
   const handleSave = async () => {
-    
-    
+
+
     if (!gameData) {
-      
+
       return;
     }
 
     setLoading(true);
     try {
       const user = await ensureAuthenticated();
-      
+
       // プレイヤーデータを構築
       const playerData: any[] = players.map((playerName, index) => ({
         name: playerName,
@@ -283,18 +281,18 @@ export default function EditGameScreen() {
         try {
           const storagePath = await StorageService.uploadGamePhoto(user.id, gameId, gamePhoto);
           updatedGame.photoPath = storagePath;
-        } catch {}
+        } catch { }
       }
-      
+
       // ゲームデータを更新
       await GameService.updateGame(user.id, gameId, updatedGame);
-      
+
       // ローカルキャッシュも更新
       await LocalStorageService.saveGame(updatedGame);
-      
+
       Alert.alert('修正完了', undefined, [
-        { 
-          text: 'OK', 
+        {
+          text: 'OK',
           onPress: () => {
             // DB反映のタイミング差分を避けるため、少し待ってから遷移
             setTimeout(() => {
@@ -303,8 +301,7 @@ export default function EditGameScreen() {
           }
         }
       ]);
-    } catch (error) {
-      console.error('Failed to update game');
+    } catch {
       Alert.alert('エラー', '対局記録の修正に失敗しました');
     } finally {
       setLoading(false);
@@ -326,8 +323,8 @@ export default function EditGameScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F9F9' }}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
@@ -338,210 +335,209 @@ export default function EditGameScreen() {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
         >
-        {/* ヘッダー（タイトル非表示・左上に戻る矢印） */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/history')} style={styles.backButton}>
-            <ArrowLeft size={24} color="#000000" />
-          </TouchableOpacity>
-        </View>
-
-        {/* 日付 */}
-        <View style={styles.infoCard}>
-          <TouchableOpacity 
-            style={styles.dateContainer}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Calendar size={18} color="#FF6B35" />
-            <Text style={styles.dateText}>
-              {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 写真選択（追加画面と同一UI） */}
-        <View style={styles.photoCard}>
-          <Text style={styles.photoLabel}>対局写真</Text>
-          {gamePhoto ? (
-            <View style={styles.photoContainer}>
-              <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
-              <TouchableOpacity style={styles.removePhotoButton} onPress={() => setGamePhoto(null)}>
-                <X size={16} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.addPhotoButton}
-              onPress={async () => {
-                try {
-                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (status !== 'granted') {
-                    Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
-                    return;
-                  }
-                  const result = await ImagePicker.launchImageLibraryAsync({
-                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                    allowsEditing: true,
-                    aspect: [4, 3],
-                    quality: 0.8,
-                  });
-                  if (!result.canceled && result.assets[0]) {
-                    setGamePhoto(result.assets[0].uri);
-                  }
-                } catch (e) {
-                  console.error('写真選択エラー:', e);
-                  Alert.alert('エラー', '写真の選択に失敗しました');
-                }
-              }}
-            >
-              <Camera size={24} color="#FF6B35" />
-              <Text style={styles.addPhotoText}>写真を追加</Text>
+          {/* ヘッダー（タイトル非表示・左上に戻る矢印） */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/history')} style={styles.backButton}>
+              <ArrowLeft size={24} color="#000000" />
             </TouchableOpacity>
-          )}
-        </View>
-
-        {/* スコア表 */}
-        <View style={styles.scoreSheetCard}>
-          <View style={styles.scoreHeaderRow}>
-            <View style={styles.roundColumn}>
-              <Text style={styles.headerText}>半荘</Text>
-            </View>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.playerColumn}>
-                <View style={styles.playerHeader}>
-                  {editingPlayerName === playerIndex ? (
-                    <TextInput
-                      style={styles.playerNameInput}
-                      value={
-                        playerIndex === 0 ? players[0] : `P${playerIndex + 1}`
-                      }
-                      onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
-                      onBlur={() => handlePlayerNameSave(playerIndex)}
-                      onEndEditing={() => handlePlayerNameSave(playerIndex)}
-                      placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                      autoFocus={true}
-                      selectTextOnFocus={true}
-                      maxLength={10}
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => handlePlayerNameEdit(playerIndex)}
-                      style={styles.playerNameButton}
-                    >
-                      <Text style={styles.headerText}>
-                        {playerIndex === 0
-                          ? players[0] || '自分'
-                          : `P${playerIndex + 1}`}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
-                </View>
-              </View>
-            ))}
           </View>
-          {[...Array(hanchanCount)].map((_, hanchanIndex) => (
-            <View key={hanchanIndex} style={styles.scoreRow}>
-              <View style={styles.roundNumber}>
-                <View style={styles.roundNumberContainer}>
-                  <Text style={[
-                    styles.roundText,
-                    hanchanIndex >= 3 ? styles.premiumRoundText : styles.normalRoundText
-                  ]}>
-                    {hanchanIndex + 1}
-                  </Text>
-                  {hanchanCount > 1 && (
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => removeHanchan(hanchanIndex)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <X size={12} color="#FF6B35" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+
+          {/* 日付 */}
+          <View style={styles.infoCard}>
+            <TouchableOpacity
+              style={styles.dateContainer}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Calendar size={18} color="#FF6B35" />
+              <Text style={styles.dateText}>
+                {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 写真選択（追加画面と同一UI） */}
+          <View style={styles.photoCard}>
+            <Text style={styles.photoLabel}>対局写真</Text>
+            {gamePhoto ? (
+              <View style={styles.photoContainer}>
+                <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
+                <TouchableOpacity style={styles.removePhotoButton} onPress={() => setGamePhoto(null)}>
+                  <X size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.addPhotoButton}
+                onPress={async () => {
+                  try {
+                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (status !== 'granted') {
+                      Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
+                      return;
+                    }
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                      allowsEditing: true,
+                      aspect: [4, 3],
+                      quality: 0.8,
+                    });
+                    if (!result.canceled && result.assets[0]) {
+                      setGamePhoto(result.assets[0].uri);
+                    }
+                  } catch {
+                    Alert.alert('エラー', '写真の選択に失敗しました');
+                  }
+                }}
+              >
+                <Camera size={24} color="#FF6B35" />
+                <Text style={styles.addPhotoText}>写真を追加</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* スコア表 */}
+          <View style={styles.scoreSheetCard}>
+            <View style={styles.scoreHeaderRow}>
+              <View style={styles.roundColumn}>
+                <Text style={styles.headerText}>半荘</Text>
               </View>
               {[0, 1, 2, 3].map((playerIndex) => (
-                <View key={playerIndex} style={styles.playerScoreContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.scoreCell,
-                      customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex && styles.scoreCellSelected
-                    ]}
-                    onPress={() => handleCustomKeyboardPress(hanchanIndex, playerIndex, scores[hanchanIndex][playerIndex])}
-                  >
-                    <Text style={[
-                      styles.scoreCellText,
-                      (() => {
-                        const scoreValue = customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                          ? customKeyboardValue 
-                          : scores[hanchanIndex][playerIndex];
-                        const numValue = parseInt(scoreValue) || 0;
-                        return numValue < 0 ? styles.negativeScore : numValue > 0 ? styles.positiveScore : styles.neutralScore;
-                      })()
-                    ]}>
-                      {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex 
-                        ? (customKeyboardValue || '')
-                        : String(scores[hanchanIndex][playerIndex] ?? '')
-                      }
-                    </Text>
-                  </TouchableOpacity>
-                  {playerIndex === 3 && (() => {
-                    const row = scores[hanchanIndex] || [];
-                    const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
-                    if (!hasAny) return null;
-                    const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
-                    const ok = sum === 0;
-                    return (
-                      <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
-                        {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
-                      </View>
-                    );
-                  })()}
+                <View key={playerIndex} style={styles.playerColumn}>
+                  <View style={styles.playerHeader}>
+                    {editingPlayerName === playerIndex ? (
+                      <TextInput
+                        style={styles.playerNameInput}
+                        value={
+                          playerIndex === 0 ? players[0] : `P${playerIndex + 1}`
+                        }
+                        onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
+                        onBlur={() => handlePlayerNameSave(playerIndex)}
+                        onEndEditing={() => handlePlayerNameSave(playerIndex)}
+                        placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
+                        autoFocus={true}
+                        selectTextOnFocus={true}
+                        maxLength={10}
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => handlePlayerNameEdit(playerIndex)}
+                        style={styles.playerNameButton}
+                      >
+                        <Text style={styles.headerText}>
+                          {playerIndex === 0
+                            ? players[0] || '自分'
+                            : `P${playerIndex + 1}`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
+                  </View>
                 </View>
               ))}
             </View>
-          ))}
-          <TouchableOpacity style={styles.addHanchanButton} onPress={addHanchan}>
-            <Plus size={16} color="#FF6B35" />
-            <Text style={styles.addHanchanText}>半荘を追加</Text>
-          </TouchableOpacity>
-          <View style={[styles.scoreRow, styles.subtotalRow]}>
-            <View style={styles.roundNumber}>
-              <Text style={styles.subtotalText}>合計</Text>
-            </View>
-            {[0, 1, 2, 3].map((playerIndex) => (
-              <View key={playerIndex} style={styles.totalContainer}>
-                <Text style={[
-                  styles.totalText,
-                  calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
-                ]}>
-                  {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
-                </Text>
+            {[...Array(hanchanCount)].map((_, hanchanIndex) => (
+              <View key={hanchanIndex} style={styles.scoreRow}>
+                <View style={styles.roundNumber}>
+                  <View style={styles.roundNumberContainer}>
+                    <Text style={[
+                      styles.roundText,
+                      hanchanIndex >= 3 ? styles.premiumRoundText : styles.normalRoundText
+                    ]}>
+                      {hanchanIndex + 1}
+                    </Text>
+                    {hanchanCount > 1 && (
+                      <TouchableOpacity
+                        style={styles.removeButton}
+                        onPress={() => removeHanchan(hanchanIndex)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <X size={12} color="#FF6B35" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                {[0, 1, 2, 3].map((playerIndex) => (
+                  <View key={playerIndex} style={styles.playerScoreContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.scoreCell,
+                        customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex && styles.scoreCellSelected
+                      ]}
+                      onPress={() => handleCustomKeyboardPress(hanchanIndex, playerIndex, scores[hanchanIndex][playerIndex])}
+                    >
+                      <Text style={[
+                        styles.scoreCellText,
+                        (() => {
+                          const scoreValue = customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex
+                            ? customKeyboardValue
+                            : scores[hanchanIndex][playerIndex];
+                          const numValue = parseInt(scoreValue) || 0;
+                          return numValue < 0 ? styles.negativeScore : numValue > 0 ? styles.positiveScore : styles.neutralScore;
+                        })()
+                      ]}>
+                        {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex
+                          ? (customKeyboardValue || '')
+                          : String(scores[hanchanIndex][playerIndex] ?? '')
+                        }
+                      </Text>
+                    </TouchableOpacity>
+                    {playerIndex === 3 && (() => {
+                      const row = scores[hanchanIndex] || [];
+                      const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
+                      if (!hasAny) return null;
+                      const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
+                      const ok = sum === 0;
+                      return (
+                        <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
+                          {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
+                        </View>
+                      );
+                    })()}
+                  </View>
+                ))}
               </View>
             ))}
+            <TouchableOpacity style={styles.addHanchanButton} onPress={addHanchan}>
+              <Plus size={16} color="#FF6B35" />
+              <Text style={styles.addHanchanText}>半荘を追加</Text>
+            </TouchableOpacity>
+            <View style={[styles.scoreRow, styles.subtotalRow]}>
+              <View style={styles.roundNumber}>
+                <Text style={styles.subtotalText}>合計</Text>
+              </View>
+              {[0, 1, 2, 3].map((playerIndex) => (
+                <View key={playerIndex} style={styles.totalContainer}>
+                  <Text style={[
+                    styles.totalText,
+                    calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
+                  ]}>
+                    {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={gameDate}
-            mode="date"
-            display="default"
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(false);
-              if (selectedDate) {
-                setGameDate(selectedDate);
-              }
-            }}
-          />
-        )}
+          {showDatePicker && (
+            <DateTimePicker
+              value={gameDate}
+              mode="date"
+              display="default"
+              onChange={(event, selectedDate) => {
+                setShowDatePicker(false);
+                if (selectedDate) {
+                  setGameDate(selectedDate);
+                }
+              }}
+            />
+          )}
 
-      </ScrollView>
-      
-      {/* 保存ボタン */}
+        </ScrollView>
+
+        {/* 保存ボタン */}
         <View style={styles.saveButtonContainer}>
-          <TouchableOpacity 
-            style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
+          <TouchableOpacity
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
             onPress={handleSave}
             disabled={loading}
           >
@@ -550,94 +546,94 @@ export default function EditGameScreen() {
           </TouchableOpacity>
         </View>
 
-      {/* カスタムキーボード */}
-      {showCustomKeyboard && (
-        <Animated.View 
-          style={[
-            styles.customKeyboardOverlay,
-            {
-              transform: [{
-                translateY: keyboardAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [300, 0], // 300px下から上にスライド
-                })
-              }]
-            }
-          ]}
-        >
-          <TouchableOpacity 
-            style={styles.overlayBackground}
-            activeOpacity={1}
-            onPress={() => {
-              Animated.timing(keyboardAnimation, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true,
-              }).start(() => {
-                setShowCustomKeyboard(false);
-                setCustomKeyboardValue('');
-                setCustomKeyboardTarget(null);
-              });
-            }}
-          />
-          <Animated.View style={styles.customKeyboard}>
-            <View style={styles.customKeyboardButtons}>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('7')}>
-                  <Text style={styles.customKeyboardButtonText}>7</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('8')}>
-                  <Text style={styles.customKeyboardButtonText}>8</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('9')}>
-                  <Text style={styles.customKeyboardButtonText}>9</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('backspace')}>
-                  <Text style={styles.customKeyboardButtonText}>←</Text>
-                </TouchableOpacity>
+        {/* カスタムキーボード */}
+        {showCustomKeyboard && (
+          <Animated.View
+            style={[
+              styles.customKeyboardOverlay,
+              {
+                transform: [{
+                  translateY: keyboardAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [300, 0], // 300px下から上にスライド
+                  })
+                }]
+              }
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.overlayBackground}
+              activeOpacity={1}
+              onPress={() => {
+                Animated.timing(keyboardAnimation, {
+                  toValue: 0,
+                  duration: 300,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setShowCustomKeyboard(false);
+                  setCustomKeyboardValue('');
+                  setCustomKeyboardTarget(null);
+                });
+              }}
+            />
+            <Animated.View style={styles.customKeyboard}>
+              <View style={styles.customKeyboardButtons}>
+                <View style={styles.customKeyboardRow}>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('7')}>
+                    <Text style={styles.customKeyboardButtonText}>7</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('8')}>
+                    <Text style={styles.customKeyboardButtonText}>8</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('9')}>
+                    <Text style={styles.customKeyboardButtonText}>9</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('backspace')}>
+                    <Text style={styles.customKeyboardButtonText}>←</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.customKeyboardRow}>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('4')}>
+                    <Text style={styles.customKeyboardButtonText}>4</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('5')}>
+                    <Text style={styles.customKeyboardButtonText}>5</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('6')}>
+                    <Text style={styles.customKeyboardButtonText}>6</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('-')}>
+                    <Text style={styles.customKeyboardButtonText}>-</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.customKeyboardRow}>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('1')}>
+                    <Text style={styles.customKeyboardButtonText}>1</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('2')}>
+                    <Text style={styles.customKeyboardButtonText}>2</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('3')}>
+                    <Text style={styles.customKeyboardButtonText}>3</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('.')}>
+                    <Text style={styles.customKeyboardButtonText}>.</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.customKeyboardRow}>
+                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('0')}>
+                    <Text style={styles.customKeyboardButtonText}>0</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.customKeyboardButton, styles.customKeyboardButtonOK]} onPress={() => handleCustomKeyboardInput('ok')}>
+                    <Text style={styles.customKeyboardButtonTextOK}>OK</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('4')}>
-                  <Text style={styles.customKeyboardButtonText}>4</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('5')}>
-                  <Text style={styles.customKeyboardButtonText}>5</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('6')}>
-                  <Text style={styles.customKeyboardButtonText}>6</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('-')}>
-                  <Text style={styles.customKeyboardButtonText}>-</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('1')}>
-                  <Text style={styles.customKeyboardButtonText}>1</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('2')}>
-                  <Text style={styles.customKeyboardButtonText}>2</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('3')}>
-                  <Text style={styles.customKeyboardButtonText}>3</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('.')}>
-                  <Text style={styles.customKeyboardButtonText}>.</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.customKeyboardRow}>
-                <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('0')}>
-                  <Text style={styles.customKeyboardButtonText}>0</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.customKeyboardButton, styles.customKeyboardButtonOK]} onPress={() => handleCustomKeyboardInput('ok')}>
-                  <Text style={styles.customKeyboardButtonTextOK}>OK</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
-      )}
-    </KeyboardAvoidingView>
-  </SafeAreaView>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

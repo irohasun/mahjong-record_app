@@ -1,137 +1,149 @@
-
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, RefreshControl, Animated, Image } from 'react-native';
-import { Calendar, Trash2, Plus } from 'lucide-react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, SectionList, Alert, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Calendar } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { GameService } from '@/services/GameService';
-import { StorageService } from '@/services/StorageService';
-import { AuthService } from '@/services/AuthService';
-import { LocalStorageService } from '@/services/LocalStorageService';
 import { GameRecord } from '@/types/GameRecord';
+import { GameCard } from '@/components/GameCard';
 import { ensureAuthenticated } from '@/utils/authUtils';
+import { onGamesChanged, notifyGamesChanged } from '@/utils/cacheInvalidation';
 
-interface GameGroup {
-  year: number;
-  games: GameRecord[];
+interface GameSection {
+  title: string;
+  data: GameRecord[];
 }
+
+const PAGE_SIZE = 20;
+const STALE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
 
 export default function HistoryScreen() {
   const router = useRouter();
   const [games, setGames] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const pageRef = useRef(0);
+  const lastLoadTimeRef = useRef(0);
+  const isDirtyRef = useRef(false);
+
+  // ゲームデータ変更の監視
+  useEffect(() => {
+    const unsubscribe = onGamesChanged(() => {
+      isDirtyRef.current = true;
+    });
+    return unsubscribe;
+  }, []);
+
+  const loadGames = useCallback(async (reset: boolean = true) => {
+    try {
+      const user = await ensureAuthenticated();
+
+      if (reset) {
+        pageRef.current = 0;
+      }
+
+      const { games: fetchedGames, hasMore: more } = await GameService.getGameSummaries(
+        user.id,
+        { page: pageRef.current, pageSize: PAGE_SIZE }
+      );
+
+      if (reset) {
+        setGames(fetchedGames);
+      } else {
+        setGames((prev) => [...prev, ...fetchedGames]);
+      }
+
+      setHasMore(more);
+      lastLoadTimeRef.current = Date.now();
+      isDirtyRef.current = false;
+    } catch (error) {
+      if (error instanceof Error && !error.message.includes('匿名ログインに失敗しました')) {
+        // Unexpected error
+      }
+      if (pageRef.current === 0) {
+        setGames([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadGames();
-  }, []);
+  }, [loadGames]);
 
-  // 画面がフォーカスされた時にデータをリロード
   useFocusEffect(
-    React.useCallback(() => {
-      // フォーカス時に即時リロード
-      console.log('🔍 DEBUG: History screen focused, reloading games...');
-      loadGames();
-    }, [])
+    useCallback(() => {
+      const now = Date.now();
+      const isStale = (now - lastLoadTimeRef.current) > STALE_THRESHOLD;
+
+      if (isDirtyRef.current || (lastLoadTimeRef.current > 0 && isStale)) {
+        loadGames();
+      }
+    }, [loadGames])
   );
 
-  const loadGames = async () => {
-    console.log('🔍 DEBUG: loadGames called');
-    try {
-      const user = await ensureAuthenticated();
-      console.log('🔍 DEBUG: User authenticated:', user.id);
-      
-      // キャッシュを強制的に無効化して最新データを取得
-      await LocalStorageService.clearCacheTimestamp();
-      
-      const allGames = await GameService.getAllGames(user.id);
-      console.log('🔍 DEBUG: Games loaded, count:', allGames.length);
-      
-      setGames(allGames);
-      console.log('🔍 DEBUG: Games state updated');
-    } catch (error) {
-      console.error('❌ DEBUG: Failed to load games:', error);
-      // 予期しないエラーの場合のみログ出力
-      if (error instanceof Error && !error.message.includes('匿名ログインに失敗しました')) {
-        console.error('Failed to load games:', error);
-      }
-      setGames([]);
-    } finally {
-      setLoading(false);
-      console.log('🔍 DEBUG: Loading completed');
-    }
-  };
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore) return;
 
-  const onRefresh = async () => {
+    setLoadingMore(true);
+    pageRef.current += 1;
+    await loadGames(false);
+    setLoadingMore(false);
+  }, [hasMore, loadingMore, loadGames]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadGames();
+    await loadGames(true);
     setRefreshing(false);
-  };
+  }, [loadGames]);
 
-  const handleEditGame = (game: GameRecord) => {
-    // 履歴からのみ記録修正画面へ遷移（IDで開く）
-    router.push({
-      pathname: '/(tabs)/edit-game',
-      params: {
-        gameId: game.id,
-      }
-    });
-  };
+  const handleEditGame = useCallback(
+    (game: GameRecord) => {
+      router.push({
+        pathname: '/(tabs)/edit-game',
+        params: { gameId: game.id },
+      });
+    },
+    [router]
+  );
 
-  const handleDeleteGame = async (gameId: string, swipeableRef?: React.RefObject<Swipeable | null>) => {
-    // console.log('🔍 DEBUG: handleDeleteGame called with gameId:', gameId);
-    
-    Alert.alert(
-      '',
-      'この対局履歴を削除しますか？',
-      [
-        { 
-          text: 'キャンセル', 
+  const handleDeleteGame = useCallback(
+    async (gameId: string, swipeableRef?: React.RefObject<Swipeable | null>) => {
+      Alert.alert('', 'この対局履歴を削除しますか？', [
+        {
+          text: 'キャンセル',
           style: 'cancel',
           onPress: () => {
-            // console.log('🔍 DEBUG: Delete cancelled by user');
-            // キャンセル時にスワイプを閉じる
-            if (swipeableRef?.current) {
-              swipeableRef.current.close();
-            }
-          }
+            swipeableRef?.current?.close();
+          },
         },
-        { 
-          text: '削除', 
+        {
+          text: '削除',
           style: 'destructive',
           onPress: async () => {
-            // console.log('🔍 DEBUG: Delete confirmed, starting deletion process');
             try {
-              // console.log('🔍 DEBUG: Authenticating user...');
               const user = await ensureAuthenticated();
-              // console.log('🔍 DEBUG: User authenticated:', user.id);
-              
-              // console.log('🔍 DEBUG: Calling GameService.deleteGame...');
               await GameService.deleteGame(user.id, gameId);
-              // console.log('🔍 DEBUG: Game deleted successfully');
-              
-              // console.log('🔍 DEBUG: Reloading games...');
-              await loadGames();
-              // console.log('🔍 DEBUG: Games reloaded');
+              notifyGamesChanged();
+              await loadGames(true);
             } catch (error) {
-              // console.error('❌ DEBUG: Failed to delete game:', error);
-              // console.error('❌ DEBUG: Error details:', {
-              //   message: error instanceof Error ? error.message : 'Unknown error',
-              //   stack: error instanceof Error ? error.stack : undefined
-              // });
               Alert.alert('エラー', '削除に失敗しました');
             }
-          }
-        }
-      ]
-    );
-  };
+          },
+        },
+      ]);
+    },
+    [loadGames]
+  );
 
-  // ゲームを年別にグループ化
-  const groupGamesByYear = (games: GameRecord[]): GameGroup[] => {
-    const groups: { [key: number]: GameRecord[] } = {};
-    
-    games.forEach(game => {
+  const sections: GameSection[] = React.useMemo(() => {
+    const groups: Record<number, GameRecord[]> = {};
+
+    games.forEach((game) => {
       const year = new Date(game.date).getFullYear();
       if (!groups[year]) {
         groups[year] = [];
@@ -139,185 +151,16 @@ export default function HistoryScreen() {
       groups[year].push(game);
     });
 
-    // 年別にソート（新しい年順）
     return Object.keys(groups)
-      .map(year => parseInt(year))
+      .map((y) => parseInt(y, 10))
       .sort((a, b) => b - a)
-      .map(year => ({
-        year,
-        games: groups[year].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) // 新しい順に変更
+      .map((year) => ({
+        title: `${year}年`,
+        data: groups[year].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
       }));
-  };
-
-  const GameCard = ({ game }: { game: GameRecord }) => {
-    // Swipeableのrefを作成
-    const swipeableRef = React.useRef<Swipeable>(null);
-    // 画像URLの状態管理
-    const [imageUrl, setImageUrl] = React.useState<string | null>(null);
-    
-    // 画像URLを非同期で取得
-    React.useEffect(() => {
-      if (game.photoPath) {
-        StorageService.getPublicUrl(game.photoPath).then(url => {
-          setImageUrl(url);
-        }).catch(error => {
-          console.error('Failed to get image URL:', error);
-          setImageUrl(null);
-        });
-      }
-    }, [game.photoPath]);
-    
-    // プレイヤー情報から統計を計算
-    const mainPlayer = game.players.find(p => p.isMainAccount);
-    const totalScoreChange = mainPlayer ? mainPlayer.finalScore: 0;
-    const isPositive = totalScoreChange >= 0;
-    
-    // 各半荘での自分の着順をカウント（rounds の各行の点数から算出）
-    const rankCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as { [k: number]: number };
-    const mainIndex = game.players.findIndex(p => p.isMainAccount);
-    if (mainIndex !== -1 && game.rounds && game.rounds.length > 0) {
-      for (const r of game.rounds) {
-        const rawPoints = (r.points as any[]) || [];
-        if (rawPoints.length < 4) continue;
-        // 入力なし（null/undefined/空文字）が含まれる半荘はスキップ
-        const hasBlank = rawPoints.some((v) => v === null || v === undefined || v === '');
-        if (hasBlank) continue;
-        const points = rawPoints.map((v) => Number(v) || 0);
-        // ランク算出（同点は同順位）
-        const uniqueSorted = Array.from(new Set(points)).sort((a, b) => b - a);
-        const ranksByScore = new Map<number, number>();
-        uniqueSorted.forEach((score, idx) => ranksByScore.set(score, idx + 1));
-        const myScore = points[mainIndex] ?? 0;
-        const myRank = ranksByScore.get(myScore) ?? 4;
-        if (myRank >= 1 && myRank <= 4) rankCounts[myRank]++;
-      }
-    } else {
-      // rounds が無い古いデータは最終着順でカウント（1回分）
-      const main = game.players.find(p => p.isMainAccount);
-      if (main && main.rank >= 1 && main.rank <= 4) {
-        rankCounts[main.rank]++;
-      }
-    }
-
-    // 平均着順（各半荘の自分の着順の平均）
-    const roundsPlayed = (rankCounts[1] || 0) + (rankCounts[2] || 0) + (rankCounts[3] || 0) + (rankCounts[4] || 0);
-    const averageRank = roundsPlayed > 0
-      ? (
-          1 * (rankCounts[1] || 0) +
-          2 * (rankCounts[2] || 0) +
-          3 * (rankCounts[3] || 0) +
-          4 * (rankCounts[4] || 0)
-        ) / roundsPlayed
-      : (mainPlayer ? mainPlayer.rank : 0);
-    
-
-
-    // 日付をフォーマット
-    const gameDate = new Date(game.date);
-    const month = gameDate.getMonth() + 1;
-    const day = gameDate.getDate();
-
-    // スワイプ削除のレンダー関数
-    const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
-      const scale = dragX.interpolate({
-        inputRange: [-100, 0],
-        outputRange: [1, 0],
-        extrapolate: 'clamp',
-      });
-
-      return (
-        <View style={[styles.swipeDeleteContainer, { height: '100%', borderRadius: 12 }]}>
-          <Animated.View style={[styles.swipeDeleteButton, { transform: [{ scale }] }]}>
-            <Trash2 size={24} color="#FFFFFF" />
-            <Text style={styles.swipeDeleteText}>削除</Text>
-          </Animated.View>
-        </View>
-      );
-    };
-
-            return (
-          <Swipeable
-            ref={swipeableRef}
-            renderRightActions={renderRightActions}
-            onSwipeableRightOpen={() => handleDeleteGame(game.id, swipeableRef)}
-            rightThreshold={40}
-          >
-        <TouchableOpacity 
-          style={styles.gameCard}
-          onPress={() => handleEditGame(game)}
-        >
-          <View style={styles.cardContent}>
-            {/* 左側：日付情報＋サムネイル */}
-            <View style={styles.leftSection}>
-              <View style={styles.dateContainer}>
-                <Calendar size={18} color="#FF6B35" />
-                <Text style={styles.gameDate}>
-                  {month}月{day}日
-                </Text>
-              </View>
-              {game.photoPath && imageUrl && (
-                <Image
-                  source={{ uri: imageUrl }}
-                  style={{ width: 72, height: 72, borderRadius: 8, backgroundColor: '#F2F2F7' }}
-                />
-              )}
-            </View>
-
-            {/* 中央：成績サマリー */}
-            <View style={styles.centerSection}>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>平均着順</Text>
-                <Text style={styles.averageRankText}>
-                  {averageRank.toFixed(1)}位
-                </Text>
-              </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>収支</Text>
-                <Text style={[
-                  styles.scoreChangeText,
-                  isPositive ? styles.positiveScore : styles.negativeScore
-                ]}>
-                  {totalScoreChange > 0 ? '+' : ''}{totalScoreChange.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-
-            {/* 右側：自分の着順 */}
-            <View style={styles.rightSection}>
-              <Text style={styles.rankDistributionTitle}>着順</Text>
-              <View style={styles.rankDistribution}>
-                {[1, 2, 3, 4].map(rank => (
-                    <View key={rank} style={styles.rankBadge}>
-                      <Text style={[
-                        styles.rankNumber,
-                        rank === 1 && styles.firstPlaceText,
-                        rank === 2 && styles.secondPlaceText,
-                        rank === 3 && styles.thirdPlaceText,
-                        rank === 4 && styles.fourthPlaceText
-                      ]}>
-                        {rank}
-                      </Text>
-                      <Text style={styles.rankCount}>
-                        {rankCounts[rank as keyof typeof rankCounts]}
-                      </Text>
-                    </View>
-                  ))}
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Swipeable>
-    );
-  };
-
-  const GameGroup = ({ group }: { group: GameGroup }) => (
-    <View style={styles.yearGroup}>
-      <Text style={styles.yearTitle}>{group.year}年</Text>
-      {group.games.map((game) => (
-        <GameCard key={game.id} game={game} />
-      ))}
-    </View>
-  );
+  }, [games]);
 
   if (loading) {
     return (
@@ -326,8 +169,6 @@ export default function HistoryScreen() {
       </View>
     );
   }
-
-  const gameGroups = groupGamesByYear(games);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -345,9 +186,20 @@ export default function HistoryScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView
+          <SectionList
+            sections={sections}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <GameCard game={item} onEdit={handleEditGame} onDelete={handleDeleteGame} />
+            )}
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.yearTitle}>{section.title}</Text>
+            )}
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.5}
+            stickySectionHeadersEnabled={false}
+            contentContainerStyle={styles.scrollContent}
             style={styles.gamesList}
-            contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -357,12 +209,16 @@ export default function HistoryScreen() {
                 tintColor="#FF6B35"
               />
             }
-          >
-            {gameGroups.map((group) => (
-              <GameGroup key={group.year} group={group} />
-            ))}
-            <View style={styles.bottomPadding} />
-          </ScrollView>
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={styles.loadingMoreContainer}>
+                  <Text style={styles.loadingText}>読み込み中...</Text>
+                </View>
+              ) : (
+                <View style={styles.bottomPadding} />
+              )
+            }
+          />
         )}
       </SafeAreaView>
     </GestureHandlerRootView>
@@ -370,10 +226,6 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -399,9 +251,6 @@ const styles = StyleSheet.create({
     elevation: 3,
     zIndex: 1,
   },
-  headerLeft: {
-    flex: 1,
-  },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -410,24 +259,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: '100%',
     alignSelf: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6D6D70',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF6B3515', 
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-  },
-  addButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF6B35',
   },
   emptyState: {
     flex: 1,
@@ -453,202 +284,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
   },
-  gameCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
-    minHeight: 120,
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  leftSection: {
-    flex: 1,
-    marginRight: 16,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  gameDate: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  gameTypeText: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  centerSection: {
-    flex: 1,
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  statRow: {
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginBottom: 2,
-  },
-  averageRankText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  scoreChangeText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  rightSection: {
-    alignItems: 'center',
-  },
-  rankDistributionTitle: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  rankDistribution: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  rankBadge: {
-    alignItems: 'center',
-    minWidth: 24,
-  },
-  rankNumber: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  firstPlaceText: {
-    color: '#10B981',
-  },
-  secondPlaceText: {
-    color: '#3B82F6',
-  },
-  thirdPlaceText: {
-    color: '#F59E0B',
-  },
-  fourthPlaceText: {
-    color: '#EF4444',
-  },
-  rankCount: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    textAlign: 'center',
-  },
-  rankCountContainer: {
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  rankPercentage: {
-    fontSize: 10,
-    color: '#6D6D70',
-    textAlign: 'center',
-    marginTop: 1,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F2F2F7',
-  },
-  gameInfo: {
-    marginBottom: 12,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#6D6D70',
-  },
-  rankText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  firstPlace: {
-    color: '#10B981',
-  },
-  secondPlace: {
-    color: '#3B82F6',
-  },
-  thirdPlace: {
-    color: '#F59E0B',
-  },
-  fourthPlace: {
-    color: '#EF4444',
-  },
-  scoreText: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  positiveScore: {
-    color: '#10B981',
-  },
-  negativeScore: {
-    color: '#EF4444',
-  },
-  bottomPadding: {
-    height: 20,
-  },
   scrollContent: {
     paddingBottom: 20,
-  },
-  yearGroup: {
-    marginBottom: 24,
   },
   yearTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#1C1C1E',
     marginBottom: 12,
+    marginTop: 12,
     paddingHorizontal: 4,
   },
-  swipeDeleteContainer: {
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 100,
-    borderRadius: 12, // gameCardと同じborderRadius
-    // 余計なマージンやパディングを無くし、カード高さと完全一致させる
-    // Swipeable が行全体の高さを管理するため、ここでは高さ調整しない
-    overflow: 'hidden',
+  bottomPadding: {
+    height: 20,
   },
-  swipeDeleteButton: {
-    justifyContent: 'center',
+  loadingMoreContainer: {
+    paddingVertical: 20,
     alignItems: 'center',
-    width: '100%',
-    height: '100%',
-    paddingVertical: 10, // ボタン内の余白を調整
-  },
-  swipeDeleteText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 6, // アイコンとテキストの間隔を調整
   },
 });

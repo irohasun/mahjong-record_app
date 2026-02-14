@@ -13,6 +13,7 @@ type PostgrestUpdateArg = AccountsTable['Update'];
 
 import { MockDataService } from './MockDataService';
 import { LocalStorageService } from './LocalStorageService';
+import { AuthService } from './AuthService';
 
 export class AccountService {
   /**
@@ -29,7 +30,6 @@ export class AccountService {
         if (isCacheValid) {
           const cachedAccount = await LocalStorageService.getAccount();
           if (cachedAccount) {
-            console.log('✅ Using cached account data');
             // キャッシュ使用時もユーザー情報を取得（軽量）
             const { data: { user } } = await supabase.auth.getUser();
             return { account: cachedAccount as Account, user: user || null };
@@ -45,12 +45,9 @@ export class AccountService {
       
       return { account, user };
     } catch (error) {
-      console.error('Failed to get account:', error);
-      
       // エラー時はキャッシュから取得を試みる
       const cachedAccount = await LocalStorageService.getAccount();
       if (cachedAccount) {
-        console.log('⚠️ Using cached account data due to error');
         // エラー時もユーザー情報を取得を試みる
         try {
           const { data: { user } } = await supabase.auth.getUser();
@@ -70,7 +67,12 @@ export class AccountService {
    */
   private static async fetchAccountFromServer(): Promise<{ account: Account; user: any }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      let { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        const authResult = await AuthService.signInAnonymously();
+        user = authResult.user as any;
+      }
       
       if (!user) {
         throw new Error('認証されていません');
@@ -139,7 +141,6 @@ export class AccountService {
 
       return { account: account as Account, user };
     } catch (error) {
-      console.error('Failed to fetch account from server:', error);
       throw error;
     }
   }
@@ -178,7 +179,6 @@ export class AccountService {
       // ユーザー名更新後はキャッシュを無効化
       await this.invalidateCache();
     } catch (error) {
-      console.error('Failed to update username:', error);
       throw new Error('ユーザー名の更新に失敗しました');
     }
   }
@@ -213,7 +213,6 @@ export class AccountService {
         throw error;
       }
     } catch (error) {
-      console.error('Failed to update premium status:', error);
       throw new Error('プレミアムステータスの更新に失敗しました');
     }
   }
@@ -255,7 +254,6 @@ export class AccountService {
         throw error;
       }
     } catch (error) {
-      console.error('Failed to increment game count:', error);
       throw new Error('対局数の更新に失敗しました');
     }
   }
@@ -280,8 +278,7 @@ export class AccountService {
       }
       
       return account.monthly_game_count;
-    } catch (error) {
-      console.error('Failed to get monthly game count:', error);
+    } catch {
       return 0;
     }
   }
@@ -308,7 +305,6 @@ export class AccountService {
         throw error;
       }
     } catch (error) {
-      console.error('Failed to reset account:', error);
       throw new Error('アカウントのリセットに失敗しました');
     }
   }
