@@ -41,7 +41,7 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
     });
 
     return (
-      <View style={[styles.swipeDeleteContainer, { height: '100%', borderRadius: 12 }]}>
+      <View style={styles.swipeDeleteContainer}>
         <Animated.View style={[styles.swipeDeleteButton, { transform: [{ scale }] }]}>
           <Trash2 size={24} color="#FFFFFF" />
           <Text style={styles.swipeDeleteText}>削除</Text>
@@ -51,14 +51,15 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
   };
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderRightActions={renderRightActions}
-      onSwipeableRightOpen={() => onDelete(game.id, swipeableRef)}
-      rightThreshold={40}
-    >
-      <TouchableOpacity style={styles.gameCard} onPress={() => onEdit(game)}>
-        <View style={styles.cardContent}>
+    <View style={{ marginBottom: 12 }}>
+      <Swipeable
+        ref={swipeableRef}
+        renderRightActions={renderRightActions}
+        onSwipeableRightOpen={() => onDelete(game.id, swipeableRef)}
+        rightThreshold={40}
+      >
+        <TouchableOpacity style={styles.gameCard} onPress={() => onEdit(game)}>
+          <View style={styles.cardContent}>
           <View style={styles.leftSection}>
             <View style={styles.dateContainer}>
               <Calendar size={18} color="#FF6B35" />
@@ -117,6 +118,7 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
         </View>
       </TouchableOpacity>
     </Swipeable>
+    </View>
   );
 }
 
@@ -127,7 +129,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 20,
-    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
