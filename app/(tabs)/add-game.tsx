@@ -1459,6 +1459,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFF',
+    gap: 12,
   },
   headerCenter: {
     flex: 1,
@@ -1481,8 +1482,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F0',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FF6B35',
   },
   photoThumbnail: {
     width: 40,

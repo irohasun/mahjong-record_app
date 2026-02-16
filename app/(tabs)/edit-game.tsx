@@ -734,13 +734,31 @@ export default function EditGameScreen() {
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <ArrowLeft size={24} color="#FF6B35" />
+          <ArrowLeft size={24} color="#1C1C1E" />
         </TouchableOpacity>
 
-        {/* 中央: タイトル */}
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>対局記録を編集</Text>
-        </View>
+        {/* 写真ボタン */}
+        <TouchableOpacity
+          style={styles.photoButton}
+          onPress={handlePickPhoto}
+        >
+          {(gamePhoto || uploadedPhotoPath) ? (
+            <Image
+              source={{ uri: gamePhoto || uploadedPhotoPath || '' }}
+              style={styles.photoThumbnail}
+              resizeMode="cover"
+            />
+          ) : (
+            <Camera size={20} color="#FF6B35" />
+          )}
+        </TouchableOpacity>
+
+        {/* 中央: 日付 */}
+        <TouchableOpacity style={styles.headerCenter} onPress={() => setShowDatePicker(true)}>
+          <Text style={styles.dateText}>
+            {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日の対局
+          </Text>
+        </TouchableOpacity>
 
         {/* 右側: 設定アイコン */}
         <TouchableOpacity style={styles.iconButton} onPress={() => {
@@ -757,36 +775,6 @@ export default function EditGameScreen() {
         keyboardVerticalOffset={0}
       >
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
-          {/* 日付表示 */}
-          <TouchableOpacity style={styles.dateSection} onPress={() => setShowDatePicker(true)}>
-            <Text style={styles.dateLabel}>対局日</Text>
-            <Text style={styles.dateValue}>
-              {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
-            </Text>
-          </TouchableOpacity>
-
-          {/* 写真セクション */}
-          <View style={styles.photoSection}>
-            <Text style={styles.sectionLabel}>写真</Text>
-            {(gamePhoto || uploadedPhotoPath) ? (
-              <View style={styles.photoPreview}>
-                <Image
-                  source={{ uri: gamePhoto || uploadedPhotoPath || '' }}
-                  style={styles.photoImage}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity style={styles.photoRemoveButton} onPress={handleRemovePhoto}>
-                  <X size={16} color="#FFF" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.photoUploadButton} onPress={handlePickPhoto}>
-                <Camera size={24} color="#FF6B35" />
-                <Text style={styles.photoUploadText}>写真を追加</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
           {/* スコアテーブル */}
           <View style={styles.scoreTable}>
             {/* プレイヤーヘッダー */}
@@ -1455,22 +1443,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    gap: 12,
   },
   backButton: {
     padding: 8,
+  },
+  photoButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     backgroundColor: '#FFF5F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoThumbnail: {
+    width: 40,
+    height: 40,
     borderRadius: 8,
   },
   headerCenter: {
     flex: 1,
-    alignItems: 'center',
   },
-  headerTitle: {
+  dateText: {
     color: '#1C1C1E',
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   iconButton: {
     padding: 8,
@@ -1480,75 +1478,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
-  },
-  dateSection: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    marginHorizontal: 8,
-    marginTop: 8,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dateLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  dateValue: {
-    fontSize: 16,
-    color: '#1C1C1E',
-    fontWeight: '600',
-  },
-  photoSection: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    marginHorizontal: 8,
-    marginTop: 8,
-    borderRadius: 12,
-  },
-  sectionLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-    marginBottom: 12,
-  },
-  photoPreview: {
-    position: 'relative',
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  photoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  photoRemoveButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#EF4444',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoUploadButton: {
-    borderWidth: 2,
-    borderColor: '#FF6B35',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    padding: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  photoUploadText: {
-    fontSize: 14,
-    color: '#FF6B35',
-    fontWeight: '600',
   },
   scoreTable: {
     margin: 8,
