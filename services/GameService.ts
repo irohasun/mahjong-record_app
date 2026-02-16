@@ -75,6 +75,7 @@ export class GameService {
       finalRiichiSticks: game.final_riichi_sticks,
       finalHonba: game.final_honba,
       photoPath: game.photo_path || undefined,
+      chipCounts: game.chip_counts || undefined,
       players: (game.player_records || []).map((p: any) => this.mapPlayerRecordFromDb(p)),
       rounds: (game.round_records || []).map((r: any) => this.mapRoundRecordFromDb(r)),
     };
@@ -96,6 +97,7 @@ export class GameService {
       final_riichi_sticks: gameData.finalRiichiSticks,
       final_honba: gameData.finalHonba,
       photo_path: gameData.photoPath || null,
+      chip_counts: gameData.chipCounts ?? null,
     };
   }
 
@@ -228,10 +230,10 @@ export class GameService {
   }
 
   /**
-   * 有効な局記録かどうかを判定（4人分の点数が揃っている）
+   * 有効な局記録かどうかを判定（N人分の点数が揃っている）
    */
-  private static isValidRoundRecord(points: any[]): boolean {
-    if (!points || points.length < 4) return false;
+  private static isValidRoundRecord(points: any[], playerCount: number = 3): boolean {
+    if (!points || points.length < playerCount) return false;
     return !points.some((v) => v === null || v === undefined || v === '');
   }
 
@@ -323,6 +325,40 @@ export class GameService {
         };
       }
 
+      // バリデーション追加
+      const playerCount = (gameData.rules as any)?.playerCount || 4;
+
+      // 1. players配列の長さチェック
+      if (gameData.players.length !== playerCount) {
+        console.error('GameService.addGame: players配列の長さがplayerCountと不一致:', {
+          playerCount,
+          playersLength: gameData.players.length
+        });
+        throw new Error(`プレイヤー数が不正です。期待: ${playerCount}, 実際: ${gameData.players.length}`);
+      }
+
+      // 2. rounds内のpoints配列の長さチェック
+      gameData.rounds.forEach((round, index) => {
+        if (round.points && round.points.length !== playerCount) {
+          console.error(`GameService.addGame: 半荘${index + 1}のpoints配列の長さがplayerCountと不一致:`, {
+            playerCount,
+            pointsLength: round.points.length,
+            round: round.round
+          });
+          throw new Error(`半荘${index + 1}のデータが不正です。期待: ${playerCount}人分, 実際: ${round.points.length}人分`);
+        }
+      });
+
+      // 3. chipCountsの長さチェック（存在する場合のみ）
+      const chipCounts = gameData.chipCounts;
+      if (chipCounts && chipCounts.length !== playerCount) {
+        console.error('GameService.addGame: chipCounts配列の長さがplayerCountと不一致:', {
+          playerCount,
+          chipCountsLength: chipCounts.length
+        });
+        throw new Error(`チップデータが不正です。期待: ${playerCount}人分, 実際: ${chipCounts.length}人分`);
+      }
+
       // ゲーム記録を挿入
       const gameInsert = this.mapGameToDb({
         ...gameData,
@@ -335,10 +371,11 @@ export class GameService {
         .insert(gameInsert as any)
         .select()
         .single();
-      
+
       const { data: insertedGame, error: gameError } = gameInsertResult as any;
 
       if (gameError || !insertedGame) {
+        console.error('GameService.addGame: ゲーム挿入エラー:', gameError);
         throw gameError || new Error('ゲームの挿入に失敗しました');
       }
 
@@ -386,7 +423,14 @@ export class GameService {
 
       return savedGame;
     } catch (error) {
-      throw new Error('対局記録の保存に失敗しました');
+      // エラーの詳細をログに記録（元のエラーを保持）
+      console.error('GameService.addGame: 保存失敗の詳細:', {
+        error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // 元のエラーをそのまま投げる
+      throw error;
     }
   }
 
@@ -596,6 +640,7 @@ export class GameService {
           final_riichi_sticks,
           final_honba,
           photo_path,
+          chip_counts,
           player_records (*)
         `)
         .eq('account_id', accountId)
@@ -743,10 +788,83 @@ export class GameService {
     };
   }
 
+  /**
+   * 指定期間の飛び率を計算
+   * 全半荘中、メインプレイヤーが飛んだ回数の割合を返す
+   */
+  static async getTobiRate(
+    accountId: string,
+    period: 'month' | 'year' | 'all',
+    selectedDate: Date,
+    playerCount?: 3 | 4
+  ): Promise<{ tobiCount: number; totalRounds: number; tobiRate: number }> {
+    try {
+      const games = await LocalStorageService.getGames();
+      const { periodStart, periodEnd } = this.calculatePeriodBounds(period, selectedDate);
+
+      const filteredGames = games.filter(game => {
+        if (game.accountId !== accountId) return false;
+        if (!periodStart || !periodEnd) return true;
+        const gameDate = game.date.substring(0, 10);
+        if (gameDate < periodStart || gameDate > periodEnd) return false;
+
+        // プレイヤー人数でフィルタ
+        if (playerCount !== undefined) {
+          const gamePlayerCount = game.rules?.playerCount ?? 4;
+          if (gamePlayerCount !== playerCount) return false;
+        }
+
+        return true;
+      });
+
+      let totalRounds = 0;
+      let tobiCount = 0;
+
+      for (const game of filteredGames) {
+        if (!game.rounds) continue;
+        for (const round of game.rounds) {
+          totalRounds++;
+          const points = round.points as number[];
+          const pc = game.rules?.playerCount || points.length;
+          if (!points || points.length < pc) continue;
+
+          // memoからtobiWinners情報を取得
+          let tobiWinners: number[] = [];
+          if (round.memo) {
+            try {
+              const memoData = JSON.parse(round.memo);
+              if (memoData.tobiWinners) {
+                tobiWinners = memoData.tobiWinners;
+              }
+            } catch {
+              // memoがJSON形式でない場合はスキップ
+            }
+          }
+
+          // tobiWinnersがある = 誰かが飛んだ
+          // メインプレイヤー(index 0)がtobiWinnerでなく、最低スコアなら飛びと判定
+          if (tobiWinners.length > 0 && !tobiWinners.includes(0)) {
+            const mainScore = points[0];
+            const minScore = Math.min(...points);
+            if (mainScore === minScore) {
+              tobiCount++;
+            }
+          }
+        }
+      }
+
+      const tobiRate = totalRounds > 0 ? tobiCount / totalRounds : 0;
+      return { tobiCount, totalRounds, tobiRate };
+    } catch {
+      return { tobiCount: 0, totalRounds: 0, tobiRate: 0 };
+    }
+  }
+
   static async getHanchanStats(
     accountId: string,
     period: 'month' | 'year' | 'all',
-    selectedDate: Date
+    selectedDate: Date,
+    playerCount?: 3 | 4
   ): Promise<PlayerStats> {
     try {
       if (this.isDummyUser(accountId)) {
@@ -759,6 +877,7 @@ export class GameService {
         user_id: accountId,
         period_start: periodStart,
         period_end: periodEnd,
+        player_count: playerCount ?? null,
       } as any);
 
       if (error) {
@@ -800,7 +919,7 @@ export class GameService {
     }
   }
 
-  static async getChartData(accountId: string, period: 'month' | 'year' | 'all', selectedDate: Date) {
+  static async getChartData(accountId: string, period: 'month' | 'year' | 'all', selectedDate: Date, playerCount?: 3 | 4) {
     try {
       if (this.isDummyUser(accountId)) {
         return MockDataService.generateChartData(period);
@@ -812,6 +931,7 @@ export class GameService {
         user_id: accountId,
         period_start: periodStart,
         period_end: periodEnd,
+        player_count: playerCount ?? null,
       } as any);
 
       if (error) {

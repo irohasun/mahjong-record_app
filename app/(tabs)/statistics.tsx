@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp, Trophy, Calendar, Target } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -17,18 +17,21 @@ import { MonthPickerModal } from '@/components/statistics/MonthPickerModal';
 
 const screenWidth = Dimensions.get('window').width;
 
-export function buildStatsCacheKey(period: string, date: Date): string {
-  if (period === 'all') return 'all';
-  if (period === 'year') return `year-${date.getFullYear()}`;
-  return `month-${date.getFullYear()}-${date.getMonth() + 1}`;
+export function buildStatsCacheKey(period: string, date: Date, playerCount: 3 | 4): string {
+  const base = period === 'all' ? 'all' :
+               period === 'year' ? `year-${date.getFullYear()}` :
+               `month-${date.getFullYear()}-${date.getMonth() + 1}`;
+  return `${base}-${playerCount}p`;
 }
 
 export default function StatisticsScreen() {
   const [stats, setStats] = useState<any>({});
   const [chartData, setChartData] = useState<any>(null);
+  const [tobiStats, setTobiStats] = useState<{ tobiCount: number; totalRounds: number; tobiRate: number }>({ tobiCount: 0, totalRounds: 0, tobiRate: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedPlayerCount, setSelectedPlayerCount] = useState<3 | 4>(4);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [yearRange, setYearRange] = useState<{ minYear: number; maxYear: number } | null>(null);
   const [showYearPicker, setShowYearPicker] = useState(false);
@@ -42,9 +45,10 @@ export default function StatisticsScreen() {
   // Debounce period/date changes to prevent rapid-fire queries
   const debouncedPeriod = useDebounce(selectedPeriod, 300);
   const debouncedDate = useDebounce(selectedDate, 300);
+  const debouncedPlayerCount = useDebounce(selectedPlayerCount, 300);
 
   const loadStats = useCallback(async () => {
-    const cacheKey = buildStatsCacheKey(debouncedPeriod, debouncedDate);
+    const cacheKey = buildStatsCacheKey(debouncedPeriod, debouncedDate, debouncedPlayerCount);
 
     // Show cached data immediately
     const cachedStats = await LocalStorageService.getStatsForPeriod(`stats-${cacheKey}`);
@@ -67,11 +71,13 @@ export default function StatisticsScreen() {
       const range = await GameService.getYearRange(user.id);
       setYearRange(range);
 
-      const statsData = await GameService.getHanchanStats(user.id, debouncedPeriod, debouncedDate);
-      const newChartData = await GameService.getChartData(user.id, debouncedPeriod, debouncedDate);
+      const statsData = await GameService.getHanchanStats(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
+      const newChartData = await GameService.getChartData(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
+      const newTobiStats = await GameService.getTobiRate(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
 
       setStats(statsData);
       setChartData(newChartData);
+      setTobiStats(newTobiStats);
       lastLoadTimeRef.current = Date.now();
 
       // Cache fresh data in background
@@ -82,7 +88,7 @@ export default function StatisticsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedPeriod, debouncedDate]);
+  }, [debouncedPeriod, debouncedDate, debouncedPlayerCount]);
 
   // Load stats when debounced period/date changes (but not on initial mount)
   useEffect(() => {
@@ -107,32 +113,26 @@ export default function StatisticsScreen() {
   );
 
   const totalGames = stats?.totalGames || 0;
-  const rankDistribution = [
-    {
-      name: '1位',
-      population: stats?.rankDistribution?.[1] || 0,
-      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[1] || 0) / totalGames * 100).toFixed(1) : '0.0',
-      color: '#10B981',
-    },
-    {
-      name: '2位',
-      population: stats?.rankDistribution?.[2] || 0,
-      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[2] || 0) / totalGames * 100).toFixed(1) : '0.0',
-      color: '#3B82F6',
-    },
-    {
-      name: '3位',
-      population: stats?.rankDistribution?.[3] || 0,
-      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[3] || 0) / totalGames * 100).toFixed(1) : '0.0',
-      color: '#F59E0B',
-    },
-    {
-      name: '4位',
-      population: stats?.rankDistribution?.[4] || 0,
-      percentage: totalGames > 0 ? ((stats?.rankDistribution?.[4] || 0) / totalGames * 100).toFixed(1) : '0.0',
-      color: '#EF4444',
-    },
-  ];
+
+  // ランク分布を動的に生成（3人麻雀/4人麻雀で切り替え）
+  const rankDistribution = useMemo(() => {
+    const maxRank = selectedPlayerCount;
+    const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444'];
+
+    const distribution = [];
+    for (let rank = 1; rank <= maxRank; rank++) {
+      distribution.push({
+        name: `${rank}位`,
+        population: stats?.rankDistribution?.[rank] || 0,
+        percentage: totalGames > 0
+          ? ((stats?.rankDistribution?.[rank] || 0) / totalGames * 100).toFixed(1)
+          : '0.0',
+        color: colors[rank - 1],
+      });
+    }
+
+    return distribution;
+  }, [stats, selectedPlayerCount, totalGames]);
 
   if (!stats) {
     return (
@@ -155,7 +155,35 @@ export default function StatisticsScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
       <View style={styles.header}>
-        <Text style={styles.title}>成績統計</Text>
+        {/* プレイヤー人数セレクター */}
+        <View style={styles.playerCountSelector}>
+          <TouchableOpacity
+            style={[
+              styles.playerCountButton,
+              selectedPlayerCount === 4 && styles.playerCountButtonActive,
+            ]}
+            onPress={() => setSelectedPlayerCount(4)}
+          >
+            <Text style={[
+              styles.playerCountButtonText,
+              selectedPlayerCount === 4 && styles.playerCountButtonTextActive,
+            ]}>4人麻雀</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.playerCountButton,
+              selectedPlayerCount === 3 && styles.playerCountButtonActive,
+            ]}
+            onPress={() => setSelectedPlayerCount(3)}
+          >
+            <Text style={[
+              styles.playerCountButtonText,
+              selectedPlayerCount === 3 && styles.playerCountButtonTextActive,
+            ]}>3人麻雀</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 既存のPeriodSelector */}
         <PeriodSelector
           selectedPeriod={selectedPeriod}
           selectedDate={selectedDate}
@@ -336,6 +364,14 @@ export default function StatisticsScreen() {
                       {stats.avoidLastRate ? `${(stats.avoidLastRate * 100).toFixed(1)}%` : '-'}
                     </Text>
                   </View>
+                  <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.detailLabel}>飛び率</Text>
+                    <Text style={[styles.detailValue, styles.tobiRateValue]}>
+                      {tobiStats.totalRounds > 0
+                        ? `${(tobiStats.tobiRate * 100).toFixed(1)}%`
+                        : '-'}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </ScrollView>
@@ -411,12 +447,36 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     backgroundColor: '#FFF',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
+  playerCountSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 4,
     marginBottom: 16,
-    textAlign: 'center',
+  },
+  playerCountButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  playerCountButtonActive: {
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  playerCountButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6D6D70',
+  },
+  playerCountButtonTextActive: {
+    color: '#FF6B35',
+    fontWeight: '600',
   },
   pageContainer: {
     width: screenWidth,
@@ -503,5 +563,8 @@ const styles = StyleSheet.create({
   },
   fourthPlaceValue: {
     color: '#EF4444',
+  },
+  tobiRateValue: {
+    color: '#8B5CF6',
   },
 });

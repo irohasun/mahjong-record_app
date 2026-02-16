@@ -13,6 +13,7 @@ import {
   detectAutoCompleteTarget,
   applyTobiBonus,
   DEFAULT_RULE_CONFIG,
+  DEFAULT_SANMA_CONFIG,
   RuleConfig,
 } from '@/utils/ScoreCalculator';
 
@@ -80,6 +81,9 @@ describe('calculateFinalScore', () => {
       uma: [20, 10, -10, -20],
       tobiBonus: 10,
       tobiBonusEnabled: false,
+      chipEnabled: false,
+      chipValue: 2,
+      playerCount: 4,
     };
     // (40000 - 30000) / 1000 + 20 + オカ0 = 10 + 20 + 0 = 30
     // オカ = (30000 - 30000) × 4 / 1000 = 0
@@ -107,6 +111,9 @@ describe('calculateFinalScore', () => {
       uma: [15, 5, -5, -15],
       tobiBonus: 10,
       tobiBonusEnabled: false,
+      chipEnabled: false,
+      chipValue: 2,
+      playerCount: 4,
     };
     // オカ = (25000 - 20000) × 4 / 1000 = 20
     // (30000 - 25000) / 1000 + 15 + 20 = 5 + 15 + 20 = 40
@@ -157,8 +164,13 @@ describe('calculateFourthPlayerScore', () => {
     expect(calculateFourthPlayerScore([30000, 25000, 20000])).toBe(25000);
   });
 
-  it('3人分でない場合はnullを返す', () => {
-    expect(calculateFourthPlayerScore([30000, 25000])).toBeNull();
+  it('1人分のみの場合はnullを返す', () => {
+    expect(calculateFourthPlayerScore([30000])).toBeNull();
+  });
+
+  it('2人分の素点から3人目を計算する（三麻）', () => {
+    // 合計105000から2人分を引く
+    expect(calculateFourthPlayerScore([40000, 35000], 105000)).toBe(30000);
   });
 
   it('カスタム合計点で計算する', () => {
@@ -308,6 +320,9 @@ describe('validateTotalScore', () => {
       uma: [20, 10, -10, -20],
       tobiBonus: 10,
       tobiBonusEnabled: false,
+      chipEnabled: false,
+      chipValue: 2,
+      playerCount: 4,
     };
     expect(validateTotalScore([40000, 30000, 30000, 20000], config)).toBe(true);
   });
@@ -457,5 +472,96 @@ describe('calculateAllScores with tobiWinners', () => {
 
     // tobiWinnersが未指定なので飛び賞は加算されない
     expect(result.scores[0]).toBe(80);
+  });
+});
+
+// ===== 3人麻雀（三麻）テスト =====
+
+describe('三麻: DEFAULT_SANMA_CONFIG', () => {
+  it('デフォルト値が正しい', () => {
+    expect(DEFAULT_SANMA_CONFIG.startingPoints).toBe(35000);
+    expect(DEFAULT_SANMA_CONFIG.returnPoints).toBe(40000);
+    expect(DEFAULT_SANMA_CONFIG.uma).toEqual([20, 0, -20]);
+    expect(DEFAULT_SANMA_CONFIG.playerCount).toBe(3);
+  });
+});
+
+describe('三麻: calculateFinalScore', () => {
+  it('35000点で1位の場合、ウマ + オカ込み', () => {
+    // (35000 - 40000) / 1000 + 20 + オカ15 = -5 + 20 + 15 = 30
+    // オカ = (40000 - 35000) × 3 / 1000 = 15
+    const result = calculateFinalScore(35000, 1, DEFAULT_SANMA_CONFIG);
+    expect(result).toBe(30);
+  });
+
+  it('40000点で2位の場合、ウマ0（オカなし）', () => {
+    // (40000 - 40000) / 1000 + 0 = 0
+    const result = calculateFinalScore(40000, 2, DEFAULT_SANMA_CONFIG);
+    expect(result).toBe(0);
+  });
+
+  it('30000点で3位の場合、ウマ-20', () => {
+    // (30000 - 40000) / 1000 + (-20) = -10 + (-20) = -30
+    const result = calculateFinalScore(30000, 3, DEFAULT_SANMA_CONFIG);
+    expect(result).toBe(-30);
+  });
+});
+
+describe('三麻: calculateAllScores', () => {
+  it('3人分の収支・順位を正しく計算する', () => {
+    const rawScores = [50000, 35000, 20000];
+    const result = calculateAllScores(rawScores, DEFAULT_SANMA_CONFIG);
+
+    expect(result.ranks).toEqual([1, 2, 3]);
+    // 1位: (50000 - 40000) / 1000 + 20 + 15 = 45
+    // 2位: (35000 - 40000) / 1000 + 0 = -5
+    // 3位: (20000 - 40000) / 1000 + (-20) = -40
+    expect(result.scores).toEqual([45, -5, -40]);
+  });
+
+  it('3人の収支合計が0になる（ゼロサム検証）', () => {
+    const rawScores = [50000, 35000, 20000];
+    const result = calculateAllScores(rawScores, DEFAULT_SANMA_CONFIG);
+    const total = result.scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0);
+    expect(total).toBe(0);
+  });
+});
+
+describe('三麻: validateTotalScore', () => {
+  it('合計105000の場合はtrue', () => {
+    expect(validateTotalScore([50000, 35000, 20000], DEFAULT_SANMA_CONFIG)).toBe(true);
+  });
+
+  it('合計が不正の場合はfalse', () => {
+    expect(validateTotalScore([50000, 35000, 20100], DEFAULT_SANMA_CONFIG)).toBe(false);
+  });
+
+  it('3人揃っていない場合はfalse', () => {
+    expect(validateTotalScore([50000, null, 20000], DEFAULT_SANMA_CONFIG)).toBe(false);
+  });
+});
+
+describe('三麻: detectAutoCompleteTarget', () => {
+  it('2人入力済み、1人未入力の場合に対象を返す', () => {
+    const result = detectAutoCompleteTarget(['50000', '', '20000'], 3);
+    expect(result).toEqual({ targetIndex: 1, filledScores: [50000, 20000] });
+  });
+
+  it('3人分でない場合はnullを返す', () => {
+    expect(detectAutoCompleteTarget(['50000', '35000', '20000', ''], 3)).toBeNull();
+  });
+
+  it('全員入力済みの場合はnullを返す', () => {
+    expect(detectAutoCompleteTarget(['50000', '35000', '20000'], 3)).toBeNull();
+  });
+});
+
+describe('三麻: calculateFourthPlayerScore（残り1人計算）', () => {
+  it('2人分の素点から3人目を計算する', () => {
+    expect(calculateFourthPlayerScore([50000, 20000], 105000)).toBe(35000);
+  });
+
+  it('マイナス点になる場合も正しく計算する', () => {
+    expect(calculateFourthPlayerScore([60000, 50000], 105000)).toBe(-5000);
   });
 });

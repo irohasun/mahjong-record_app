@@ -105,7 +105,9 @@ export default function HistoryScreen() {
     (game: GameRecord) => {
       router.push({
         pathname: '/(tabs)/edit-game',
-        params: { gameId: game.id },
+        params: {
+          gameData: JSON.stringify(game),
+        },
       });
     },
     [router]
@@ -173,9 +175,7 @@ export default function HistoryScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
-        <View style={styles.header}>
-          <Text style={styles.title}>履歴</Text>
-        </View>
+        <View style={styles.header} />
 
         {games.length === 0 ? (
           <View style={styles.emptyState}>
@@ -250,15 +250,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     zIndex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 4,
-    textAlign: 'center',
-    width: '100%',
-    alignSelf: 'center',
   },
   emptyState: {
     flex: 1,

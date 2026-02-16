@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Shield, LogOut, Lock, Cloud, CheckCircle, Trash2 } from 'lucide-react-native';
+import { User, Shield, LogOut, Lock, Cloud, CheckCircle } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { DeletionService } from '@/services/DeletionService';
@@ -94,53 +94,6 @@ export default function AccountScreen() {
       }
     }, [loadAccountData])
   );
-
-  // 開発専用: データクリア機能
-  const executeClearDevData = async () => {
-    try {
-      await LocalStorageService.clearAll();
-
-      Alert.alert(
-        '削除完了',
-        'ローカルデータを削除しました。\n\n変更を反映するには:\nExpo Goアプリを一度終了して、再起動してください。',
-        [{ text: 'OK' }]
-      );
-    } catch {
-      Alert.alert(
-        'エラー',
-        'データの削除に失敗しました。\nもう一度お試しください。'
-      );
-    }
-  };
-
-  const confirmClearDevData = () => {
-    Alert.alert(
-      '最終確認',
-      '本当にローカルデータを削除しますか？\n\nこの操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        { text: '完全に削除', style: 'destructive', onPress: executeClearDevData }
-      ]
-    );
-  };
-
-  const handleClearDevData = () => {
-    Alert.alert(
-      '開発用データクリア',
-      '以下のローカルデータが削除されます:\n\n' +
-      '• 対局記録（ローカルキャッシュ）\n' +
-      '• 統計データ\n' +
-      '• アカウントキャッシュ\n\n' +
-      '⚠️ この機能は開発環境専用です\n' +
-      '• Supabaseのデータは削除されません\n' +
-      '• 認証状態は保持されます\n\n' +
-      '本当に削除しますか？',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        { text: '削除する', style: 'destructive', onPress: confirmClearDevData }
-      ]
-    );
-  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -248,10 +201,7 @@ export default function AccountScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
-      <View style={styles.header}>
-        <Text style={styles.title}>アカウント</Text>
-        {/* 仕様変更: プランバッジは削除 */}
-      </View>
+      <View style={styles.header} />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -330,25 +280,6 @@ export default function AccountScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>セキュリティ・プライバシー</Text>
-
-          {/* 開発専用: データクリア機能 */}
-          {__DEV__ && (
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={handleClearDevData}
-            >
-              <View style={styles.menuItemLeft}>
-                <View style={styles.menuIcon}>
-                  <Trash2 size={20} color="#F97316" />
-                </View>
-                <View style={styles.menuItemContent}>
-                  <Text style={[styles.menuItemTitle, { color: '#F97316' }]}>開発用データクリア</Text>
-                  <Text style={styles.menuItemSubtitle}>AsyncStorageのテストデータを削除</Text>
-                </View>
-              </View>
-              <Text style={styles.menuItemArrow}>›</Text>
-            </TouchableOpacity>
-          )}
 
           <TouchableOpacity
             style={styles.menuItem}
@@ -454,14 +385,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     zIndex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    textAlign: 'center',
-    width: '100%',
-    alignSelf: 'center',
   },
   section: {
     backgroundColor: '#FFF',

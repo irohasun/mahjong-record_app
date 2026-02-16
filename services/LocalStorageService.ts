@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GameRecord, PlayerStats } from '@/types/GameRecord';
+import { GameRecord, PlayerStats, GameDraft } from '@/types/GameRecord';
 
 // ストレージキー
 const STORAGE_KEYS = {
@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   ACCOUNT_CACHE_TIMESTAMP: 'mahjong_account_cache_timestamp',
   STATS_CACHE_PREFIX: 'mahjong_stats_cache_',
   STATS_CACHE_TIMESTAMP_PREFIX: 'mahjong_stats_cache_ts_',
+  GAME_DRAFT: 'mahjong_game_draft',
 } as const;
 
 // キャッシュ有効期限（24時間）
@@ -246,6 +247,38 @@ export class LocalStorageService {
       return JSON.parse(dataJson);
     } catch (error) {
       return null;
+    }
+  }
+
+  // ゲームドラフトの保存
+  static async saveGameDraft(draft: GameDraft): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.GAME_DRAFT, JSON.stringify(draft));
+    } catch (error) {
+      console.error('Failed to save game draft:', error);
+      throw error;
+    }
+  }
+
+  // ゲームドラフトの取得
+  static async getGameDraft(): Promise<GameDraft | null> {
+    try {
+      const draftJson = await AsyncStorage.getItem(STORAGE_KEYS.GAME_DRAFT);
+      if (!draftJson) return null;
+      return JSON.parse(draftJson) as GameDraft;
+    } catch (error) {
+      console.error('Failed to get game draft:', error);
+      return null;
+    }
+  }
+
+  // ゲームドラフトのクリア
+  static async clearGameDraft(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.GAME_DRAFT);
+    } catch (error) {
+      console.error('Failed to clear game draft:', error);
+      // silent failure
     }
   }
 }

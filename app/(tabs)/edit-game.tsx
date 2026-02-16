@@ -1,239 +1,603 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Image, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Save, Calendar, Plus, X, Camera, Check, ArrowLeft } from 'lucide-react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Settings, Check, X, Camera, ArrowLeft } from 'lucide-react-native';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { GameService } from '@/services/GameService';
-import { AuthService } from '@/services/AuthService';
-import { ensureAuthenticated } from '@/utils/authUtils';
-import { GameRecord } from '@/types/GameRecord';
 import * as ImagePicker from 'expo-image-picker';
+import { GameService } from '@/services/GameService';
+import { ensureAuthenticated } from '@/utils/authUtils';
+import { notifyGamesChanged } from '@/utils/cacheInvalidation';
 import { StorageService } from '@/services/StorageService';
-import { AccountService } from '@/services/AccountService';
-import { LocalStorageService } from '@/services/LocalStorageService';
+import {
+  RuleConfig,
+  DEFAULT_RULE_CONFIG,
+  DEFAULT_SANMA_CONFIG,
+  calculateAllScores,
+  autoCompleteRawScore,
+  formatScore,
+  validateTotalScore,
+  calculateFourthPlayerScore,
+  detectAutoCompleteTarget,
+} from '@/utils/ScoreCalculator';
 
+/**
+ * 対局記録編集画面
+ * 素点入力 → 自動計算形式
+ */
 export default function EditGameScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const gameId = params.gameId as string;
+  const { gameData: gameDataStr } = useLocalSearchParams<{ gameData: string }>();
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
 
-  const [gameData, setGameData] = useState<GameRecord | null>(null);
+  // 編集データの取得
+  const editGameData = useMemo(() => {
+    if (!gameDataStr) return null;
+    try {
+      return JSON.parse(gameDataStr as string);
+    } catch {
+      return null;
+    }
+  }, [gameDataStr]);
+
+  // 基本状態
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [hanchanCount, setHanchanCount] = useState(3);
-  const [premiumHanchanCount, setPremiumHanchanCount] = useState(3);
-  const [players, setPlayers] = useState(['自分', '', '', '']);
-  const [scores, setScores] = useState(Array(hanchanCount).fill(null).map(() => Array(4).fill('')));
+  const [players, setPlayers] = useState(['自分', 'P2', 'P3', 'P4']);
   const [loading, setLoading] = useState(false);
-  const [editingPlayerName, setEditingPlayerName] = useState<number | null>(null);
-  const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
-  const [customKeyboardValue, setCustomKeyboardValue] = useState('');
-  const [customKeyboardTarget, setCustomKeyboardTarget] = useState<{ hanchan: number, player: number } | null>(null);
-  // 追加画面と同一のUIに合わせる（ゲームタイプ選択は表示しない）
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // ゲームデータを読み込む
-  useEffect(() => {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-    const showEvt = Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow';
-    const hideEvt = Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide';
-    const showSub = Keyboard.addListener(showEvt, (e: any) => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setKeyboardHeight(e?.endCoordinates?.height || 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvt, () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setKeyboardHeight(0);
-    });
-    loadGameData();
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [gameId]);
+  // 写真関連
   const [gamePhoto, setGamePhoto] = useState<string | null>(null);
+  const [uploadedPhotoPath, setUploadedPhotoPath] = useState<string | null>(null);
 
+  // ルール設定
+  const [ruleConfig, setRuleConfig] = useState<RuleConfig>(DEFAULT_RULE_CONFIG);
+  const [showRuleSettings, setShowRuleSettings] = useState(false);
+  const [tempRuleConfig, setTempRuleConfig] = useState<RuleConfig>(DEFAULT_RULE_CONFIG);
 
-  const loadGameData = async () => {
+  // playerCount のショートカット
+  const playerCount = ruleConfig.playerCount;
+
+  // 半荘データ（最大8半荘）
+  // rawScores[hanchanIndex][playerIndex] = 素点（文字列）
+  const [hanchanCount, setHanchanCount] = useState(5);
+  const [rawScores, setRawScores] = useState<string[][]>(
+    Array(8).fill(null).map(() => Array(4).fill(''))
+  );
+
+  // 飛ばしたプレイヤーのデータ（8半荘 × 最大4プレイヤー）
+  const [tobiWinners, setTobiWinners] = useState<number[][]>(
+    Array(8).fill(null).map(() => [])
+  );
+
+  // チップ枚数（プレイヤーごと）
+  const [chips, setChips] = useState<string[]>(['', '', '', '']);
+
+  // チップ入力用のアクティブセル
+  const [activeChipCell, setActiveChipCell] = useState<number | null>(null);
+
+  // 入力中のセル
+  const [activeCell, setActiveCell] = useState<{ hanchan: number; player: number } | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [showCustomKeyboard, setShowCustomKeyboard] = useState(false);
+
+  // プレイヤー名編集
+  const [editingPlayerIndex, setEditingPlayerIndex] = useState<number | null>(null);
+
+  // 画面フォーカス時のデータロード
+  useFocusEffect(
+    useCallback(() => {
+      loadGameData();
+    }, [gameDataStr])
+  );
+
+  // ウマ文字列を配列に変換するヘルパー関数
+  const parseUmaString = (umaStr: string): number[] | null => {
     try {
-      const user = await ensureAuthenticated();
-      const game = await GameService.getGameById(user.id, gameId);
-      if (game) {
-        setGameData(game);
-        setGameDate(new Date(game.date));
-        // UI統一のためゲームタイプ選択は表示しない
+      // "15/5/-5/-15" または "+15 +5 -5 -15" 形式に対応
+      const parts = umaStr.trim().split(/[\/\s]+/);
+      if (parts.length < 3) return null;
+      return parts.map(p => {
+        const cleaned = p.replace('+', '');
+        const num = parseInt(cleaned, 10);
+        return isNaN(num) ? 0 : num;
+      });
+    } catch {
+      return null;
+    }
+  };
 
-        // プレイヤー名を設定（自分=アカウント名、他= P2/P3/P4）
-        try {
-          const { account } = await AccountService.getAccount();
-          setPlayers([account.username || '自分', 'P2', 'P3', 'P4']);
-        } catch {
-          setPlayers(['自分', 'P2', 'P3', 'P4']);
-        }
+  // 編集データ読み込み
+  const loadGameData = () => {
+    if (!editGameData) {
+      Alert.alert('エラー', '対局データが見つかりません', [{
+        text: 'OK',
+        onPress: () => router.back(),
+      }]);
+      return;
+    }
 
-        // スコアデータを設定（各半荘をそのままの行として表示）
-        if (game.rounds && game.rounds.length > 0) {
-          // 写真の事前表示（非同期で取得）
-          if (game.photoPath) {
-            StorageService.getPublicUrl(game.photoPath).then(url => {
-              if (url) setGamePhoto(url);
-            }).catch(() => {});
-          }
-          const roundCount = game.rounds.length;
-          setHanchanCount(roundCount);
-          const newScores = Array(roundCount).fill(null).map(() => Array(4).fill(''));
-          game.rounds.forEach((r, idx) => {
-            const row = (r.points as any[]).map((n) => (n === null || n === undefined ? '' : String(n)));
-            for (let i = 0; i < 4; i++) newScores[idx][i] = row[i] ?? '';
-          });
-          setScores(newScores);
+    try {
+      setGameDate(new Date(editGameData.date));
+      const playerNames = editGameData.players?.map((p: any) => p.name) || ['自分', 'P2', 'P3', 'P4'];
+      setPlayers(playerNames);
+
+      // ルール設定を復元（編集可能にする）
+      if (editGameData.rules) {
+        const rules = editGameData.rules;
+        const pc = rules.playerCount ?? 4;
+        const newConfig: RuleConfig = {
+          startingPoints: rules.startingPoints ?? DEFAULT_RULE_CONFIG.startingPoints,
+          returnPoints: (rules.startingPoints ?? DEFAULT_RULE_CONFIG.startingPoints) + (rules.oka ?? 0) / pc,
+          uma: parseUmaString(rules.uma) ?? (pc === 3 ? DEFAULT_SANMA_CONFIG.uma : DEFAULT_RULE_CONFIG.uma),
+          tobiBonus: rules.tobiBonus ?? DEFAULT_RULE_CONFIG.tobiBonus,
+          tobiBonusEnabled: rules.tobiBonusEnabled ?? DEFAULT_RULE_CONFIG.tobiBonusEnabled,
+          chipEnabled: rules.chipEnabled ?? DEFAULT_RULE_CONFIG.chipEnabled,
+          chipValue: rules.chipValue ?? DEFAULT_RULE_CONFIG.chipValue,
+          playerCount: pc as 3 | 4,
+        };
+        setRuleConfig(newConfig);
+        setTempRuleConfig(newConfig);
+
+        // プレイヤー数に応じてデータを調整
+        const adjustedPlayers = playerNames.length === pc
+          ? playerNames
+          : pc === 3
+            ? playerNames.slice(0, 3)
+            : [...playerNames, ...Array(4 - playerNames.length).fill('').map((_, i) => `P${playerNames.length + i + 1}`)];
+        setPlayers(adjustedPlayers);
+
+        // rawScores、tobiWinners、chipsの配列長を調整
+        setRawScores(prev => prev.map(row => {
+          if (row.length === pc) return row;
+          if (row.length < pc) return [...row, ...Array(pc - row.length).fill('')];
+          return row.slice(0, pc);
+        }));
+        setTobiWinners(prev => prev.map(winners => winners.filter(idx => idx < pc)));
+        setChips(Array(pc).fill(''));
+      }
+
+      // 写真を復元
+      if (editGameData.photoPath) {
+        setUploadedPhotoPath(editGameData.photoPath);
+        // Supabase Storage から写真URLを取得
+        StorageService.getPublicUrl(editGameData.photoPath)
+          .then(url => {
+            if (url) setGamePhoto(url);
+          })
+          .catch(err => console.error('写真URL取得エラー:', err));
+      }
+
+      // 既存データは収支形式なので、素点への逆変換は行わない（新規入力を促す）
+    } catch (error) {
+      console.error('データ読み込みエラー:', error);
+      Alert.alert('エラー', 'データの読み込みに失敗しました', [{
+        text: 'OK',
+        onPress: () => router.back(),
+      }]);
+    }
+  };
+
+  // 写真選択
+  const handlePickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('エラー', '写真ライブラリへのアクセス許可が必要です');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setGamePhoto(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('写真選択エラー:', error);
+      Alert.alert('エラー', '写真の選択に失敗しました');
+    }
+  };
+
+  // 写真削除
+  const handleRemovePhoto = () => {
+    setGamePhoto(null);
+    setUploadedPhotoPath(null);
+  };
+
+  // 各半荘の計算結果を取得
+  const getCalculatedResults = useCallback((hanchanIndex: number) => {
+    const scores = rawScores[hanchanIndex].map(s => {
+      const completed = autoCompleteRawScore(s);
+      return completed;
+    });
+
+    // 飛ばしたプレイヤー情報を渡す
+    const winners = tobiWinners[hanchanIndex];
+    const result = calculateAllScores(scores, ruleConfig, winners);
+
+    // 配列長がplayerCountと一致していることを確認
+    // 一致していない場合は、playerCount分に調整
+    if (result.scores.length !== playerCount) {
+      const adjustedScores = Array(playerCount).fill(null).map((_, i) =>
+        i < result.scores.length ? result.scores[i] : null
+      );
+      const adjustedRanks = Array(playerCount).fill(null).map((_, i) =>
+        i < result.ranks.length ? result.ranks[i] : null
+      );
+      const adjustedIsTobi = Array(playerCount).fill(false).map((_, i) =>
+        i < result.isTobi.length ? result.isTobi[i] : false
+      );
+      return { scores: adjustedScores, ranks: adjustedRanks, isTobi: adjustedIsTobi };
+    }
+
+    return result;
+  }, [rawScores, ruleConfig, tobiWinners, playerCount]);
+
+  // 各半荘の検証結果を計算
+  const validationResults = useMemo(() => {
+    return Array(8).fill(null).map((_, index) => {
+      if (index >= hanchanCount) return null;
+      const rawScoreRow = rawScores[index];
+      const allEntered = rawScoreRow.every(s => s !== '');
+      if (!allEntered) return null;
+      const scores = rawScoreRow.map(s => autoCompleteRawScore(s));
+
+      // 基本的な合計点数検証
+      const totalValid = validateTotalScore(scores, ruleConfig);
+      if (!totalValid) return false;
+
+      // 飛び賞が有効な場合の追加検証
+      if (ruleConfig.tobiBonusEnabled) {
+        const { isTobi } = getCalculatedResults(index);
+        const hasTobiPlayers = isTobi.some(t => t);
+        const tobiWinnerCount = tobiWinners[index].length;
+
+        // 飛びがいるのに飛ばした人が選択されていない場合は検証失敗
+        if (hasTobiPlayers && tobiWinnerCount === 0) {
+          return false;
         }
       }
-    } catch {
-      Alert.alert('エラー', 'ゲームデータの読み込みに失敗しました');
-      router.back();
+
+      return true;
+    });
+  }, [rawScores, hanchanCount, ruleConfig, getCalculatedResults, tobiWinners]);
+
+  // チップ精算点を計算
+  const getChipScores = useCallback((): number[] => {
+    if (!ruleConfig.chipEnabled) return Array(playerCount).fill(0);
+    return chips.map(c => {
+      const n = parseInt(c, 10);
+      return isNaN(n) ? 0 : n * ruleConfig.chipValue;
+    });
+  }, [chips, ruleConfig.chipEnabled, ruleConfig.chipValue, playerCount]);
+
+  // 合計収支を計算
+  const getTotalScores = useCallback((): (number | null)[] => {
+    const totals = Array(playerCount).fill(0);
+    for (let h = 0; h < hanchanCount; h++) {
+      const { scores } = getCalculatedResults(h);
+      scores.forEach((s, i) => {
+        if (s !== null) totals[i] += s;
+      });
     }
-  };
+    // チップ精算点を加算
+    const chipScores = getChipScores();
+    totals.forEach((_, i) => {
+      totals[i] += chipScores[i];
+    });
+    return totals;
+  }, [hanchanCount, getCalculatedResults, getChipScores, playerCount]);
 
-  const handlePlayerNameChange = (index: number, name: string) => {
-    const newPlayers = [...players];
-    newPlayers[index] = name;
-    setPlayers(newPlayers);
-  };
+  // 保存可能かチェック（エラーがある半荘がないか）
+  const hasValidationError = useMemo(() => {
+    return validationResults.some((result, index) => {
+      // 使用中の半荘でエラーがある場合
+      return index < hanchanCount && result === false;
+    });
+  }, [validationResults, hanchanCount]);
 
-  const handlePlayerNameEdit = (index: number) => {
-    setEditingPlayerName(index);
-  };
-
-  const handlePlayerNameSave = (index: number) => {
-    setEditingPlayerName(null);
-  };
-
-  const handleCustomKeyboardPress = (hanchanIndex: number, playerIndex: number, value: string) => {
-    setCustomKeyboardValue(value);
-    setCustomKeyboardTarget({ hanchan: hanchanIndex, player: playerIndex });
+  // チップセルタップ時
+  const handleChipCellPress = (playerIndex: number) => {
+    setActiveCell(null);
+    setActiveChipCell(playerIndex);
+    const currentValue = chips[playerIndex];
+    setInputValue(currentValue);
     setShowCustomKeyboard(true);
-
-    // アニメーション開始
     Animated.timing(keyboardAnimation, {
       toValue: 1,
-      duration: 300,
+      duration: 250,
       useNativeDriver: true,
     }).start();
   };
 
-  const handleCustomKeyboardInput = (input: string) => {
-    if (input === 'backspace') {
-      const newValue = customKeyboardValue.slice(0, -1);
-      setCustomKeyboardValue(newValue);
-
-      // リアルタイムでスコアに反映（自動計算なし）
-      if (customKeyboardTarget) {
-        const newScores = [...scores];
-        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
-        setScores(newScores);
+  // セルタップ時
+  const handleCellPress = (hanchanIndex: number, playerIndex: number) => {
+    setActiveChipCell(null);
+    setActiveCell({ hanchan: hanchanIndex, player: playerIndex });
+    const currentValue = rawScores[hanchanIndex][playerIndex];
+    // 既存の値から末尾の'00'を削除して表示用の値を設定
+    // 例: "35000" → "350", "-35000" → "-350"
+    let displayValue = '';
+    if (currentValue !== '') {
+      const isNegative = currentValue.startsWith('-');
+      // マイナス記号がある場合は最低3文字（"-" + 1桁 + "00"）、ない場合は最低3文字（1桁 + "00"）
+      const minLength = isNegative ? 4 : 3;
+      // 末尾の'00'を削除
+      if (currentValue.endsWith('00') && currentValue.length >= minLength) {
+        displayValue = currentValue.slice(0, -2);
+      } else {
+        displayValue = currentValue;
       }
-    } else if (input === 'ok') {
-      // OKボタンでスコアを確定し、3つ目の入力なら自動計算を実行
-      if (customKeyboardTarget) {
-        const newScores = [...scores];
-        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = customKeyboardValue;
+    }
+    setInputValue(displayValue);
+    setShowCustomKeyboard(true);
+    Animated.timing(keyboardAnimation, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  };
 
-        // 3つ目のスコアが入力された場合のみ自動計算
-        const currentScores = newScores[customKeyboardTarget.hanchan];
-        const filledScores = currentScores.filter((score, index) => score !== '');
-
-        if (filledScores.length === 3) {
-          // 3人分の合計を計算
-          const sum = filledScores.reduce((total, score) => total + (parseInt(score) || 0), 0);
-          // 残り1人の値を計算（合計が0になるように）
-          const remainingValue = -sum;
-
-          // 空いているプレイヤーのインデックスを見つける
-          const emptyPlayerIndex = currentScores.findIndex((score) => score === '');
-          if (emptyPlayerIndex !== -1) {
-            newScores[customKeyboardTarget.hanchan][emptyPlayerIndex] = remainingValue.toString();
-          }
+  // カスタムキーボード入力
+  const handleKeyboardInput = (key: string) => {
+    // チップ入力モード
+    if (activeChipCell !== null) {
+      if (key === 'backspace') {
+        const newValue = inputValue.slice(0, -1);
+        setInputValue(newValue);
+        setChips(prev => {
+          const newChips = [...prev];
+          newChips[activeChipCell] = newValue;
+          return newChips;
+        });
+      } else if (key === 'ok') {
+        Animated.timing(keyboardAnimation, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowCustomKeyboard(false);
+          setActiveChipCell(null);
+          setInputValue('');
+        });
+      } else if (key === 'clear') {
+        setInputValue('');
+        setChips(prev => {
+          const newChips = [...prev];
+          newChips[activeChipCell] = '';
+          return newChips;
+        });
+      } else if (key === '-') {
+        if (inputValue.startsWith('-')) {
+          const newValue = inputValue.slice(1);
+          setInputValue(newValue);
+          setChips(prev => {
+            const newChips = [...prev];
+            newChips[activeChipCell] = newValue;
+            return newChips;
+          });
+        } else {
+          const newValue = '-' + inputValue;
+          setInputValue(newValue);
+          setChips(prev => {
+            const newChips = [...prev];
+            newChips[activeChipCell] = newValue;
+            return newChips;
+          });
         }
-
-        setScores(newScores);
+      } else {
+        // 数字入力（最大3桁、マイナス時4文字）
+        const maxLength = inputValue.startsWith('-') ? 4 : 3;
+        if (inputValue.length < maxLength) {
+          const newValue = inputValue + key;
+          setInputValue(newValue);
+          setChips(prev => {
+            const newChips = [...prev];
+            newChips[activeChipCell] = newValue;
+            return newChips;
+          });
+        }
       }
-
-      // アニメーション終了
-      Animated.timing(keyboardAnimation, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowCustomKeyboard(false);
-        setCustomKeyboardValue('');
-        setCustomKeyboardTarget(null);
-      });
-    } else {
-      // 数字入力
-      const newValue = customKeyboardValue + input;
-      setCustomKeyboardValue(newValue);
-
-      // リアルタイムでスコアに反映
-      if (customKeyboardTarget) {
-        const newScores = [...scores];
-        newScores[customKeyboardTarget.hanchan][customKeyboardTarget.player] = newValue;
-        setScores(newScores);
-      }
-    }
-  };
-
-  const addHanchan = () => {
-    if (hanchanCount < 8) {
-      setHanchanCount(hanchanCount + 1);
-      setScores([...scores, Array(4).fill('')]);
-    }
-  };
-
-  const removeHanchan = (hanchanIndex: number) => {
-    if (hanchanCount > 1) {
-      setHanchanCount(hanchanCount - 1);
-      const newScores = scores.filter((_, index) => index !== hanchanIndex);
-      setScores(newScores);
-    }
-  };
-
-  const calculateSubtotal = (playerIndex: number): number => {
-    return scores.reduce((total, hanchanScores) => {
-      const raw = String(hanchanScores[playerIndex] ?? '').trim();
-      if (raw === '') return total; // 空欄は集計対象外
-      const n = parseInt(raw);
-      return total + (isNaN(n) ? 0 : n);
-    }, 0);
-  };
-
-  const handleSave = async () => {
-
-
-    if (!gameData) {
-
       return;
     }
 
-    setLoading(true);
-    try {
-      const user = await ensureAuthenticated();
+    if (!activeCell) return;
 
-      // プレイヤーデータを構築
-      const playerData: any[] = players.map((playerName, index) => ({
-        name: playerName,
-        isMainAccount: index === 0,
-        finalScore: calculateSubtotal(index),
+    if (key === 'backspace') {
+      const newValue = inputValue.slice(0, -1);
+      setInputValue(newValue);
+      // 下二桁の'00'を自動追加
+      const valueWithSuffix = newValue ? newValue + '00' : '';
+      updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+    } else if (key === 'ok') {
+      // 入力確定
+      Animated.timing(keyboardAnimation, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowCustomKeyboard(false);
+        setActiveCell(null);
+        setInputValue('');
+      });
+    } else if (key === 'clear') {
+      setInputValue('');
+      updateRawScore(activeCell.hanchan, activeCell.player, '');
+    } else if (key === '-') {
+      // マイナスボタン（トグル機能）
+      if (inputValue.startsWith('-')) {
+        // マイナス記号を削除
+        const newValue = inputValue.slice(1);
+        setInputValue(newValue);
+        const valueWithSuffix = newValue ? newValue + '00' : '';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+      } else {
+        // マイナス記号を追加
+        const newValue = '-' + inputValue;
+        setInputValue(newValue);
+        const valueWithSuffix = newValue + '00';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+      }
+    } else {
+      // 数字入力（最大4桁まで、'00'が自動追加されるため）
+      // マイナス記号がある場合は5文字まで（"-" + 4桁）
+      const maxLength = inputValue.startsWith('-') ? 5 : 4;
+      if (inputValue.length < maxLength) {
+        const newValue = inputValue + key;
+        setInputValue(newValue);
+        // 下二桁の'00'を自動追加
+        const valueWithSuffix = newValue + '00';
+        updateRawScore(activeCell.hanchan, activeCell.player, valueWithSuffix);
+      }
+    }
+  };
+
+  // 素点更新
+  const updateRawScore = (hanchan: number, player: number, value: string) => {
+    setRawScores(prev => {
+      const newScores = [...prev];
+      newScores[hanchan] = [...newScores[hanchan]];
+      newScores[hanchan][player] = value;
+      return newScores;
+    });
+  };
+
+  // 自動入力ボタンのハンドラ
+  const handleAutoComplete = useCallback((hanchanIndex: number, playerIndex: number) => {
+    const rawScoreRow = rawScores[hanchanIndex];
+    const target = detectAutoCompleteTarget(rawScoreRow, playerCount);
+
+    if (target !== null && target.targetIndex === playerIndex) {
+      const totalPoints = ruleConfig.startingPoints * playerCount;
+      const fourthScore = calculateFourthPlayerScore(target.filledScores, totalPoints);
+
+      if (fourthScore !== null) {
+        setRawScores(prev => {
+          const newScores = [...prev];
+          newScores[hanchanIndex] = [...newScores[hanchanIndex]];
+          newScores[hanchanIndex][playerIndex] = String(fourthScore);
+          return newScores;
+        });
+      }
+    }
+  }, [rawScores, ruleConfig.startingPoints, playerCount]);
+
+  // 半荘追加
+  const addHanchan = () => {
+    if (hanchanCount < 8) {
+      setHanchanCount(hanchanCount + 1);
+    }
+  };
+
+  // 保存処理（編集専用）
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      const user = await ensureAuthenticated();
+      if (!user) {
+        Alert.alert('エラー', '認証に失敗しました');
+        return;
+      }
+
+      if (!editGameData?.id) {
+        Alert.alert('エラー', '対局IDが見つかりません');
+        return;
+      }
+
+      // 保存前のバリデーション
+      // 1. rawScores配列の長さチェック
+      const invalidRawScores = rawScores.some(row => row.length !== playerCount);
+      if (invalidRawScores) {
+        console.error('rawScores配列の長さがplayerCountと不一致:', {
+          playerCount,
+          rawScoresLengths: rawScores.map(row => row.length)
+        });
+        Alert.alert('エラー', 'データの整合性に問題があります。画面を再読み込みしてください。');
+        return;
+      }
+
+      // 2. chips配列の長さチェック
+      if (chips.length !== playerCount) {
+        console.error('chips配列の長さがplayerCountと不一致:', {
+          playerCount,
+          chipsLength: chips.length
+        });
+        Alert.alert('エラー', 'データの整合性に問題があります。画面を再読み込みしてください。');
+        return;
+      }
+
+      // 3. players配列の長さチェック
+      if (players.length !== playerCount) {
+        console.error('players配列の長さがplayerCountと不一致:', {
+          playerCount,
+          playersLength: players.length
+        });
+        Alert.alert('エラー', 'データの整合性に問題があります。画面を再読み込みしてください。');
+        return;
+      }
+
+      // 各半荘のデータを構築
+      const rounds: any[] = [];
+      for (let h = 0; h < hanchanCount; h++) {
+        const { scores } = getCalculatedResults(h);
+
+        // scoresの長さがplayerCountと一致していることを再確認
+        if (scores.length !== playerCount) {
+          console.error(`半荘${h + 1}のscores配列の長さがplayerCountと不一致:`, {
+            playerCount,
+            scoresLength: scores.length,
+            scores
+          });
+          Alert.alert('エラー', `半荘${h + 1}のデータに問題があります。`);
+          return;
+        }
+
+        // 有効なスコアがある半荘のみ保存
+        const hasValidScore = scores.some(s => s !== null);
+        if (hasValidScore) {
+          rounds.push({
+            round: `半荘${h + 1}`,
+            honba: 0,
+            riichiSticks: 0,
+            handType: 'draw' as const,
+            points: scores.map(s => s ?? 0),
+            // 飛ばしたプレイヤー情報を保存
+            memo: tobiWinners[h].length > 0
+              ? JSON.stringify({ tobiWinners: tobiWinners[h] })
+              : undefined,
+          });
+        }
+      }
+
+      // プレイヤーデータ構築
+      const totalScores = getTotalScores();
+
+      // totalScoresの長さもplayerCountと一致していることを確認
+      if (totalScores.length !== playerCount) {
+        console.error('totalScores配列の長さがplayerCountと不一致:', {
+          playerCount,
+          totalScoresLength: totalScores.length
+        });
+        Alert.alert('エラー', '合計スコアの計算に問題があります。');
+        return;
+      }
+
+      const positions = ['East', 'South', 'West', 'North'].slice(0, playerCount);
+      const playersData = players.map((name, index) => ({
+        name: name || `P${index + 1}`,
+        finalScore: totalScores[index] ?? 0,
         rank: 1,
-        startingPosition: ['East', 'South', 'West', 'North'][index] as any
+        isMainAccount: index === 0,
+        startingPosition: positions[index] as 'East' | 'South' | 'West' | 'North',
       }));
 
-      // 同点は同順位（dense ranking）でrankを再計算
-      const sortedPlayers = [...playerData].sort((a, b) => b.finalScore - a.finalScore);
+      // 順位計算（合計収支ベース）
+      const sortedPlayers = [...playersData].sort((a, b) => b.finalScore - a.finalScore);
       let currentRank = 0;
       let lastScore: number | null = null;
       sortedPlayers.forEach((p) => {
@@ -241,308 +605,409 @@ export default function EditGameScreen() {
           currentRank += 1;
           lastScore = p.finalScore;
         }
-        const originalIndex = playerData.findIndex(x => x.name === p.name && x.isMainAccount === p.isMainAccount);
-        playerData[originalIndex].rank = currentRank;
+        const originalIndex = playersData.findIndex(x => x.name === p.name && x.isMainAccount === p.isMainAccount);
+        playersData[originalIndex].rank = currentRank;
       });
-      // スコア表からラウンドデータを再構築（4人分入力済みの行のみ保存）
-      const roundsData = scores
-        .map((row, idx) => {
-          const numericRow = row.map((v) => {
-            const t = String(v ?? '').trim();
-            if (t === '') return null;
-            const n = parseInt(t, 10);
-            return Number.isNaN(n) ? null : n;
-          });
-          const hasBlank = numericRow.some((v) => v === null);
-          if (hasBlank) return null;
-          return {
-            round: `半荘${idx + 1}`,
-            honba: 0,
-            riichiSticks: 0,
-            handType: 'draw' as const,
-            points: numericRow as number[],
-            memo: '',
-          };
-        })
-        .filter((v) => v !== null) as any[];
 
-      // 追加画面と同一の構成でデータを更新（ゲームタイプは既存値を維持）
-      const updatedGame: any = {
-        ...gameData,
-        date: gameDate.toISOString(),
-        gameType: gameData.gameType,
-        players: playerData,
-        rounds: roundsData,
-        // 他のフィールドは既存のデータを使用
-      };
+      // チップ枚数を数値配列に変換
+      const chipCounts = ruleConfig.chipEnabled
+        ? chips.map(c => { const n = parseInt(c, 10); return isNaN(n) ? 0 : n; })
+        : undefined;
 
-      // 写真が更新されていればアップロードしてパスを保存
-      if (gamePhoto) {
-        try {
-          const storagePath = await StorageService.uploadGamePhoto(user.id, gameId, gamePhoto);
-          updatedGame.photoPath = storagePath;
-        } catch { }
+      // chipCountsの長さもplayerCountと一致していることを確認
+      if (chipCounts && chipCounts.length !== playerCount) {
+        console.error('chipCounts配列の長さがplayerCountと不一致:', {
+          playerCount,
+          chipCountsLength: chipCounts.length
+        });
+        Alert.alert('エラー', 'チップデータに問題があります。');
+        return;
       }
 
-      // ゲームデータを更新
-      await GameService.updateGame(user.id, gameId, updatedGame);
-
-      // ローカルキャッシュも更新
-      await LocalStorageService.saveGame(updatedGame);
-
-      Alert.alert('修正完了', undefined, [
-        {
-          text: 'OK',
-          onPress: () => {
-            // DB反映のタイミング差分を避けるため、少し待ってから遷移
-            setTimeout(() => {
-              router.push('/(tabs)/history');
-            }, 500);
+      // 写真アップロード処理（新規の場合のみ）
+      let finalPhotoPath = uploadedPhotoPath; // 既存写真を保持
+      if (gamePhoto && gamePhoto.startsWith('file://')) {
+        // 新規アップロード
+        try {
+          const uploadedPath = await StorageService.uploadGamePhoto(user.id, editGameData.id, gamePhoto);
+          finalPhotoPath = uploadedPath;
+        } catch (photoError) {
+          console.error('写真アップロードエラー:', photoError);
+          // 写真アップロード失敗時は確認ダイアログを表示
+          const shouldContinue = await new Promise<boolean>(resolve => {
+            Alert.alert(
+              '写真アップロード失敗',
+              '写真のアップロードに失敗しました。写真なしで保存しますか？',
+              [
+                { text: 'キャンセル', onPress: () => resolve(false), style: 'cancel' },
+                { text: '保存', onPress: () => resolve(true) },
+              ]
+            );
+          });
+          if (!shouldContinue) {
+            setLoading(false);
+            return;
           }
+          finalPhotoPath = null;
         }
-      ]);
-    } catch {
-      Alert.alert('エラー', '対局記録の修正に失敗しました');
+      }
+
+      const gameRecord = {
+        accountId: user.id,
+        date: gameDate.toISOString(),
+        location: '',
+        gameType: '東南戦' as const,
+        rules: {
+          startingPoints: ruleConfig.startingPoints,
+          uma: ruleConfig.uma.join('/'),
+          oka: (ruleConfig.returnPoints - ruleConfig.startingPoints) * playerCount,
+          riichiStick: 1000,
+          honbaValue: 300,
+          tobiBonusEnabled: ruleConfig.tobiBonusEnabled,
+          tobiBonus: ruleConfig.tobiBonus,
+          chipEnabled: ruleConfig.chipEnabled,
+          chipValue: ruleConfig.chipValue,
+          playerCount: playerCount,
+        },
+        players: playersData,
+        rounds,
+        finalRiichiSticks: 0,
+        finalHonba: 0,
+        memo: '',
+        gameEndCondition: 'normal' as const,
+        photoPath: finalPhotoPath || undefined,
+        chipCounts,
+      };
+
+      // 最終バリデーション: gameRecordの整合性チェック
+      console.log('保存前の最終チェック:', {
+        playerCount,
+        playersLength: gameRecord.players.length,
+        roundsCount: gameRecord.rounds.length,
+        chipCountsLength: chipCounts?.length,
+        firstRoundPointsLength: gameRecord.rounds[0]?.points?.length
+      });
+
+      // 編集モード: updateGame を呼び出す
+      await GameService.updateGame(user.id, editGameData.id, { ...gameRecord, id: editGameData.id });
+
+      // キャッシュ無効化（履歴画面の再取得をトリガー）
+      notifyGamesChanged();
+
+      Alert.alert('成功', '対局記録を更新しました', [{
+        text: 'OK',
+        onPress: () => {
+          router.push('/(tabs)/history');
+        },
+      }]);
+    } catch (error) {
+      // エラーの詳細をログに記録
+      console.error('保存エラーの詳細:', {
+        error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // より具体的なエラーメッセージを表示
+      const errorMessage = error instanceof Error
+        ? error.message
+        : '更新に失敗しました';
+      Alert.alert('エラー', errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const getPlayerColor = (playerIndex: number) => {
-    const colors = ['#FF6B35', '#3B82F6', '#10B981', '#F59E0B'];
-    return colors[playerIndex];
+  // 順位バッジの色を取得
+  const getRankColor = (rank: 1 | 2 | 3 | 4 | null): string => {
+    if (rank === null) return '#E5E7EB';
+    const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444'];
+    return colors[rank - 1];
   };
 
-  if (!gameData) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>データを読み込み中...</Text>
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F9F9' }}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* ヘッダー */}
+      <View style={styles.headerBar}>
+        {/* 左側: 戻るボタン */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <ArrowLeft size={24} color="#FF6B35" />
+        </TouchableOpacity>
+
+        {/* 中央: タイトル */}
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>対局記録を編集</Text>
+        </View>
+
+        {/* 右側: 設定アイコン */}
+        <TouchableOpacity style={styles.iconButton} onPress={() => {
+          setTempRuleConfig(ruleConfig);
+          setShowRuleSettings(true);
+        }}>
+          <Settings size={20} color="#FF6B35" />
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        keyboardVerticalOffset={0}
       >
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 + keyboardHeight }}
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-        >
-          {/* ヘッダー（タイトル非表示・左上に戻る矢印） */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/history')} style={styles.backButton}>
-              <ArrowLeft size={24} color="#000000" />
-            </TouchableOpacity>
-          </View>
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* 日付表示 */}
+          <TouchableOpacity style={styles.dateSection} onPress={() => setShowDatePicker(true)}>
+            <Text style={styles.dateLabel}>対局日</Text>
+            <Text style={styles.dateValue}>
+              {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
+            </Text>
+          </TouchableOpacity>
 
-          {/* 日付 */}
-          <View style={styles.infoCard}>
-            <TouchableOpacity
-              style={styles.dateContainer}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Calendar size={18} color="#FF6B35" />
-              <Text style={styles.dateText}>
-                {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* 写真選択（追加画面と同一UI） */}
-          <View style={styles.photoCard}>
-            <Text style={styles.photoLabel}>対局写真</Text>
-            {gamePhoto ? (
-              <View style={styles.photoContainer}>
-                <Image source={{ uri: gamePhoto }} style={styles.gamePhoto} />
-                <TouchableOpacity style={styles.removePhotoButton} onPress={() => setGamePhoto(null)}>
-                  <X size={16} color="#FFFFFF" />
+          {/* 写真セクション */}
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionLabel}>写真</Text>
+            {(gamePhoto || uploadedPhotoPath) ? (
+              <View style={styles.photoPreview}>
+                <Image
+                  source={{ uri: gamePhoto || uploadedPhotoPath || '' }}
+                  style={styles.photoImage}
+                  resizeMode="cover"
+                />
+                <TouchableOpacity style={styles.photoRemoveButton} onPress={handleRemovePhoto}>
+                  <X size={16} color="#FFF" />
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity
-                style={styles.addPhotoButton}
-                onPress={async () => {
-                  try {
-                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                    if (status !== 'granted') {
-                      Alert.alert('権限が必要', '写真を選択するにはカメラロールへのアクセス権限が必要です');
-                      return;
-                    }
-                    const result = await ImagePicker.launchImageLibraryAsync({
-                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                      allowsEditing: true,
-                      aspect: [4, 3],
-                      quality: 0.8,
-                    });
-                    if (!result.canceled && result.assets[0]) {
-                      setGamePhoto(result.assets[0].uri);
-                    }
-                  } catch {
-                    Alert.alert('エラー', '写真の選択に失敗しました');
-                  }
-                }}
-              >
+              <TouchableOpacity style={styles.photoUploadButton} onPress={handlePickPhoto}>
                 <Camera size={24} color="#FF6B35" />
-                <Text style={styles.addPhotoText}>写真を追加</Text>
+                <Text style={styles.photoUploadText}>写真を追加</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* スコア表 */}
-          <View style={styles.scoreSheetCard}>
-            <View style={styles.scoreHeaderRow}>
-              <View style={styles.roundColumn}>
-                <Text style={styles.headerText}>半荘</Text>
-              </View>
-              {[0, 1, 2, 3].map((playerIndex) => (
-                <View key={playerIndex} style={styles.playerColumn}>
-                  <View style={styles.playerHeader}>
-                    {editingPlayerName === playerIndex ? (
-                      <TextInput
-                        style={styles.playerNameInput}
-                        value={
-                          playerIndex === 0 ? players[0] : `P${playerIndex + 1}`
-                        }
-                        onChangeText={(text) => handlePlayerNameChange(playerIndex, text)}
-                        onBlur={() => handlePlayerNameSave(playerIndex)}
-                        onEndEditing={() => handlePlayerNameSave(playerIndex)}
-                        placeholder={playerIndex === 0 ? '自分' : `P${playerIndex + 1}`}
-                        autoFocus={true}
-                        selectTextOnFocus={true}
-                        maxLength={10}
-                      />
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => handlePlayerNameEdit(playerIndex)}
-                        style={styles.playerNameButton}
-                      >
-                        <Text style={styles.headerText}>
-                          {playerIndex === 0
-                            ? players[0] || '自分'
-                            : `P${playerIndex + 1}`}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    <View style={[styles.playerColorIndicator, { backgroundColor: getPlayerColor(playerIndex) }]} />
-                  </View>
-                </View>
+          {/* スコアテーブル */}
+          <View style={styles.scoreTable}>
+            {/* プレイヤーヘッダー */}
+            <View style={styles.tableRow}>
+              <View style={styles.rowLabel} />
+              {players.map((name, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.playerCell}
+                  onPress={() => setEditingPlayerIndex(idx)}
+                >
+                  {editingPlayerIndex === idx ? (
+                    <TextInput
+                      style={styles.playerNameInput}
+                      value={name}
+                      onChangeText={(text) => {
+                        const newPlayers = [...players];
+                        newPlayers[idx] = text;
+                        setPlayers(newPlayers);
+                      }}
+                      onBlur={() => setEditingPlayerIndex(null)}
+                      autoFocus
+                      selectTextOnFocus
+                    />
+                  ) : (
+                    <Text style={styles.playerName} numberOfLines={1}>{name}</Text>
+                  )}
+                </TouchableOpacity>
               ))}
             </View>
-            {[...Array(hanchanCount)].map((_, hanchanIndex) => (
-              <View key={hanchanIndex} style={styles.scoreRow}>
-                <View style={styles.roundNumber}>
-                  <View style={styles.roundNumberContainer}>
-                    <Text style={[
-                      styles.roundText,
-                      hanchanIndex >= 3 ? styles.premiumRoundText : styles.normalRoundText
-                    ]}>
-                      {hanchanIndex + 1}
-                    </Text>
-                    {hanchanCount > 1 && (
-                      <TouchableOpacity
-                        style={styles.removeButton}
-                        onPress={() => removeHanchan(hanchanIndex)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <X size={12} color="#FF6B35" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-                {[0, 1, 2, 3].map((playerIndex) => (
-                  <View key={playerIndex} style={styles.playerScoreContainer}>
-                    <TouchableOpacity
-                      style={[
-                        styles.scoreCell,
-                        customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex && styles.scoreCellSelected
-                      ]}
-                      onPress={() => handleCustomKeyboardPress(hanchanIndex, playerIndex, scores[hanchanIndex][playerIndex])}
-                    >
-                      <Text style={[
-                        styles.scoreCellText,
-                        (() => {
-                          const scoreValue = customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex
-                            ? customKeyboardValue
-                            : scores[hanchanIndex][playerIndex];
-                          const numValue = parseInt(scoreValue) || 0;
-                          return numValue < 0 ? styles.negativeScore : numValue > 0 ? styles.positiveScore : styles.neutralScore;
-                        })()
-                      ]}>
-                        {customKeyboardTarget && customKeyboardTarget.hanchan === hanchanIndex && customKeyboardTarget.player === playerIndex
-                          ? (customKeyboardValue || '')
-                          : String(scores[hanchanIndex][playerIndex] ?? '')
-                        }
-                      </Text>
-                    </TouchableOpacity>
-                    {playerIndex === 3 && (() => {
-                      const row = scores[hanchanIndex] || [];
-                      const hasAny = row.some(v => String(v ?? '').trim() !== '' && !isNaN(parseInt(String(v))));
-                      if (!hasAny) return null;
-                      const sum = row.reduce((acc, v) => acc + (parseInt(String(v)) || 0), 0);
-                      const ok = sum === 0;
-                      return (
-                        <View style={[styles.statusBadge, styles.statusBadgeRight, ok ? styles.okBadge : styles.ngBadge]}>
-                          {ok ? <Check size={10} color="#FFF" /> : <X size={10} color="#FFF" />}
+
+            {/* 各半荘 */}
+            {Array.from({ length: hanchanCount }).map((_, hIndex) => {
+              const { scores, ranks, isTobi } = getCalculatedResults(hIndex);
+              const rawScoreRow = rawScores[hIndex];
+
+              return (
+                <View key={hIndex}>
+                  {/* 素点入力行 */}
+                  <View style={styles.tableRow}>
+                    <View style={styles.rowLabel}>
+                      <Text style={styles.hanchanNumber}>{hIndex + 1}</Text>
+                      {validationResults[hIndex] === true && (
+                        <View style={styles.validationIcon}>
+                          <Check size={14} color="#10B981" />
                         </View>
+                      )}
+                      {validationResults[hIndex] === false && (
+                        <View style={styles.validationIconError}>
+                          <X size={14} color="#EF4444" />
+                        </View>
+                      )}
+                    </View>
+                    {(() => {
+                      // 4人全員入力済みかの判定（ループ外で1回だけ計算）
+                      const allPlayersEntered = rawScoreRow.every(s => s !== '');
+
+                      return rawScoreRow.map((rawScore, pIndex) => {
+                        const isActive = activeCell?.hanchan === hIndex && activeCell?.player === pIndex;
+                        const displayScore = scores[pIndex];
+                        const rank = ranks[pIndex];
+                        const playerIsTobi = ruleConfig.tobiBonusEnabled && isTobi[pIndex];
+                        const isTobiWinner = ruleConfig.tobiBonusEnabled && tobiWinners[hIndex].includes(pIndex);
+
+                        return (
+                        <TouchableOpacity
+                          key={pIndex}
+                          style={[
+                            styles.scoreCell,
+                            isActive && styles.scoreCellActive,
+                            playerIsTobi && styles.scoreCellTobi,
+                            isTobiWinner && styles.scoreCellTobiWinner,
+                          ]}
+                          onPress={() => handleCellPress(hIndex, pIndex)}
+                          onLongPress={() => {
+                            // 飛び賞が無効、または飛んだ本人は選択不可
+                            if (!ruleConfig.tobiBonusEnabled || playerIsTobi) return;
+
+                            setTobiWinners(prev => {
+                              const newWinners = [...prev];
+                              const currentWinners = [...newWinners[hIndex]];
+
+                              if (currentWinners.includes(pIndex)) {
+                                // 選択解除
+                                newWinners[hIndex] = currentWinners.filter(i => i !== pIndex);
+                              } else {
+                                // 選択追加
+                                newWinners[hIndex] = [...currentWinners, pIndex];
+                              }
+
+                              return newWinners;
+                            });
+                          }}
+                        >
+                          {rawScore ? (
+                            <>
+                              {/* 素点表示 */}
+                              <View style={styles.rawScoreRow}>
+                                <Text style={styles.rawScoreText}>{rawScore}</Text>
+                                {playerIsTobi && (
+                                  <Text style={styles.tobiMark}>飛</Text>
+                                )}
+                                {isTobiWinner && (
+                                  <Text style={styles.tobiWinnerMark}>飛</Text>
+                                )}
+                              </View>
+
+                              {/* 順位と精算点（全員入力済みの場合のみ表示） */}
+                              {allPlayersEntered && (
+                                <View style={styles.calculatedRow}>
+                                  {rank !== null && (
+                                    <View style={[styles.rankBadge, { backgroundColor: getRankColor(rank) }]}>
+                                      <Text style={styles.rankText}>{rank}</Text>
+                                    </View>
+                                  )}
+                                  <Text style={[
+                                    styles.calculatedScore,
+                                    displayScore !== null && displayScore > 0 && styles.positiveScore,
+                                    displayScore !== null && displayScore < 0 && styles.negativeScore,
+                                  ]}>
+                                    {formatScore(displayScore)}
+                                  </Text>
+                                </View>
+                              )}
+                            </>
+                          ) : (
+                            /* プレースホルダー */
+                            <Text style={styles.placeholderText}>-</Text>
+                          )}
+                        </TouchableOpacity>
                       );
+                    });
                     })()}
                   </View>
-                ))}
+                </View>
+              );
+            })}
+
+            {/* 半荘追加ボタン */}
+            {hanchanCount < 8 && (
+              <TouchableOpacity style={styles.addHanchanBtn} onPress={addHanchan}>
+                <Text style={styles.addHanchanText}>+ 半荘を追加</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* チップ行（チップ有効時のみ） */}
+            {ruleConfig.chipEnabled && (
+              <>
+                <View style={styles.tableRow}>
+                  <View style={styles.rowLabel}>
+                    <Text style={styles.chipLabel}>チップ</Text>
+                  </View>
+                  {chips.map((chipValue, pIndex) => {
+                    const isActive = activeChipCell === pIndex;
+                    const chipNum = parseInt(chipValue, 10);
+                    const chipScore = isNaN(chipNum) ? 0 : chipNum * ruleConfig.chipValue;
+                    return (
+                      <TouchableOpacity
+                        key={pIndex}
+                        style={[
+                          styles.scoreCell,
+                          isActive && styles.scoreCellActive,
+                        ]}
+                        onPress={() => handleChipCellPress(pIndex)}
+                      >
+                        {chipValue !== '' ? (
+                          <>
+                            <Text style={styles.chipCountText}>
+                              {chipNum > 0 ? `+${chipNum}枚` : `${chipNum}枚`}
+                            </Text>
+                            <Text style={[
+                              styles.calculatedScore,
+                              chipScore > 0 && styles.positiveScore,
+                              chipScore < 0 && styles.negativeScore,
+                            ]}>
+                              {chipScore > 0 ? `+${chipScore}` : `${chipScore}`}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={styles.placeholderText}>-</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* 合計行 */}
+            <View style={[styles.tableRow, styles.totalRow]}>
+              <View style={styles.rowLabel}>
+                <Text style={styles.totalLabel}>計</Text>
               </View>
-            ))}
-            <TouchableOpacity style={styles.addHanchanButton} onPress={addHanchan}>
-              <Plus size={16} color="#FF6B35" />
-              <Text style={styles.addHanchanText}>半荘を追加</Text>
-            </TouchableOpacity>
-            <View style={[styles.scoreRow, styles.subtotalRow]}>
-              <View style={styles.roundNumber}>
-                <Text style={styles.subtotalText}>合計</Text>
-              </View>
-              {[0, 1, 2, 3].map((playerIndex) => (
-                <View key={playerIndex} style={styles.totalContainer}>
+              {getTotalScores().map((total, idx) => (
+                <View key={idx} style={styles.totalCell}>
                   <Text style={[
-                    styles.totalText,
-                    calculateSubtotal(playerIndex) > 0 ? styles.positiveScore : calculateSubtotal(playerIndex) < 0 ? styles.negativeScore : styles.neutralScore
+                    styles.totalScore,
+                    total !== null && total > 0 && styles.positiveScore,
+                    total !== null && total < 0 && styles.negativeScore,
                   ]}>
-                    {calculateSubtotal(playerIndex) > 0 ? '+' : ''}{calculateSubtotal(playerIndex).toLocaleString()}
+                    {formatScore(total)}
                   </Text>
                 </View>
               ))}
             </View>
           </View>
-
-          {showDatePicker && (
-            <DateTimePicker
-              value={gameDate}
-              mode="date"
-              display="default"
-              onChange={(event, selectedDate) => {
-                setShowDatePicker(false);
-                if (selectedDate) {
-                  setGameDate(selectedDate);
-                }
-              }}
-            />
-          )}
-
         </ScrollView>
 
         {/* 保存ボタン */}
-        <View style={styles.saveButtonContainer}>
+        <View style={styles.footerContainer}>
           <TouchableOpacity
-            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+            style={[
+              styles.saveButton,
+              (loading || hasValidationError) && styles.saveButtonDisabled
+            ]}
             onPress={handleSave}
-            disabled={loading}
+            disabled={loading || hasValidationError}
           >
-            <Save size={20} color="#FFF" />
-            <Text style={styles.saveButtonText}>修正</Text>
+            <Text style={styles.saveButtonText}>
+              {hasValidationError ? '合計エラーがあります' : '保存'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -550,283 +1015,672 @@ export default function EditGameScreen() {
         {showCustomKeyboard && (
           <Animated.View
             style={[
-              styles.customKeyboardOverlay,
+              styles.keyboardContainer,
               {
                 transform: [{
                   translateY: keyboardAnimation.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [300, 0], // 300px下から上にスライド
-                  })
-                }]
-              }
+                    outputRange: [280, 0],
+                  }),
+                }],
+              },
             ]}
           >
             <TouchableOpacity
-              style={styles.overlayBackground}
+              style={styles.keyboardOverlay}
               activeOpacity={1}
-              onPress={() => {
-                Animated.timing(keyboardAnimation, {
-                  toValue: 0,
-                  duration: 300,
-                  useNativeDriver: true,
-                }).start(() => {
-                  setShowCustomKeyboard(false);
-                  setCustomKeyboardValue('');
-                  setCustomKeyboardTarget(null);
-                });
-              }}
+              onPress={() => handleKeyboardInput('ok')}
             />
-            <Animated.View style={styles.customKeyboard}>
-              <View style={styles.customKeyboardButtons}>
-                <View style={styles.customKeyboardRow}>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('7')}>
-                    <Text style={styles.customKeyboardButtonText}>7</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('8')}>
-                    <Text style={styles.customKeyboardButtonText}>8</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('9')}>
-                    <Text style={styles.customKeyboardButtonText}>9</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('backspace')}>
-                    <Text style={styles.customKeyboardButtonText}>←</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.customKeyboardRow}>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('4')}>
-                    <Text style={styles.customKeyboardButtonText}>4</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('5')}>
-                    <Text style={styles.customKeyboardButtonText}>5</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('6')}>
-                    <Text style={styles.customKeyboardButtonText}>6</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('-')}>
-                    <Text style={styles.customKeyboardButtonText}>-</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.customKeyboardRow}>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('1')}>
-                    <Text style={styles.customKeyboardButtonText}>1</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('2')}>
-                    <Text style={styles.customKeyboardButtonText}>2</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('3')}>
-                    <Text style={styles.customKeyboardButtonText}>3</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('.')}>
-                    <Text style={styles.customKeyboardButtonText}>.</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.customKeyboardRow}>
-                  <TouchableOpacity style={styles.customKeyboardButton} onPress={() => handleCustomKeyboardInput('0')}>
-                    <Text style={styles.customKeyboardButtonText}>0</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.customKeyboardButton, styles.customKeyboardButtonOK]} onPress={() => handleCustomKeyboardInput('ok')}>
-                    <Text style={styles.customKeyboardButtonTextOK}>OK</Text>
-                  </TouchableOpacity>
-                </View>
+            <View style={styles.keyboard}>
+              <View style={styles.keyboardHeader}>
+                <Text style={styles.keyboardTitle}>{activeChipCell !== null ? 'チップ枚数入力' : '素点入力'}</Text>
+                {(() => {
+                  // チップ自動入力ボタンの表示判定
+                  if (activeChipCell !== null) {
+                    const chipTarget = detectAutoCompleteTarget(chips, playerCount);
+                    const canAutoCompleteChip = chipTarget !== null && chipTarget.targetIndex === activeChipCell;
+
+                    if (canAutoCompleteChip && chipTarget) {
+                      const fourthChip = calculateFourthPlayerScore(chipTarget.filledScores, 0);
+                      return (
+                        <TouchableOpacity
+                          style={styles.autoCompleteButtonContainer}
+                          onPress={() => {
+                            if (fourthChip !== null) {
+                              setChips(prev => {
+                                const newChips = [...prev];
+                                newChips[activeChipCell] = String(fourthChip);
+                                return newChips;
+                              });
+                              handleKeyboardInput('ok');
+                            }
+                          }}
+                        >
+                          <Text style={styles.autoCompleteButtonText}>
+                            自動入力 {fourthChip !== null ? (fourthChip >= 0 ? `+${fourthChip}` : fourthChip) : ''}枚
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+
+                    // 全員入力済みだが合計が0でない場合
+                    const allChipsEntered = chips.every(c => c !== '');
+                    if (allChipsEntered && chips[activeChipCell] !== '') {
+                      const otherChips = chips
+                        .map((c, idx) => idx === activeChipCell ? null : parseInt(c, 10))
+                        .filter((c): c is number => c !== null && !isNaN(c));
+                      if (otherChips.length === playerCount - 1) {
+                        const chipSum = otherChips.reduce((a, b) => a + b, 0);
+                        const correctChip = -chipSum;
+                        const currentChip = parseInt(chips[activeChipCell], 10);
+                        if (isNaN(currentChip) || currentChip !== correctChip) {
+                          return (
+                            <TouchableOpacity
+                              style={styles.autoCompleteButtonContainer}
+                              onPress={() => {
+                                setChips(prev => {
+                                  const newChips = [...prev];
+                                  newChips[activeChipCell] = String(correctChip);
+                                  return newChips;
+                                });
+                                handleKeyboardInput('ok');
+                              }}
+                            >
+                              <Text style={styles.autoCompleteButtonText}>
+                                自動入力 {correctChip >= 0 ? `+${correctChip}` : correctChip}枚
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        }
+                      }
+                    }
+
+                    return null;
+                  }
+
+                  // 素点の自動入力ボタンの表示判定
+                  if (!activeCell) return null;
+                  const rawScoreRow = rawScores[activeCell.hanchan];
+
+                  // ケース1: N-1人入力済み、1人未入力
+                  const target = detectAutoCompleteTarget(rawScoreRow, playerCount);
+                  const canAutoComplete = target !== null && target.targetIndex === activeCell.player;
+
+                  if (canAutoComplete && target) {
+                    const fourthScore = calculateFourthPlayerScore(
+                      target.filledScores,
+                      ruleConfig.startingPoints * playerCount
+                    );
+
+                    return (
+                      <TouchableOpacity
+                        style={styles.autoCompleteButtonContainer}
+                        onPress={() => {
+                          handleAutoComplete(activeCell.hanchan, activeCell.player);
+                          handleKeyboardInput('ok');
+                        }}
+                      >
+                        <Text style={styles.autoCompleteButtonText}>
+                          自動入力 {fourthScore !== null ? (fourthScore >= 0 ? `+${fourthScore}` : fourthScore) : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  // ケース2: 全員入力済みだが、検証エラーがある場合
+                  const allEntered = rawScoreRow.every(s => s !== '');
+                  const hasValidationError = validationResults[activeCell.hanchan] === false;
+                  const activeCellHasValue = rawScoreRow[activeCell.player] !== '';
+
+                  if (allEntered && hasValidationError && activeCellHasValue) {
+                    // アクティブセル以外のプレイヤーの素点を取得
+                    const otherScores = rawScoreRow
+                      .map((s, idx) => idx === activeCell.player ? null : autoCompleteRawScore(s))
+                      .filter((s): s is number => s !== null);
+
+                    if (otherScores.length === playerCount - 1) {
+                      const correctScore = calculateFourthPlayerScore(
+                        otherScores,
+                        ruleConfig.startingPoints * playerCount
+                      );
+
+                      return (
+                        <TouchableOpacity
+                          style={styles.autoCompleteButtonContainer}
+                          onPress={() => {
+                            if (correctScore !== null) {
+                              const newRawScores = [...rawScores];
+                              newRawScores[activeCell.hanchan][activeCell.player] = String(correctScore);
+                              setRawScores(newRawScores);
+                              handleKeyboardInput('ok');
+                            }
+                          }}
+                        >
+                          <Text style={styles.autoCompleteButtonText}>
+                            自動入力 {correctScore !== null ? (correctScore >= 0 ? `+${correctScore}` : correctScore) : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                  }
+
+                  return null;
+                })()}
+                <TouchableOpacity onPress={() => handleKeyboardInput('clear')}>
+                  <Text style={styles.clearButton}>クリア</Text>
+                </TouchableOpacity>
               </View>
-            </Animated.View>
+              <View style={styles.keyboardDisplay}>
+                <Text style={styles.keyboardDisplayText}>
+                  {activeChipCell !== null
+                    ? (inputValue || '0') + '枚'
+                    : (inputValue ? inputValue + '00' : '00')
+                  }
+                </Text>
+              </View>
+              <View style={styles.keyboardButtons}>
+                {['7', '8', '9', '4', '5', '6', '1', '2', '3', '-', '0', 'backspace'].map((key) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.keyboardButton}
+                    onPress={() => handleKeyboardInput(key)}
+                  >
+                    <Text style={styles.keyboardButtonText}>
+                      {key === 'backspace' ? '←' : key}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={styles.keyboardOkButton}
+                onPress={() => handleKeyboardInput('ok')}
+              >
+                <Text style={styles.keyboardOkText}>OK</Text>
+              </TouchableOpacity>
+            </View>
           </Animated.View>
         )}
       </KeyboardAvoidingView>
+
+      {/* 日付ピッカー */}
+      {Platform.OS === 'ios' ? (
+        <Modal visible={showDatePicker} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.datePickerContainer}>
+              <View style={styles.datePickerHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.datePickerDone}>完了</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={gameDate}
+                mode="date"
+                display="spinner"
+                onChange={(_, date) => date && setGameDate(date)}
+                locale="ja-JP"
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        showDatePicker && (
+          <DateTimePicker
+            value={gameDate}
+            mode="date"
+            display="default"
+            onChange={(_, date) => {
+              setShowDatePicker(false);
+              if (date) setGameDate(date);
+            }}
+          />
+        )
+      )}
+
+      {/* ルール設定モーダル */}
+      <Modal visible={showRuleSettings} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            // 外側タップ時は変更を破棄して閉じる
+            setTempRuleConfig(ruleConfig);
+            setShowRuleSettings(false);
+          }}
+        >
+          <TouchableOpacity
+            style={styles.ruleSettingsModal}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={styles.ruleSettingsTitle}>ルール設定</Text>
+
+            {/* 4人麻雀 / 3人麻雀 切り替え */}
+            <View style={styles.playerCountSegment}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  playerCount === 4 && styles.segmentButtonActive,
+                ]}
+                onPress={() => {
+                  if (playerCount === 4) return;
+                  Alert.alert(
+                    '4人麻雀に切り替え',
+                    '入力データがリセットされます。よろしいですか？',
+                    [
+                      { text: 'キャンセル', style: 'cancel' },
+                      {
+                        text: '切り替え',
+                        onPress: () => {
+                          const newConfig = DEFAULT_RULE_CONFIG;
+                          setRuleConfig(newConfig);
+                          setTempRuleConfig(newConfig);
+                          setPlayers(['自分', 'P2', 'P3', 'P4']);
+                          setRawScores(Array(8).fill(null).map(() => Array(4).fill('')));
+                          setTobiWinners(Array(8).fill(null).map(() => []));
+                          setChips(Array(4).fill(''));
+                          setShowRuleSettings(false);
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={[
+                  styles.segmentText,
+                  playerCount === 4 && styles.segmentTextActive,
+                ]}>4人麻雀</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  playerCount === 3 && styles.segmentButtonActive,
+                ]}
+                onPress={() => {
+                  if (playerCount === 3) return;
+                  Alert.alert(
+                    '3人麻雀に切り替え',
+                    '入力データがリセットされます。よろしいですか？',
+                    [
+                      { text: 'キャンセル', style: 'cancel' },
+                      {
+                        text: '切り替え',
+                        onPress: () => {
+                          const newConfig = DEFAULT_SANMA_CONFIG;
+                          setRuleConfig(newConfig);
+                          setTempRuleConfig(newConfig);
+                          setPlayers(['自分', 'P2', 'P3']);
+                          setRawScores(Array(8).fill(null).map(() => Array(3).fill('')));
+                          setTobiWinners(Array(8).fill(null).map(() => []));
+                          setChips(Array(3).fill(''));
+                          setShowRuleSettings(false);
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={[
+                  styles.segmentText,
+                  playerCount === 3 && styles.segmentTextActive,
+                ]}>3人麻雀</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>開始持ち点</Text>
+              <TextInput
+                style={styles.ruleSettingsInput}
+                value={String(tempRuleConfig.startingPoints)}
+                onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, startingPoints: parseInt(t) || 25000 })}
+                keyboardType="number-pad"
+              />
+            </View>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>返し点</Text>
+              <TextInput
+                style={styles.ruleSettingsInput}
+                value={String(tempRuleConfig.returnPoints)}
+                onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, returnPoints: parseInt(t) || 30000 })}
+                keyboardType="number-pad"
+              />
+            </View>
+
+            <View style={styles.ruleSettingsRow}>
+              <Text style={styles.ruleSettingsLabel}>
+                ウマ ({playerCount === 3 ? '1位/2位/3位' : '1位/2位/3位/4位'})
+              </Text>
+            </View>
+            <View style={styles.umaRow}>
+              {tempRuleConfig.uma.map((val, idx) => (
+                <TextInput
+                  key={idx}
+                  style={styles.umaInput}
+                  value={String(val)}
+                  onChangeText={(t) => {
+                    const newUma = [...tempRuleConfig.uma];
+                    newUma[idx] = parseInt(t) || 0;
+                    setTempRuleConfig({ ...tempRuleConfig, uma: newUma });
+                  }}
+                  keyboardType="numbers-and-punctuation"
+                />
+              ))}
+            </View>
+
+            {/* 飛び賞の点数（ラベルタップで有効/無効切替） */}
+            <View style={styles.ruleSettingsRow}>
+              <TouchableOpacity
+                onPress={() => setTempRuleConfig({
+                  ...tempRuleConfig,
+                  tobiBonusEnabled: !tempRuleConfig.tobiBonusEnabled
+                })}
+              >
+                <Text style={[
+                  styles.ruleSettingsLabel,
+                  !tempRuleConfig.tobiBonusEnabled && styles.toggleLabelDisabled,
+                ]}>
+                  飛び賞の点数
+                </Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[
+                  styles.ruleSettingsInput,
+                  !tempRuleConfig.tobiBonusEnabled && styles.disabledInput
+                ]}
+                value={String(tempRuleConfig.tobiBonus)}
+                onChangeText={(t) => setTempRuleConfig({
+                  ...tempRuleConfig,
+                  tobiBonus: parseInt(t) || 0
+                })}
+                keyboardType="number-pad"
+                editable={tempRuleConfig.tobiBonusEnabled}
+              />
+            </View>
+
+            {/* チップ1枚の点数（ラベルタップで有効/無効切替） */}
+            <View style={styles.ruleSettingsRow}>
+              <TouchableOpacity
+                onPress={() => setTempRuleConfig({
+                  ...tempRuleConfig,
+                  chipEnabled: !tempRuleConfig.chipEnabled
+                })}
+              >
+                <Text style={[
+                  styles.ruleSettingsLabel,
+                  !tempRuleConfig.chipEnabled && styles.toggleLabelDisabled,
+                ]}>
+                  チップ1枚の点数
+                </Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[
+                  styles.ruleSettingsInput,
+                  !tempRuleConfig.chipEnabled && styles.disabledInput
+                ]}
+                value={String(tempRuleConfig.chipValue)}
+                onChangeText={(t) => setTempRuleConfig({
+                  ...tempRuleConfig,
+                  chipValue: parseInt(t) || 0
+                })}
+                keyboardType="number-pad"
+                editable={tempRuleConfig.chipEnabled}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.ruleSettingsCloseBtn}
+              onPress={() => {
+                setRuleConfig(tempRuleConfig);
+                setShowRuleSettings(false);
+              }}
+            >
+              <Text style={styles.ruleSettingsCloseText}>反映する</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#FFF',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#6D6D70',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
     padding: 8,
+    backgroundColor: '#FFF5F0',
+    borderRadius: 8,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  saveButtonContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  infoCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    margin: 12,
-    marginTop: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  scoreSheetCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    margin: 12,
-    marginTop: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  scoreHeaderRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  roundColumn: {
-    width: 60,
-    alignItems: 'center',
-  },
-  playerColumn: {
+  headerCenter: {
     flex: 1,
     alignItems: 'center',
   },
-  headerText: {
-    fontSize: 14,
+  headerTitle: {
+    color: '#1C1C1E',
+    fontSize: 18,
     fontWeight: '700',
-    color: '#000',
-    textAlign: 'center',
   },
-  playerHeader: {
+  iconButton: {
+    padding: 8,
+    backgroundColor: '#FFF5F0',
+    borderRadius: 8,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  dateSection: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    marginHorizontal: 8,
+    marginTop: 8,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 4,
   },
-  playerColorIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  dateLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  dateValue: {
+    fontSize: 16,
+    color: '#1C1C1E',
+    fontWeight: '600',
+  },
+  photoSection: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    marginHorizontal: 8,
+    marginTop: 8,
+    borderRadius: 12,
+  },
+  sectionLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  photoPreview: {
+    position: 'relative',
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoRemoveButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoUploadButton: {
+    borderWidth: 2,
+    borderColor: '#FF6B35',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoUploadText: {
+    fontSize: 14,
+    color: '#FF6B35',
+    fontWeight: '600',
+  },
+  scoreTable: {
+    margin: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  rowLabel: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    paddingVertical: 12,
+  },
+  hanchanNumber: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  validationIcon: {
+    marginTop: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 4,
+    padding: 2,
+  },
+  validationIconError: {
+    marginTop: 4,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 4,
+    padding: 2,
+  },
+  playerCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    minHeight: 48,
+  },
+  playerName: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   playerNameInput: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
+    color: '#374151',
+    fontWeight: '600',
     textAlign: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FF6B35',
+    paddingVertical: 2,
+    minWidth: 50,
+  },
+  scoreCell: {
+    flex: 1,
+    minHeight: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    paddingVertical: 8,
     backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#FF6B35',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 60,
   },
-  playerNameButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  scoreCellActive: {
+    backgroundColor: '#ECFDF5',
   },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+  scoreCellTobi: {
+    backgroundColor: '#FEF2F2',
   },
-  roundNumber: {
-    width: 60,
-    alignItems: 'center',
+  scoreCellTobiWinner: {
+    backgroundColor: '#F0FDF4',
   },
-  roundNumberContainer: {
+  rawScoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  roundText: {
-    fontSize: 16,
+  rawScoreText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  tobiMark: {
+    fontSize: 10,
+    color: '#EF4444',
     fontWeight: '700',
-    color: '#000',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  normalRoundText: {
-    color: '#000',
+  tobiWinnerMark: {
+    fontSize: 10,
+    color: '#10B981',
+    fontWeight: '700',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  premiumRoundText: {
-    color: '#FF6B35',
-  },
-  removeButton: {
-    padding: 2,
-  },
-  playerScoreContainer: {
-    flex: 1,
+  calculatedRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'relative',
+    marginTop: 4,
+    gap: 4,
   },
-  scoreCell: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minWidth: 60,
+  rankBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
-  scoreCellSelected: {
-    backgroundColor: '#FF6B3515',
-    borderColor: '#FF6B35',
+  rankText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '700',
   },
-  scoreCellText: {
-    fontSize: 16,
+  calculatedScore: {
+    fontSize: 14,
     fontWeight: '600',
+    color: '#374151',
   },
   positiveScore: {
     color: '#10B981',
@@ -834,193 +1688,276 @@ const styles = StyleSheet.create({
   negativeScore: {
     color: '#EF4444',
   },
-  neutralScore: {
-    color: '#6D6D70',
+  placeholderText: {
+    fontSize: 16,
+    color: '#D1D5DB',
   },
-  addHanchanButton: {
-    flexDirection: 'row',
+  chipLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8B5CF6',
+  },
+  chipCountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  addHanchanBtn: {
+    paddingVertical: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF6B3515',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   addHanchanText: {
     fontSize: 14,
-    fontWeight: '600',
     color: '#FF6B35',
+    fontWeight: '600',
   },
-  subtotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingTop: 12,
-    marginTop: 8,
+  totalRow: {
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 0,
   },
-  subtotalText: {
+  totalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  totalCell: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+  },
+  totalScore: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#000',
+    color: '#374151',
   },
-  totalContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  totalText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  statusBadge: {
-    marginTop: 4,
-    alignSelf: 'center',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  okBadge: {
-    backgroundColor: '#10B981',
-  },
-  ngBadge: {
-    backgroundColor: '#EF4444',
-  },
-  statusBadgeRight: {
-    position: 'absolute',
-    right: -14,
-    top: '50%',
-    transform: [{ translateY: -7 }],
-  },
-  customKeyboardOverlay: {
+  footerContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 16,
+    backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
   },
-  overlayBackground: {
+  saveButton: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  keyboardContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  keyboardOverlay: {
+    height: 50,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  keyboard: {
+    backgroundColor: '#F9FAFB',
+    paddingBottom: 34,
+  },
+  keyboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  keyboardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  autoCompleteButtonContainer: {
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoCompleteButtonText: {
+    fontSize: 14,
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  clearButton: {
+    fontSize: 14,
+    color: '#EF4444',
+  },
+  keyboardDisplay: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  keyboardDisplayText: {
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'right',
+    color: '#111827',
+  },
+  keyboardButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 8,
+  },
+  keyboardButton: {
+    width: '33.33%',
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  keyboardButtonText: {
+    fontSize: 24,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  keyboardOkButton: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#FF6B35',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  keyboardOkText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  customKeyboard: {
+  datePickerContainer: {
     backgroundColor: '#FFF',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    padding: 16,
   },
-  customKeyboardButtons: {
-    gap: 8,
-  },
-  customKeyboardRow: {
+  datePickerHeader: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'flex-end',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  customKeyboardButton: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
+  datePickerDone: {
+    fontSize: 16,
+    color: '#FF6B35',
+    fontWeight: '600',
+  },
+  playerCountSegment: {
+    flexDirection: 'row',
+    marginBottom: 20,
     borderRadius: 8,
-    paddingVertical: 16,
-    alignItems: 'center',
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  customKeyboardButtonOK: {
-    backgroundColor: '#FF6B35',
     borderColor: '#FF6B35',
   },
-  customKeyboardButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  customKeyboardButtonTextOK: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  photoCard: {
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
     backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  photoLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 12,
+  segmentButtonActive: {
+    backgroundColor: '#FF6B35',
   },
-  photoContainer: {
-    position: 'relative',
-    alignItems: 'center',
-  },
-  gamePhoto: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    resizeMode: 'cover',
-  },
-  removePhotoButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addPhotoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 8,
-    paddingVertical: 16,
-    gap: 8,
-  },
-  addPhotoText: {
-    fontSize: 16,
+  segmentText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#FF6B35',
   },
-  gameTypeContainer: {
-    marginTop: 16,
+  segmentTextActive: {
+    color: '#FFF',
   },
-  gameTypeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6D6D70',
-    marginBottom: 8,
+  ruleSettingsModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
   },
-  gameTypeButtons: {
+  ruleSettingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  ruleSettingsRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  gameTypeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  ruleSettingsLabel: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  ruleSettingsInput: {
+    width: 100,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
     borderRadius: 8,
-    backgroundColor: '#F2F2F7',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlign: 'right',
+  },
+  toggleLabelDisabled: {
+    color: '#9CA3AF',
+  },
+  disabledInput: {
+    backgroundColor: '#F3F4F6',
+    color: '#9CA3AF',
+  },
+  umaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  umaInput: {
+    flex: 1,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  ruleSettingsCloseBtn: {
+    backgroundColor: '#FF6B35',
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  gameTypeButtonActive: {
-    backgroundColor: '#FF6B35',
-  },
-  gameTypeButtonText: {
-    fontSize: 14,
+  ruleSettingsCloseText: {
+    color: '#FFF',
+    fontSize: 16,
     fontWeight: '600',
-    color: '#6D6D70',
   },
-  gameTypeButtonTextActive: {
-    color: '#FFFFFF',
-  },
-}); 
+});

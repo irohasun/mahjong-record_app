@@ -37,6 +37,7 @@ export interface GameRecord {
   duration?: number; // ゲーム時間（分）
   gameEndCondition: 'normal' | 'bankruptcy' | 'timeout' | 'time_limit'; // 終了条件
   photoPath?: string; // ストレージ上の写真パス
+  chipCounts?: number[]; // プレイヤーごとのチップ枚数（4人分）
 }
 
 export interface GameRules {
@@ -47,6 +48,9 @@ export interface GameRules {
   honbaValue: number; // 本場の価値（通常300点）
   tobiBonusEnabled?: boolean; // 飛び賞の有効/無効
   tobiBonus?: number; // 飛び賞の点数
+  chipEnabled?: boolean; // チップ有効/無効
+  chipValue?: number; // チップ1枚あたりのポイント（例: 50）
+  playerCount?: 3 | 4; // プレイヤー人数（未設定時は4人麻雀）
 }
 
 export interface PlayerStats {
@@ -60,4 +64,25 @@ export interface PlayerStats {
   lowestScore: number;
   maxConsecutiveWins: number;
   rankDistribution: { [key: number]: number };
+}
+
+// ドラフト保存用の型（add-game.tsx のローカルステート永続化用）
+export interface GameDraft {
+  gameDate: string;          // ISO文字列
+  players: string[];         // プレイヤー名配列
+  ruleConfig: {              // RuleConfigと同等の型（utils/ScoreCalculatorから）
+    startingPoints: number;
+    returnPoints: number;
+    uma: number[];
+    tobiBonus: number;
+    tobiBonusEnabled: boolean;
+    chipEnabled: boolean;
+    chipValue: number;
+    playerCount: 3 | 4;
+  };
+  hanchanCount: number;      // 半荘数
+  rawScores: string[][];     // 半荘ごとの素点入力（文字列のまま）
+  tobiWinners: number[][];   // 半荘ごとの飛ばしたプレイヤーインデックス
+  chips: string[];           // チップ枚数（文字列のまま）
+  savedAt: string;           // 保存日時（ISO文字列、デバッグ・TTL用）
 }

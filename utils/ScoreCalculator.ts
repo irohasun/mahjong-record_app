@@ -9,9 +9,12 @@
 export interface RuleConfig {
   startingPoints: number;  // 開始持ち点（例: 25000）
   returnPoints: number;    // 返し点（例: 30000）
-  uma: [number, number, number, number];  // ウマ（1位〜4位のポイント）
+  uma: number[];           // ウマ（1位〜N位のポイント）
   tobiBonus: number;       // 飛び賞（例: 10）
   tobiBonusEnabled: boolean;  // 飛び賞の有効/無効
+  chipEnabled: boolean;    // チップ有効/無効
+  chipValue: number;       // チップ1枚あたりのポイント（例: 50）
+  playerCount: 3 | 4;      // プレイヤー人数
 }
 
 /**
@@ -24,6 +27,24 @@ export const DEFAULT_RULE_CONFIG: RuleConfig = {
   uma: [30, 10, -10, -30],  // 1位, 2位, 3位, 4位
   tobiBonus: 10,            // 飛び賞
   tobiBonusEnabled: false,  // デフォルトはOFF
+  chipEnabled: false,       // チップデフォルトはOFF
+  chipValue: 2,             // チップ1枚あたり2ポイント
+  playerCount: 4,           // 4人麻雀
+};
+
+/**
+ * 3人麻雀（三麻）のデフォルトルール設定
+ * 35000点持ち、40000点返し、ウマ 20/0/-20
+ */
+export const DEFAULT_SANMA_CONFIG: RuleConfig = {
+  startingPoints: 35000,
+  returnPoints: 40000,
+  uma: [20, 0, -20],        // 1位, 2位, 3位
+  tobiBonus: 10,
+  tobiBonusEnabled: false,
+  chipEnabled: false,
+  chipValue: 2,
+  playerCount: 3,
 };
 
 /**
@@ -81,7 +102,7 @@ export function calculateFinalScore(
   const umaValue = config.uma[rank - 1];
 
   // オカを計算（1位のみ）
-  const oka = rank === 1 ? ((config.returnPoints - config.startingPoints) * 4) / 1000 : 0;
+  const oka = rank === 1 ? ((config.returnPoints - config.startingPoints) * config.playerCount) / 1000 : 0;
 
   return baseScore + umaValue + oka;
 }
@@ -226,8 +247,8 @@ export function formatScore(score: number | null): string {
  * 自動補完ターゲットの検出結果
  */
 export interface AutoCompleteResult {
-  targetIndex: number;       // 未入力プレイヤーのインデックス（0-3）
-  filledScores: number[];    // 入力済み3人の素点（順序は入力済みの順）
+  targetIndex: number;       // 未入力プレイヤーのインデックス
+  filledScores: number[];    // 入力済みプレイヤーの素点（順序は入力済みの順）
 }
 
 /**
@@ -239,14 +260,14 @@ export interface AutoCompleteResult {
  * @returns 4人目の素点、または入力が3人分でない場合はnull
  */
 export function calculateFourthPlayerScore(
-  threeScores: number[],
+  otherScores: number[],
   totalPoints: number = DEFAULT_RULE_CONFIG.startingPoints * 4
 ): number | null {
-  if (threeScores.length !== 3) {
+  if (otherScores.length < 2) {
     return null;
   }
 
-  const sum = threeScores.reduce((acc, score) => acc + score, 0);
+  const sum = otherScores.reduce((acc, score) => acc + score, 0);
   return totalPoints - sum;
 }
 
@@ -258,9 +279,10 @@ export function calculateFourthPlayerScore(
  * @returns 自動補完対象の情報、または補完不可の場合はnull
  */
 export function detectAutoCompleteTarget(
-  rawScores: string[]
+  rawScores: string[],
+  playerCount: number = 4
 ): AutoCompleteResult | null {
-  if (rawScores.length !== 4) {
+  if (rawScores.length !== playerCount) {
     return null;
   }
 
@@ -304,10 +326,10 @@ export function validateTotalScore(
   config: RuleConfig = DEFAULT_RULE_CONFIG
 ): boolean {
   const validScores = rawScores.filter((s): s is number => s !== null);
-  if (validScores.length !== 4) return false;
+  if (validScores.length !== config.playerCount) return false;
 
   const total = validScores.reduce((sum, s) => sum + s, 0);
-  const expectedTotal = config.startingPoints * 4;
+  const expectedTotal = config.startingPoints * config.playerCount;
 
   // 完全一致のみ許容（誤差0）
   return total === expectedTotal;
