@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GameRecord, PlayerStats, GameDraft } from '@/types/GameRecord';
+import { Friend } from '@/types/Friends';
+import { Group } from '@/types/Groups';
 
 // ストレージキー
 const STORAGE_KEYS = {
@@ -13,6 +15,10 @@ const STORAGE_KEYS = {
   STATS_CACHE_PREFIX: 'mahjong_stats_cache_',
   STATS_CACHE_TIMESTAMP_PREFIX: 'mahjong_stats_cache_ts_',
   GAME_DRAFT: 'mahjong_game_draft',
+  FRIENDS: 'mahjong_friends',
+  FRIENDS_CACHE_TIMESTAMP: 'mahjong_friends_cache_timestamp',
+  GROUPS: 'mahjong_groups',
+  GROUPS_CACHE_TIMESTAMP: 'mahjong_groups_cache_timestamp',
 } as const;
 
 // キャッシュ有効期限（24時間）
@@ -23,6 +29,10 @@ const ACCOUNT_CACHE_EXPIRY = 30 * 60 * 1000;
 
 // 統計キャッシュ有効期限（5分）
 const STATS_CACHE_EXPIRY = 5 * 60 * 1000;
+
+// フレンド/グループキャッシュ有効期限（5分）
+const FRIENDS_CACHE_EXPIRY = 5 * 60 * 1000;
+const GROUPS_CACHE_EXPIRY = 5 * 60 * 1000;
 
 export class LocalStorageService {
   // ゲームデータの保存
@@ -278,6 +288,84 @@ export class LocalStorageService {
       await AsyncStorage.removeItem(STORAGE_KEYS.GAME_DRAFT);
     } catch (error) {
       console.error('Failed to clear game draft:', error);
+      // silent failure
+    }
+  }
+
+  // フレンドデータの保存
+  static async saveFriends(friends: Friend[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.FRIENDS, JSON.stringify(friends));
+      await AsyncStorage.setItem(STORAGE_KEYS.FRIENDS_CACHE_TIMESTAMP, Date.now().toString());
+    } catch (error) {
+      // silent failure
+    }
+  }
+
+  // フレンドデータの取得（キャッシュ有効時のみ）
+  static async getFriends(): Promise<Friend[] | null> {
+    try {
+      const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.FRIENDS_CACHE_TIMESTAMP);
+      if (!timestamp) return null;
+
+      const cacheTime = parseInt(timestamp, 10);
+      if (Date.now() - cacheTime >= FRIENDS_CACHE_EXPIRY) return null;
+
+      const json = await AsyncStorage.getItem(STORAGE_KEYS.FRIENDS);
+      if (!json) return null;
+      return JSON.parse(json) as Friend[];
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // フレンドキャッシュをクリア
+  static async clearFriendsCache(): Promise<void> {
+    try {
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.FRIENDS,
+        STORAGE_KEYS.FRIENDS_CACHE_TIMESTAMP,
+      ]);
+    } catch (error) {
+      // silent failure
+    }
+  }
+
+  // グループデータの保存
+  static async saveGroups(groups: Group[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+      await AsyncStorage.setItem(STORAGE_KEYS.GROUPS_CACHE_TIMESTAMP, Date.now().toString());
+    } catch (error) {
+      // silent failure
+    }
+  }
+
+  // グループデータの取得（キャッシュ有効時のみ）
+  static async getGroups(): Promise<Group[] | null> {
+    try {
+      const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS_CACHE_TIMESTAMP);
+      if (!timestamp) return null;
+
+      const cacheTime = parseInt(timestamp, 10);
+      if (Date.now() - cacheTime >= GROUPS_CACHE_EXPIRY) return null;
+
+      const json = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+      if (!json) return null;
+      return JSON.parse(json) as Group[];
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // グループキャッシュをクリア
+  static async clearGroupsCache(): Promise<void> {
+    try {
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.GROUPS,
+        STORAGE_KEYS.GROUPS_CACHE_TIMESTAMP,
+      ]);
+    } catch (error) {
       // silent failure
     }
   }

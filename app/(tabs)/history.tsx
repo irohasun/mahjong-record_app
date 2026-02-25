@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, SectionList, Alert, RefreshControl } from 'react-native';
+import type { SectionList as SectionListType } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -28,6 +29,9 @@ export default function HistoryScreen() {
   const pageRef = useRef(0);
   const lastLoadTimeRef = useRef(0);
   const isDirtyRef = useRef(false);
+  const sectionListRef = useRef<SectionListType<GameRecord, GameSection>>(null);
+  const scrollOffsetRef = useRef(0);
+  const shouldRestoreScrollRef = useRef(false);
 
   // ゲームデータ変更の監視
   useEffect(() => {
@@ -81,7 +85,20 @@ export default function HistoryScreen() {
       const isStale = (now - lastLoadTimeRef.current) > STALE_THRESHOLD;
 
       if (isDirtyRef.current || (lastLoadTimeRef.current > 0 && isStale)) {
-        loadGames();
+        loadGames().then(() => {
+          // 編集画面から戻った場合はスクロール位置を復元
+          if (shouldRestoreScrollRef.current && sectionListRef.current) {
+            setTimeout(() => {
+              // SectionListの内部ScrollViewにアクセスしてスクロール位置を復元
+              const scrollResponder = (sectionListRef.current as any)?.getScrollResponder?.();
+              scrollResponder?.scrollTo({
+                y: scrollOffsetRef.current,
+                animated: false,
+              });
+              shouldRestoreScrollRef.current = false;
+            }, 100); // データが完全にレンダリングされるまで待つ
+          }
+        });
       }
     }, [loadGames])
   );
@@ -103,10 +120,13 @@ export default function HistoryScreen() {
 
   const handleEditGame = useCallback(
     (game: GameRecord) => {
+      // 編集画面から戻ったときにスクロール位置を復元するフラグを立てる
+      shouldRestoreScrollRef.current = true;
+
       router.push({
         pathname: '/(tabs)/edit-game',
         params: {
-          gameData: JSON.stringify(game),
+          gameId: game.id,
         },
       });
     },
@@ -187,6 +207,7 @@ export default function HistoryScreen() {
           </View>
         ) : (
           <SectionList
+            ref={sectionListRef}
             sections={sections}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
@@ -201,6 +222,10 @@ export default function HistoryScreen() {
             contentContainerStyle={styles.scrollContent}
             style={styles.gamesList}
             showsVerticalScrollIndicator={false}
+            onScroll={(e) => {
+              scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={400}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

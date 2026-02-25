@@ -1,129 +1,84 @@
-# Dead Code Analysis Report
+# デッドコード分析レポート
 
-Generated: 2026-02-14
+生成日: 2026-02-21
 
-## Tools Used
-- ts-prune: Unused TypeScript exports
-- depcheck: Unused dependencies
-- Manual cross-reference analysis
-
----
-
-## 1. Unused Files (SAFE to delete)
-
-### Services - No imports found anywhere in the codebase
-| File | Severity | Reason |
-|------|----------|--------|
-| `services/CameraService.ts` | SAFE | Zero imports outside itself. Uses expo-camera/expo-av. |
-| `services/FriendService.ts` | SAFE | Zero imports outside itself. Uses types/Friend.ts. |
-| `services/VoiceService.ts` | SAFE | Zero imports outside itself. Uses expo-av. |
-| `services/StatsService.ts` | SAFE | Zero imports outside itself. Superseded by GameService stats methods. |
-| `services/MonetizationService.ts` | SAFE | Zero imports outside itself. Premium features removed per spec. |
-
-### Components - No imports found anywhere
-| File | Severity | Reason |
-|------|----------|--------|
-| `components/AdModal.tsx` | SAFE | Only imported by MonetizationService (also unused). |
-| `components/PremiumModal.tsx` | SAFE | Only imported by MonetizationService (also unused). |
-
-### Types - No imports outside unused services
-| File | Severity | Reason |
-|------|----------|--------|
-| `types/Friend.ts` | SAFE | Only imported by FriendService (unused). |
-| `types/Media.ts` | SAFE | Only imported by CameraService (unused). |
-
-### Hooks - No imports outside the codebase
-| File | Severity | Reason |
-|------|----------|--------|
-| `hooks/useAuth.ts` | SAFE | Zero imports in any source file. |
-
-### Screens
-| File | Severity | Reason |
-|------|----------|--------|
-| `app/(tabs)/data-processing.tsx` | CAUTION | Registered in _layout but never navigated to (link removed per spec comment in account.tsx:392). |
-
-### Scripts
-| File | Severity | Reason |
-|------|----------|--------|
-| `scripts/seed.ts` | SAFE | Development seed script, never imported. |
+## 使用ツール
+- **knip**: 未使用ファイル・エクスポート・依存関係の検出
+- **depcheck**: 未使用 npm パッケージの検出
+- **手動分析**: インポート/呼び出しグラフの追跡
 
 ---
 
-## 2. Unused Exports (within used files)
+## 事前テスト状況（変更前）
 
-| File | Export | Status |
-|------|--------|--------|
-| `types/GameRecord.ts:52` | `Account` interface | Not imported anywhere (AccountService uses database.ts types) |
-| `utils/ScoreCalculator.ts:33` | `TobiWinnersData` type | Only defined, never imported |
+**8 テスト失敗 / 145 テスト（既存の不具合）**
 
----
-
-## 3. Unused Dependencies (package.json)
-
-### Production Dependencies - SAFE to remove
-| Package | Reason |
-|---------|--------|
-| `@expo/vector-icons` | Not imported in any source file |
-| `@lucide/lab` | Not imported in any source file |
-| `@types/uuid` | Should be devDependency; `uuid` itself is unused |
-| `ajv` | Not imported in any source file |
-| `ajv-keywords` | Not imported in any source file |
-| `dotenv` | Not imported in any source file |
-| `expo-av` | Only used by VoiceService (dead code) |
-| `expo-blur` | Not imported in any source file |
-| `expo-build-properties` | Expo plugin, keep as CAUTION |
-| `expo-camera` | Only used by CameraService (dead code) |
-| `expo-document-picker` | Not imported in any source file |
-| `expo-haptics` | Not imported in any source file |
-| `expo-linear-gradient` | Not imported in any source file |
-| `expo-sharing` | Not imported in any source file |
-| `expo-symbols` | Not imported in any source file |
-| `expo-web-browser` | Not imported in any source file |
-| `react-native-super-grid` | Not imported in any source file |
-| `react-native-url-polyfill` | May be needed as side-effect import for Supabase |
-| `uuid` | Not imported in any source file |
-
-### Dev Dependencies - SAFE to remove
-| Package | Reason |
-|---------|--------|
-| `@types/node` | Not needed in React Native project |
-
-### Dependencies to KEEP (despite depcheck flagging)
-| Package | Reason |
-|---------|--------|
-| `expo-build-properties` | Used by Expo build system via app.json |
-| `expo-dev-client` | Used by Expo development workflow |
-| `expo-splash-screen` | Used by Expo build system |
-| `expo-system-ui` | Used by Expo build system |
-| `react-native-url-polyfill` | Side-effect polyfill for Supabase |
+| スイート | 失敗理由 |
+|---------|---------|
+| `ScoreCalculator.autoComplete.test.ts` | `calculateFourthPlayerScore` エッジケースの仕様差異 |
+| `GameService.test.ts` | `getHanchanStats`, `getChartData` の RPC モック不一致 |
+| `statistics.logic.test.ts` | `buildStatsCacheKey` のシグネチャ変更 |
 
 ---
 
-## 4. Unused Styles / Dead Code within Files
+## 分析結果
 
-### account.tsx - Unused styles (from removed features)
-- `userInfo`, `avatar`, `userDetails`, `editingRow`, `usernameInput`, `saveButton`, `saveButtonText`
-- `usernameRow`, `username`, `editButton`, `editButtonText`, `accountId`, `createdDate`
-- `actionButton`, `actionButtonText`, `dangerButton`
+### 🔴 DANGER（手を付けない）
 
----
-
-## 5. console.log Statements (should be removed for production)
-
-| File | Count |
-|------|-------|
-| `services/DeletionService.ts` | 16 |
-| `app/(tabs)/account.tsx` | 4 |
-| `services/AccountService.ts` | 4 |
-| `services/GameService.ts` | 1 |
+| 対象 | 理由 |
+|-----|------|
+| `coverage/lcov-report/*.js` | 自動生成ファイル（.gitignore 追加推奨） |
+| `metro.config.js` | Expo バンドラーが内部で参照 |
+| `plugins/withAndroidManifestFix.ts` | Expo プラグイン（app.json で参照） |
+| `scripts/seed.ts` | DB シードスクリプト（手動実行用） |
+| `types/database.ts` の型エクスポート | Supabase 自動生成型（`Tables`, `TablesInsert` 等） |
+| `expo-file-system`, `expo-splash-screen` 等 | Expo が実行時に使用する可能性あり |
 
 ---
 
-## Summary
+### 🟡 CAUTION（要確認）
 
-| Category | Count |
-|----------|-------|
-| Unused files (SAFE) | 11 |
-| Unused exports | 2 |
-| Unused npm dependencies | ~17 |
-| console.log statements | 25 |
+| 対象 | ファイル | 説明 |
+|-----|---------|------|
+| `notifyFriendsChanged()` | `utils/cacheInvalidation.ts:28` | `onFriendsChanged` リスナーは `friends.tsx` で登録済みだが、**FriendService から一度も呼ばれていない**（未配線のバグ） |
+| `notifyGroupsChanged()` | `utils/cacheInvalidation.ts:46` | 同上（GroupService から呼ばれていない） |
+| `MockDataService` 全体 | `services/MockDataService.ts` | Supabase 未設定時のフォールバックとして `GameService`, `AccountService` から参照 |
+
+---
+
+### 🟢 SAFE（削除・修正対象）
+
+#### 1. console.log DEBUG 文の削除
+
+| ファイル | 削除件数 |
+|---------|---------|
+| `services/NotificationService.ts` | 17件 |
+| `services/SyncService.ts` | 18件 |
+
+> `console.error` は保持（エラーハンドリング用）
+
+#### 2. 不要な export の削除（ファイル内でのみ使用）
+
+| 対象 | ファイル |
+|-----|---------|
+| `SyncStatus` interface | `services/SyncService.ts:7` |
+| `ChangeType` type | `services/SyncService.ts:15` |
+| `PendingChange` interface | `services/SyncService.ts:18` |
+| `ChartDataItem` interface | `components/statistics/SimpleChart.tsx:4` |
+| `AutoCompleteResult` interface | `utils/ScoreCalculator.ts:249` |
+
+#### 3. 未使用 devDependencies
+
+| パッケージ | 理由 |
+|---------|------|
+| `@types/react-native` | RN 型は本体に含まれ重複 |
+| `ts-node` | `scripts/seed.ts` のみ。直接 tsx で実行可能 |
+
+---
+
+## 未解決の問題（対応が必要）
+
+- `notifyFriendsChanged()` / `notifyGroupsChanged()` が FriendService・GroupService から呼ばれていない
+  → フレンド/グループデータ変更後に UI が自動更新されない
+- `buildStatsCacheKey` のシグネチャ変更によるテスト失敗（既存の不具合）
+- `calculateFourthPlayerScore` エッジケーステスト失敗（既存の不具合）

@@ -35,15 +35,12 @@ export class NotificationService {
    * 通知の初期化
    */
   static async initialize() {
-    console.log('🔔 DEBUG: Initializing notifications...');
-    
     try {
       // 通知の権限をリクエスト
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
-      
+
       if (existingStatus !== 'granted') {
-        console.log('🔔 DEBUG: Requesting notification permissions...');
         const { status } = await Notifications.requestPermissionsAsync({
           ios: {
             allowAlert: true,
@@ -52,23 +49,10 @@ export class NotificationService {
           },
         });
         finalStatus = status;
-        console.log('🔔 DEBUG: Permission request result:', status);
       }
-      
+
       if (finalStatus !== 'granted') {
-        console.log('❌ DEBUG: Notification permission not granted. Status:', finalStatus);
-        
-        // 許可が拒否された場合の詳細情報をログに出力
-        if (finalStatus === 'denied') {
-          console.log('❌ DEBUG: Permission explicitly denied by user');
-        } else if (finalStatus === 'undetermined') {
-          console.log('❌ DEBUG: Permission status undetermined');
-        }
-        
         // 許可が拒否されても、基本的な通知機能は有効にする
-        console.log('🔔 DEBUG: Continuing with limited notification functionality');
-        
-        // 通知の動作を設定（ローカル通知は動作する可能性がある）
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
             shouldShowAlert: true,
@@ -79,26 +63,23 @@ export class NotificationService {
             shouldShowList: true,
           } as any), // 型差異を最小化するため any を許容
         });
-        
+
         return false; // プッシュ通知は利用不可
       }
-      
+
       // デバイスが物理デバイスかチェック
       if (!Device.isDevice) {
-        console.log('❌ DEBUG: Not a physical device, skipping push token');
         return false;
       }
-      
+
       // Expo Push Tokenを取得
       const token = await Notifications.getExpoPushTokenAsync({
         projectId: process.env.EXPO_PROJECT_ID,
       });
-      
-      console.log('✅ DEBUG: Push token obtained:', token.data);
-      
+
       // トークンを保存
       await AsyncStorage.setItem(STORAGE_KEYS.EXPO_PUSH_TOKEN, token.data);
-      
+
       // 通知の動作を設定
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
@@ -109,13 +90,12 @@ export class NotificationService {
           shouldShowList: true,
         } as any),
       });
-      
+
       return true;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to initialize notifications:', error);
-      
+      console.error('Failed to initialize notifications:', error);
+
       // エラーが発生しても基本的な通知機能は有効にする
-      console.log('🔔 DEBUG: Setting up basic notification handler despite error');
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
           shouldShowAlert: true,
@@ -123,7 +103,7 @@ export class NotificationService {
           shouldSetBadge: false,
         }),
       });
-      
+
       return false;
     }
   }
@@ -135,7 +115,6 @@ export class NotificationService {
    */
   static async requestPermissionAgain() {
     try {
-      console.log('🔔 DEBUG: Requesting notification permissions again...');
       const { status } = await Notifications.requestPermissionsAsync({
         ios: {
           allowAlert: true,
@@ -144,10 +123,9 @@ export class NotificationService {
           allowAnnouncements: false,
         },
       });
-      console.log('🔔 DEBUG: Permission request result:', status);
       return status;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to request permissions again:', error);
+      console.error('Failed to request permissions again:', error);
       return 'undetermined';
     }
   }
@@ -163,7 +141,7 @@ export class NotificationService {
       }
       return DEFAULT_SETTINGS;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to get notification settings:', error);
+      console.error('Failed to get notification settings:', error);
       return DEFAULT_SETTINGS;
     }
   }
@@ -175,19 +153,17 @@ export class NotificationService {
     try {
       const currentSettings = await this.getSettings();
       const newSettings = { ...currentSettings, ...settings };
-      
+
       await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(newSettings));
-      
+
       // 設定に応じて通知をスケジュールまたはキャンセル
       if (newSettings.enabled) {
         await this.scheduleNotifications(newSettings);
       } else {
         await this.cancelAllNotifications();
       }
-      
-      console.log('✅ DEBUG: Notification settings saved:', newSettings);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to save notification settings:', error);
+      console.error('Failed to save notification settings:', error);
       throw error;
     }
   }
@@ -199,27 +175,25 @@ export class NotificationService {
     try {
       // 既存の通知をキャンセル
       await this.cancelAllNotifications();
-      
+
       if (!settings.enabled) return;
-      
+
       // ゲームリマインダー
       if (settings.gameReminders && settings.reminderTime) {
         await this.scheduleGameReminders(settings);
       }
-      
+
       // 週次統計
       if (settings.weeklyStats) {
         await this.scheduleWeeklyStats();
       }
-      
+
       // 月次統計
       if (settings.monthlyStats) {
         await this.scheduleMonthlyStats();
       }
-      
-      console.log('✅ DEBUG: Notifications scheduled successfully');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to schedule notifications:', error);
+      console.error('Failed to schedule notifications:', error);
     }
   }
 
@@ -228,9 +202,9 @@ export class NotificationService {
    */
   private static async scheduleGameReminders(settings: NotificationSettings) {
     if (!settings.reminderTime || !settings.reminderDays) return;
-    
+
     const [hour, minute] = settings.reminderTime.split(':').map(Number);
-    
+
     for (const day of settings.reminderDays) {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -292,9 +266,8 @@ export class NotificationService {
   static async cancelAllNotifications(): Promise<void> {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('✅ DEBUG: All notifications cancelled');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to cancel notifications:', error);
+      console.error('Failed to cancel notifications:', error);
     }
   }
 
@@ -311,9 +284,8 @@ export class NotificationService {
         },
         trigger: null, // 即座に送信
       });
-      console.log('✅ DEBUG: Test notification sent');
     } catch (error) {
-      console.error('❌ DEBUG: Failed to send test notification:', error);
+      console.error('Failed to send test notification:', error);
       throw error;
     }
   }
@@ -331,9 +303,8 @@ export class NotificationService {
         },
         trigger: null,
       });
-      console.log('✅ DEBUG: Achievement notification sent:', achievement);
     } catch (error) {
-      console.error('❌ DEBUG: Failed to send achievement notification:', error);
+      console.error('Failed to send achievement notification:', error);
     }
   }
 
@@ -346,7 +317,7 @@ export class NotificationService {
       // ここでは既存呼び出し側への影響を避けるため any を返し、挙動は不変とする
       return await Notifications.getPermissionsAsync() as unknown as Notifications.PermissionStatus;
     } catch (error) {
-      console.error('❌ DEBUG: Failed to check permission status:', error);
+      console.error('Failed to check permission status:', error);
       // 型エラーを避けつつ既存利用箇所を壊さないため、最小限のフィールドを持つオブジェクトを返す
       return { status: 'undetermined', granted: false, expires: 'never' } as unknown as Notifications.PermissionStatus;
     }
@@ -360,7 +331,7 @@ export class NotificationService {
       const { status } = await Notifications.requestPermissionsAsync();
       return status === 'granted';
     } catch (error) {
-      console.error('❌ DEBUG: Failed to request permission:', error);
+      console.error('Failed to request permission:', error);
       return false;
     }
   }

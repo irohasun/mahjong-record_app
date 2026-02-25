@@ -51,15 +51,14 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
   };
 
   return (
-    <View style={{ marginBottom: 12 }}>
-      <Swipeable
-        ref={swipeableRef}
-        renderRightActions={renderRightActions}
-        onSwipeableRightOpen={() => onDelete(game.id, swipeableRef)}
-        rightThreshold={40}
-      >
-        <TouchableOpacity style={styles.gameCard} onPress={() => onEdit(game)}>
-          <View style={styles.cardContent}>
+    <Swipeable
+      ref={swipeableRef}
+      renderRightActions={renderRightActions}
+      onSwipeableRightOpen={() => onDelete(game.id, swipeableRef)}
+      rightThreshold={40}
+    >
+      <TouchableOpacity style={styles.gameCard} onPress={() => onEdit(game)}>
+        <View style={styles.cardContent}>
           <View style={styles.leftSection}>
             <View style={styles.dateContainer}>
               <Calendar size={18} color="#FF6B35" />
@@ -118,23 +117,32 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
         </View>
       </TouchableOpacity>
     </Swipeable>
-    </View>
   );
 }
 
 export const GameCard = React.memo(GameCardInner);
 
+// 共通スタイル定数
+const CARD_BORDER_RADIUS = 12;
+const CARD_MARGIN_BOTTOM = 12;
+const CARD_MIN_HEIGHT = 120;
+
+const cardShadow = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  elevation: 3,
+} as const;
+
 const styles = StyleSheet.create({
   gameCard: {
     backgroundColor: '#FFF',
-    borderRadius: 12,
+    borderRadius: CARD_BORDER_RADIUS,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
-    minHeight: 120,
+    marginBottom: CARD_MARGIN_BOTTOM,
+    minHeight: CARD_MIN_HEIGHT,
+    ...cardShadow,
   },
   cardContent: {
     flexDirection: 'row',
@@ -236,8 +244,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     width: 100,
-    borderRadius: 12,
+    minHeight: CARD_MIN_HEIGHT,
+    borderRadius: CARD_BORDER_RADIUS,
+    marginBottom: CARD_MARGIN_BOTTOM,
     overflow: 'hidden',
+    ...cardShadow,
   },
   swipeDeleteButton: {
     justifyContent: 'center',

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-export interface ChartDataItem {
+interface ChartDataItem {
   name: string;
   population: number;
   percentage?: string;

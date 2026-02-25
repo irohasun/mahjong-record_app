@@ -246,7 +246,7 @@ export function formatScore(score: number | null): string {
 /**
  * 自動補完ターゲットの検出結果
  */
-export interface AutoCompleteResult {
+interface AutoCompleteResult {
   targetIndex: number;       // 未入力プレイヤーのインデックス
   filledScores: number[];    // 入力済みプレイヤーの素点（順序は入力済みの順）
 }

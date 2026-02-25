@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Settings, Check, X, Camera, ArrowLeft } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -27,18 +27,8 @@ import {
  */
 export default function EditGameScreen() {
   const router = useRouter();
-  const { gameData: gameDataStr } = useLocalSearchParams<{ gameData: string }>();
+  const { gameId } = useLocalSearchParams<{ gameId: string }>();
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
-
-  // 編集データの取得
-  const editGameData = useMemo(() => {
-    if (!gameDataStr) return null;
-    try {
-      return JSON.parse(gameDataStr as string);
-    } catch {
-      return null;
-    }
-  }, [gameDataStr]);
 
   // 基本状態
   const [gameDate, setGameDate] = useState(new Date());
@@ -88,7 +78,7 @@ export default function EditGameScreen() {
   useFocusEffect(
     useCallback(() => {
       loadGameData();
-    }, [gameDataStr])
+    }, [gameId])
   );
 
   // ウマ文字列を配列に変換するヘルパー関数
@@ -108,9 +98,9 @@ export default function EditGameScreen() {
   };
 
   // 編集データ読み込み
-  const loadGameData = () => {
-    if (!editGameData) {
-      Alert.alert('エラー', '対局データが見つかりません', [{
+  const loadGameData = async () => {
+    if (!gameId) {
+      Alert.alert('エラー', '対局IDが見つかりません', [{
         text: 'OK',
         onPress: () => router.back(),
       }]);
@@ -118,6 +108,18 @@ export default function EditGameScreen() {
     }
 
     try {
+      setLoading(true);
+      const user = await ensureAuthenticated();
+      const editGameData = await GameService.getGameById(user.id, gameId);
+
+      if (!editGameData) {
+        Alert.alert('エラー', '対局データが見つかりません', [{
+          text: 'OK',
+          onPress: () => router.back(),
+        }]);
+        return;
+      }
+
       setGameDate(new Date(editGameData.date));
       const playerNames = editGameData.players?.map((p: any) => p.name) || ['自分', 'P2', 'P3', 'P4'];
       setPlayers(playerNames);
@@ -161,20 +163,19 @@ export default function EditGameScreen() {
       if (editGameData.photoPath) {
         setUploadedPhotoPath(editGameData.photoPath);
         // Supabase Storage から写真URLを取得
-        StorageService.getPublicUrl(editGameData.photoPath)
-          .then(url => {
-            if (url) setGamePhoto(url);
-          })
-          .catch(err => console.error('写真URL取得エラー:', err));
+        const url = await StorageService.getPublicUrl(editGameData.photoPath);
+        if (url) setGamePhoto(url);
       }
 
       // 既存データは収支形式なので、素点への逆変換は行わない（新規入力を促す）
     } catch (error) {
       console.error('データ読み込みエラー:', error);
-      Alert.alert('エラー', 'データの読み込みに失敗しました', [{
+      Alert.alert('エラー', '対局データの読み込みに失敗しました', [{
         text: 'OK',
         onPress: () => router.back(),
       }]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -504,7 +505,7 @@ export default function EditGameScreen() {
         return;
       }
 
-      if (!editGameData?.id) {
+      if (!gameId) {
         Alert.alert('エラー', '対局IDが見つかりません');
         return;
       }
@@ -629,7 +630,7 @@ export default function EditGameScreen() {
       if (gamePhoto && gamePhoto.startsWith('file://')) {
         // 新規アップロード
         try {
-          const uploadedPath = await StorageService.uploadGamePhoto(user.id, editGameData.id, gamePhoto);
+          const uploadedPath = await StorageService.uploadGamePhoto(user.id, gameId, gamePhoto);
           finalPhotoPath = uploadedPath;
         } catch (photoError) {
           console.error('写真アップロードエラー:', photoError);
@@ -689,7 +690,7 @@ export default function EditGameScreen() {
       });
 
       // 編集モード: updateGame を呼び出す
-      await GameService.updateGame(user.id, editGameData.id, { ...gameRecord, id: editGameData.id });
+      await GameService.updateGame(user.id, gameId, { ...gameRecord, id: gameId });
 
       // キャッシュ無効化（履歴画面の再取得をトリガー）
       notifyGamesChanged();
@@ -727,12 +728,20 @@ export default function EditGameScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* ローディング表示 */}
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF6B35" />
+          <Text style={styles.loadingText}>対局データを読み込み中...</Text>
+        </View>
+      )}
+
       {/* ヘッダー */}
       <View style={styles.headerBar}>
         {/* 左側: 戻るボタン */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.push('/(tabs)/history')}
         >
           <ArrowLeft size={24} color="#1C1C1E" />
         </TouchableOpacity>
@@ -1435,6 +1444,22 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFF',
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    zIndex: 9999,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6D6D70',
   },
   headerBar: {
     flexDirection: 'row',

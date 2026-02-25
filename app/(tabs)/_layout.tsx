@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { ChartBar as BarChart3, History, Plus, User } from 'lucide-react-native';
+import { ChartBar as BarChart3, History, Plus, User, Users } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 
 export default function TabLayout() {
@@ -60,6 +60,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="friends"
+        options={{
+          title: 'フレンド',
+          tabBarIcon: ({ size, color }) => (
+            <Users size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="account"
         options={{
           title: 'アカウント',
@@ -68,9 +77,15 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/** 編集画面 / プロフィール編集 / データの取り扱い をタブから完全に除外（スペース消滅） */}
+      {/** 編集画面 / プロフィール編集 / データの取り扱い / グループ詳細 をタブから完全に除外（スペース消滅） */}
       <Tabs.Screen
         name="edit-game"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="group-details"
         options={{
           href: null,
         }}

@@ -1,0 +1,311 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ArrowLeft, Settings, UserPlus } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
+import { GroupDetails } from '@/types/Groups';
+import { GroupStatistics as GroupStatisticsType } from '@/types/Groups';
+import { GroupService } from '@/services/GroupService';
+import { FriendService } from '@/services/FriendService';
+import { GroupStatisticsView } from '@/components/groups/GroupStatistics';
+import { ScoreChart } from '@/components/groups/ScoreChart';
+import { MemberRankingList } from '@/components/groups/MemberRanking';
+
+export default function GroupDetailsScreen() {
+  const router = useRouter();
+  const { groupId, groupName } = useLocalSearchParams<{
+    groupId: string;
+    groupName: string;
+  }>();
+
+  const [details, setDetails] = useState<GroupDetails | null>(null);
+  const [statistics, setStatistics] = useState<GroupStatisticsType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+
+  const loadData = useCallback(async () => {
+    if (!groupId) return;
+
+    try {
+      const [groupDetails, groupStats] = await Promise.all([
+        GroupService.getGroupDetails(groupId),
+        GroupService.getGroupStatistics(groupId),
+      ]);
+
+      setDetails(groupDetails);
+      setStatistics(groupStats);
+
+      // オーナーチェック
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user && groupDetails) {
+        setIsOwner(groupDetails.ownerId === user.id);
+      }
+    } catch (error) {
+      Alert.alert('エラー', 'データの取得に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
+
+  const handleAddMember = useCallback(async () => {
+    if (!groupId) return;
+
+    // フレンドリストからメンバーを追加するシンプルなフロー
+    try {
+      const friends = await FriendService.getFriends();
+      const existingMemberIds = new Set(
+        details?.members.map((m) => m.memberId) ?? []
+      );
+      const availableFriends = friends.filter(
+        (f) => f.status === 'accepted' && !existingMemberIds.has(f.friendId)
+      );
+
+      if (availableFriends.length === 0) {
+        Alert.alert('', '追加できるフレンドがいません');
+        return;
+      }
+
+      // シンプルなアラートで選択
+      const buttons: { text: string; onPress?: () => void; style?: string }[] =
+        availableFriends.slice(0, 5).map((friend) => ({
+          text: friend.username,
+          onPress: () => {
+            (async () => {
+              try {
+                await GroupService.addMember(groupId, friend.friendId);
+                await loadData();
+                Alert.alert('追加完了', `${friend.username}をメンバーに追加しました`);
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : 'メンバーの追加に失敗しました';
+                Alert.alert('エラー', message);
+              }
+            })();
+          },
+        }));
+
+      buttons.push({ text: 'キャンセル', style: 'cancel' });
+
+      Alert.alert('メンバーを追加', 'フレンドを選択してください', buttons as any);
+    } catch (error) {
+      Alert.alert('エラー', 'フレンドリストの取得に失敗しました');
+    }
+  }, [groupId, details, loadData]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF6B35" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!details) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <ArrowLeft size={24} color="#1C1C1E" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>グループ</Text>
+          <View style={styles.headerRight} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>グループが見つかりません</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <ArrowLeft size={24} color="#1C1C1E" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {details.name}
+        </Text>
+        <View style={styles.headerRight}>
+          {isOwner && (
+            <TouchableOpacity style={styles.iconButton} onPress={handleAddMember}>
+              <UserPlus size={20} color="#FF6B35" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FF6B35"
+          />
+        }
+      >
+        {/* グループ情報 */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>メンバー</Text>
+            <Text style={styles.infoValue}>{details.memberCount}人</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>対局数</Text>
+            <Text style={styles.infoValue}>{details.gameCount}戦</Text>
+          </View>
+          {details.description ? (
+            <Text style={styles.descriptionText}>{details.description}</Text>
+          ) : null}
+        </View>
+
+        {/* 統計 */}
+        {statistics ? (
+          <>
+            <GroupStatisticsView statistics={statistics} />
+            <ScoreChart scoreHistory={statistics.scoreHistory} />
+            <MemberRankingList rankings={statistics.memberRankings} />
+          </>
+        ) : (
+          <View style={styles.noDataCard}>
+            <Text style={styles.noDataText}>
+              まだ対局データがありません
+            </Text>
+            <Text style={styles.noDataSubText}>
+              対局をグループに紐づけると統計が表示されます
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  headerRight: {
+    width: 36,
+    alignItems: 'flex-end',
+  },
+  iconButton: {
+    padding: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#8E8E93',
+  },
+  infoCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  descriptionText: {
+    fontSize: 14,
+    color: '#6D6D70',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+  },
+  noDataCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noDataText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  noDataSubText: {
+    fontSize: 13,
+    color: '#AEAEB2',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+});

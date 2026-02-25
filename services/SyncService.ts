@@ -4,7 +4,7 @@ import { LocalStorageService } from './LocalStorageService';
 import { GameRecord } from '@/types/GameRecord';
 
 // 同期状態
-export interface SyncStatus {
+interface SyncStatus {
   isSyncing: boolean;
   lastSyncTime: number;
   pendingChanges: number;
@@ -12,10 +12,10 @@ export interface SyncStatus {
 }
 
 // 変更タイプ
-export type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE';
+type ChangeType = 'CREATE' | 'UPDATE' | 'DELETE';
 
 // 保留中の変更
-export interface PendingChange {
+interface PendingChange {
   id: string;
   type: ChangeType;
   table: string;
@@ -34,24 +34,20 @@ export class SyncService {
 
     try {
       this.syncInProgress = true;
-      console.log('🔄 DEBUG: Starting initial sync...');
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('⚠️ DEBUG: No user authenticated, skipping sync');
         return;
       }
 
       // リモートから全データを取得
       const remoteGames = await this.fetchRemoteGames(user.id);
-      
+
       // ローカルに保存
       await LocalStorageService.saveGames(remoteGames);
       await LocalStorageService.saveLastSync(Date.now());
-
-      console.log('✅ DEBUG: Initial sync completed');
     } catch (error) {
-      console.error('❌ DEBUG: Initial sync failed:', error);
+      console.error('Initial sync failed:', error);
       throw error;
     } finally {
       this.syncInProgress = false;
@@ -66,7 +62,6 @@ export class SyncService {
 
     try {
       this.syncInProgress = true;
-      console.log('🔄 DEBUG: Starting background sync...');
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -78,10 +73,8 @@ export class SyncService {
 
       // 差分同期
       await this.differentialSync(user.id);
-
-      console.log('✅ DEBUG: Background sync completed');
     } catch (error) {
-      console.error('❌ DEBUG: Background sync failed:', error);
+      console.error('Background sync failed:', error);
     } finally {
       this.syncInProgress = false;
     }
@@ -104,17 +97,15 @@ export class SyncService {
       .gte('updated_at', new Date(lastSync).toISOString());
 
     if (error) {
-      console.error('❌ DEBUG: Failed to fetch remote changes:', error);
+      console.error('Failed to fetch remote changes:', error);
       return;
     }
 
     if (games && games.length > 0) {
-      console.log('🔄 DEBUG: Found remote changes:', games.length);
-      
       // ローカルデータを更新
       const localGames = await LocalStorageService.getGames();
       const updatedGames = this.mergeGames(localGames, games);
-      
+
       await LocalStorageService.saveGames(updatedGames);
     }
 
@@ -124,18 +115,16 @@ export class SyncService {
   // 保留中の変更を処理
   private static async processPendingChanges(): Promise<void> {
     const pendingChanges = await LocalStorageService.getPendingChanges();
-    
+
     if (pendingChanges.length === 0) {
       return;
     }
-
-    console.log('🔄 DEBUG: Processing pending changes:', pendingChanges.length);
 
     for (const change of pendingChanges) {
       try {
         await this.applyChange(change);
       } catch (error) {
-        console.error('❌ DEBUG: Failed to apply change:', change.id, error);
+        console.error('Failed to apply change:', change.id, error);
         // 失敗した変更は後で再試行
         continue;
       }
@@ -181,10 +170,10 @@ export class SyncService {
   // ゲームデータをマージ
   private static mergeGames(localGames: GameRecord[], remoteGames: any[]): GameRecord[] {
     const merged = [...localGames];
-    
+
     for (const remoteGame of remoteGames) {
       const existingIndex = merged.findIndex(g => g.id === remoteGame.id);
-      
+
       if (existingIndex >= 0) {
         // 更新
         merged[existingIndex] = this.convertRemoteToLocal(remoteGame);
@@ -248,7 +237,7 @@ export class SyncService {
       .order('date', { ascending: false });
 
     if (error) {
-      console.error('❌ DEBUG: Failed to fetch remote games:', error);
+      console.error('Failed to fetch remote games:', error);
       return [];
     }
 
@@ -262,16 +251,15 @@ export class SyncService {
       ...change,
       timestamp: Date.now(),
     };
-    
-    pendingChanges.push(newChange);
-    await LocalStorageService.savePendingChanges(pendingChanges);
+
+    await LocalStorageService.savePendingChanges([...pendingChanges, newChange]);
   }
 
   // 同期状態を取得
   static async getSyncStatus(): Promise<SyncStatus> {
     const lastSync = await LocalStorageService.getLastSync();
     const pendingChanges = await LocalStorageService.getPendingChanges();
-    
+
     return {
       isSyncing: this.syncInProgress,
       lastSyncTime: lastSync,
@@ -292,13 +280,10 @@ export class SyncService {
    */
   static async syncLocalDataToSupabase(): Promise<number> {
     if (!isSupabaseConfigured) {
-      console.log('⚠️ Supabase not configured, skipping sync');
       return 0;
     }
 
     try {
-      console.log('🔄 Syncing local data to Supabase');
-
       // 現在のユーザーを取得
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -307,19 +292,15 @@ export class SyncService {
 
       // ダミーユーザーや匿名ユーザーの場合はスキップ
       if (user.id === 'dummy-user-id' || user.is_anonymous) {
-        console.log('⚠️ User is still anonymous, skipping sync');
         return 0;
       }
 
       // ローカルストレージからすべてのゲームを取得
       const localGames = await LocalStorageService.getAllGames();
-      
+
       if (localGames.length === 0) {
-        console.log('ℹ️ No local games to sync');
         return 0;
       }
-
-      console.log(`📦 Found ${localGames.length} local games to sync`);
 
       // 各ゲームをSupabaseにアップロード
       let syncedCount = 0;
@@ -341,7 +322,7 @@ export class SyncService {
             .upsert(gameData, { onConflict: 'id' });
 
           if (gameError) {
-            console.error('❌ Failed to sync game:', game.id, gameError);
+            console.error('Failed to sync game:', game.id, gameError);
             continue;
           }
 
@@ -361,7 +342,7 @@ export class SyncService {
               .upsert(playerRecords);
 
             if (playerError) {
-              console.error('❌ Failed to sync player records for game:', game.id, playerError);
+              console.error('Failed to sync player records for game:', game.id, playerError);
             }
           }
 
@@ -378,25 +359,22 @@ export class SyncService {
               .upsert(roundRecords);
 
             if (roundError) {
-              console.error('❌ Failed to sync round records for game:', game.id, roundError);
+              console.error('Failed to sync round records for game:', game.id, roundError);
             }
           }
 
           syncedCount++;
-          console.log(`✅ Synced game ${syncedCount}/${localGames.length}`);
         } catch (error) {
-          console.error('❌ Error syncing game:', game.id, error);
+          console.error('Error syncing game:', game.id, error);
         }
       }
-
-      console.log(`✅ Sync completed: ${syncedCount}/${localGames.length} games synced`);
 
       // 同期後、最終同期時刻を更新
       await LocalStorageService.saveLastSync(Date.now());
 
       return syncedCount;
     } catch (error) {
-      console.error('❌ Data sync failed:', error);
+      console.error('Data sync failed:', error);
       throw error;
     }
   }
@@ -409,22 +387,16 @@ export class SyncService {
    */
   static async migrateAnonymousDataToAccount(newUserId: string): Promise<number> {
     if (!isSupabaseConfigured) {
-      console.log('⚠️ Supabase not configured, skipping data migration');
       return 0;
     }
 
     try {
-      console.log('🔄 Starting anonymous data migration to account:', newUserId);
-
       // ローカルストレージからすべてのゲームを取得
       const localGames = await LocalStorageService.getAllGames();
-      
+
       if (localGames.length === 0) {
-        console.log('ℹ️ No local games to migrate');
         return 0;
       }
-
-      console.log(`📦 Found ${localGames.length} local games to migrate`);
 
       // 各ゲームをSupabaseにアップロード
       let migratedCount = 0;
@@ -446,7 +418,7 @@ export class SyncService {
             .upsert(gameData, { onConflict: 'id' });
 
           if (gameError) {
-            console.error('❌ Failed to migrate game:', game.id, gameError);
+            console.error('Failed to migrate game:', game.id, gameError);
             continue;
           }
 
@@ -466,7 +438,7 @@ export class SyncService {
               .upsert(playerRecords);
 
             if (playerError) {
-              console.error('❌ Failed to migrate player records for game:', game.id, playerError);
+              console.error('Failed to migrate player records for game:', game.id, playerError);
             }
           }
 
@@ -483,25 +455,22 @@ export class SyncService {
               .upsert(roundRecords);
 
             if (roundError) {
-              console.error('❌ Failed to migrate round records for game:', game.id, roundError);
+              console.error('Failed to migrate round records for game:', game.id, roundError);
             }
           }
 
           migratedCount++;
-          console.log(`✅ Migrated game ${migratedCount}/${localGames.length}`);
         } catch (error) {
-          console.error('❌ Error migrating game:', game.id, error);
+          console.error('Error migrating game:', game.id, error);
         }
       }
-
-      console.log(`✅ Migration completed: ${migratedCount}/${localGames.length} games migrated`);
 
       // 移行後、最終同期時刻を更新
       await LocalStorageService.saveLastSync(Date.now());
 
       return migratedCount;
     } catch (error) {
-      console.error('❌ Data migration failed:', error);
+      console.error('Data migration failed:', error);
       throw error;
     }
   }

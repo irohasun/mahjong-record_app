@@ -22,10 +22,12 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -33,6 +35,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>このアプリは麻雀の対局記録を管理するためにカメラへのアクセスが必要です。具体的には、対局結果の記録として対局風景やスコア表を直接撮影し、ユーザープロフィールの表示用にアバター写真を撮影するために使用します。例えば、対局終了後にスコア表を撮影して記録に添付したり、プロフィール設定で自分の写真をアバターとして撮影することができます。撮影した画像は対局データと一緒に安全に保存され、あなたの麻雀記録の一部として管理されます。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>このアプリは麻雀の対局記録を管理するために写真ライブラリへのアクセスが必要です。具体的には、対局結果の記録として対局風景やスコア表の写真を保存し、ユーザープロフィールの表示用にアバター画像を設定するために使用します。例えば、対局終了後にスコア表を撮影して記録に添付したり、プロフィール設定で自分の写真をアバターとして設定することができます。これらの画像は対局データと一緒に安全に保存され、あなたの麻雀記録の一部として管理されます。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>音声入力でスコアやメモを記録するために使用します。</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -49,15 +59,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<!-- App Uses Non-Exempt Encryption = NO に相当（輸出管理コンプライアンス対応） -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<!-- Appleの審査要件: 機能が参照する保護リソースの使用理由を明記 -->
-	<key>NSCameraUsageDescription</key>
-	<string>このアプリは麻雀の対局記録を管理するためにカメラへのアクセスが必要です。具体的には、対局結果の記録として対局風景やスコア表を直接撮影し、ユーザープロフィールの表示用にアバター写真を撮影するために使用します。例えば、対局終了後にスコア表を撮影して記録に添付したり、プロフィール設定で自分の写真をアバターとして撮影することができます。撮影した画像は対局データと一緒に安全に保存され、あなたの麻雀記録の一部として管理されます。</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>このアプリは麻雀の対局記録を管理するために写真ライブラリへのアクセスが必要です。具体的には、対局結果の記録として対局風景やスコア表の写真を保存し、ユーザープロフィールの表示用にアバター画像を設定するために使用します。例えば、対局終了後にスコア表を撮影して記録に添付したり、プロフィール設定で自分の写真をアバターとして設定することができます。これらの画像は対局データと一緒に安全に保存され、あなたの麻雀記録の一部として管理されます。</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>音声入力でスコアやメモを記録するために使用します。</string>
 </dict>
 </plist>
