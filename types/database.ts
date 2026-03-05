@@ -55,6 +55,8 @@ export type Database = {
           phone: string | null
           preferred_language: string | null
           purchase_date: string | null
+          rating_4p: number
+          rating_3p: number
           status: string | null
           timezone: string | null
           updated_at: string | null
@@ -75,6 +77,8 @@ export type Database = {
           phone?: string | null
           preferred_language?: string | null
           purchase_date?: string | null
+          rating_4p?: number
+          rating_3p?: number
           status?: string | null
           timezone?: string | null
           updated_at?: string | null
@@ -95,6 +99,8 @@ export type Database = {
           phone?: string | null
           preferred_language?: string | null
           purchase_date?: string | null
+          rating_4p?: number
+          rating_3p?: number
           status?: string | null
           timezone?: string | null
           updated_at?: string | null
@@ -166,6 +172,7 @@ export type Database = {
       }
       player_records: {
         Row: {
+          account_id: string | null
           created_at: string | null
           final_score: number
           game_id: string
@@ -177,6 +184,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          account_id?: string | null
           created_at?: string | null
           final_score: number
           game_id: string
@@ -188,6 +196,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          account_id?: string | null
           created_at?: string | null
           final_score?: number
           game_id?: string
@@ -201,6 +210,64 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "player_records_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_records_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rating_history: {
+        Row: {
+          id: string
+          account_id: string
+          game_id: string
+          player_count: number
+          rating_before: number
+          rating_after: number
+          rating_change: number
+          rank: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          game_id: string
+          player_count: number
+          rating_before: number
+          rating_after: number
+          rating_change: number
+          rank: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          game_id?: string
+          player_count?: number
+          rating_before?: number
+          rating_after?: number
+          rating_change?: number
+          rank?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rating_history_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rating_history_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
             referencedRelation: "games"
@@ -483,11 +550,3 @@ export type CompositeTypes<
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
-export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
-  public: {
-    Enums: {},
-  },
-} as const

@@ -81,9 +81,11 @@ export default function ProfileEditScreen() {
           // @ts-ignore - avatar_url is a valid field in accounts table
           await supabase.from('accounts').update({ avatar_url: avatarPath }).eq('id', u.id);
         })();
+        // avatar更新後も確実にキャッシュを無効化
+        await AccountService.invalidateCache();
       }
 
-      Alert.alert('保存完了', 'プロフィールを更新しました', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('保存完了', 'プロフィールを更新しました', [{ text: 'OK', onPress: () => router.replace('/(tabs)/account') }]);
     } catch {
       Alert.alert('エラー', 'プロフィールの更新に失敗しました');
     } finally {

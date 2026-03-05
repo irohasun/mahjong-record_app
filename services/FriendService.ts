@@ -1,29 +1,10 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Friend, FriendRequest, FriendshipResponse } from '@/types/Friends';
+import { Friend, FriendRequest } from '@/types/Friends';
 import { LocalStorageService } from './LocalStorageService';
+import { StorageService } from './StorageService';
 import { notifyFriendsChanged } from '@/utils/cacheInvalidation';
 
 export class FriendService {
-  /**
-   * FriendshipResponseからFriend型に変換
-   */
-  private static mapFriendFromDb(
-    row: FriendshipResponse,
-    currentUserId: string
-  ): Friend {
-    const isSender = row.user_id === currentUserId;
-    return {
-      id: row.id,
-      userId: row.user_id,
-      friendId: row.friend_id,
-      username: row.accounts?.username ?? '不明',
-      avatarUrl: row.accounts?.avatar_url ?? undefined,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  }
-
   /**
    * 現在のユーザーを取得
    */
@@ -39,49 +20,35 @@ export class FriendService {
 
   /**
    * フレンドリスト取得（accepted のみ）
+   * SECURITY DEFINER RPC を使用して RLS の JOIN 問題を回避
    */
   static async getFriends(): Promise<Friend[]> {
     try {
-      // キャッシュチェック
       const cached = await LocalStorageService.getFriends();
       if (cached) return cached;
 
       if (!isSupabaseConfigured) return [];
 
-      const user = await this.getCurrentUser();
+      const { data, error } = await (supabase as any).rpc('get_accepted_friends');
 
-      // 自分が送った友達関係
-      const { data: sentData, error: sentError } = (await (supabase as any)
-        .from('friendships')
-        .select(
-          `
-          id, user_id, friend_id, status, created_at, updated_at,
-          accounts!friendships_friend_id_fkey (id, username, avatar_url)
-        `
-        )
-        .eq('user_id', user.id)
-        .eq('status', 'accepted')) as any;
+      if (error) throw error;
 
-      if (sentError) throw sentError;
-
-      // 自分が受けた友達関係
-      const { data: receivedData, error: receivedError } = (await (supabase as any)
-        .from('friendships')
-        .select(
-          `
-          id, user_id, friend_id, status, created_at, updated_at,
-          accounts!friendships_user_id_fkey (id, username, avatar_url)
-        `
-        )
-        .eq('friend_id', user.id)
-        .eq('status', 'accepted')) as any;
-
-      if (receivedError) throw receivedError;
-
-      const friends = [
-        ...(sentData || []).map((row: any) => this.mapFriendFromDb(row, user.id)),
-        ...(receivedData || []).map((row: any) => this.mapFriendFromDb(row, user.id)),
-      ];
+      const friends = await Promise.all(
+        (data || []).map(async (row: any) => ({
+          id: row.id,
+          userId: row.user_id,
+          friendId: row.friend_id,
+          username: row.friend_username ?? '不明',
+          avatarUrl: row.friend_avatar_url
+            ? (await StorageService.getPublicUrl(row.friend_avatar_url)) ?? undefined
+            : undefined,
+          status: row.status,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          rating4p: row.friend_rating_4p ?? 1500,
+          rating3p: row.friend_rating_3p ?? 1500,
+        }))
+      );
 
       await LocalStorageService.saveFriends(friends);
       return friends;
@@ -93,36 +60,30 @@ export class FriendService {
 
   /**
    * 保留中のフレンドリクエスト取得（自分宛て）
+   * SECURITY DEFINER RPC を使用して RLS の JOIN 問題を回避
    */
   static async getPendingRequests(): Promise<FriendRequest[]> {
     try {
       if (!isSupabaseConfigured) return [];
 
-      const user = await this.getCurrentUser();
-
-      const { data, error } = (await (supabase as any)
-        .from('friendships')
-        .select(
-          `
-          id, user_id, friend_id, status, created_at,
-          accounts!friendships_user_id_fkey (id, username, avatar_url)
-        `
-        )
-        .eq('friend_id', user.id)
-        .eq('status', 'pending')) as any;
+      const { data, error } = await (supabase as any).rpc('get_pending_friend_requests');
 
       if (error) throw error;
 
-      return (data || []).map((row: any) => ({
-        id: row.id,
-        fromUser: {
-          id: row.accounts?.id ?? row.user_id,
-          username: row.accounts?.username ?? '不明',
-          avatarUrl: row.accounts?.avatar_url ?? undefined,
-        },
-        status: 'pending' as const,
-        createdAt: row.created_at,
-      }));
+      return Promise.all(
+        (data || []).map(async (row: any) => ({
+          id: row.id,
+          fromUser: {
+            id: row.requester_id ?? row.user_id,
+            username: row.requester_username ?? '不明',
+            avatarUrl: row.requester_avatar_url
+              ? (await StorageService.getPublicUrl(row.requester_avatar_url)) ?? undefined
+              : undefined,
+          },
+          status: 'pending' as const,
+          createdAt: row.created_at,
+        }))
+      );
     } catch (error) {
       return [];
     }
@@ -150,16 +111,20 @@ export class FriendService {
 
       if (error) throw error;
 
-      return (data || []).map((row: any) => ({
-        id: row.id,
-        fromUser: {
-          id: row.accounts?.id ?? row.friend_id,
-          username: row.accounts?.username ?? '不明',
-          avatarUrl: row.accounts?.avatar_url ?? undefined,
-        },
-        status: 'pending' as const,
-        createdAt: row.created_at,
-      }));
+      return Promise.all(
+        (data || []).map(async (row: any) => ({
+          id: row.id,
+          fromUser: {
+            id: row.accounts?.id ?? row.friend_id,
+            username: row.accounts?.username ?? '不明',
+            avatarUrl: row.accounts?.avatar_url
+              ? (await StorageService.getPublicUrl(row.accounts.avatar_url)) ?? undefined
+              : undefined,
+          },
+          status: 'pending' as const,
+          createdAt: row.created_at,
+        }))
+      );
     } catch (error) {
       return [];
     }
@@ -197,20 +162,18 @@ export class FriendService {
 
   /**
    * フレンドリクエスト承認
+   * SECURITY DEFINER RPC を使用して PostgREST UPDATE + RLS のサイレントブロック問題を回避
    */
   static async acceptFriendRequest(friendshipId: string): Promise<void> {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any)
-        .from('friendships')
-        .update({ status: 'accepted', updated_at: new Date().toISOString() })
-        .eq('id', friendshipId);
+      const { error } = await (supabase as any).rpc('accept_friend_request', {
+        p_friendship_id: friendshipId,
+      });
 
       if (error) throw error;
-
-      await LocalStorageService.clearFriendsCache();
-      notifyFriendsChanged();
+      // キャッシュ操作・イベント通知は呼び出し側（handleAcceptRequest）で一度だけ実行する
     } catch (error) {
       throw error;
     }
@@ -278,6 +241,7 @@ export class FriendService {
 
   /**
    * ユーザー検索（ユーザー名で検索）
+   * SECURITY DEFINER のRPC関数を使い、公開情報のみ返す
    */
   static async searchUsers(
     query: string
@@ -286,17 +250,9 @@ export class FriendService {
       const trimmed = query.trim();
       if (!isSupabaseConfigured || trimmed.length < 2) return [];
 
-      const user = await this.getCurrentUser();
-
-      // LIKE ワイルドカード文字をエスケープ（% と _ は特殊文字）
-      const escaped = trimmed.replace(/[%_\\]/g, '\\$&');
-
-      const { data, error } = (await supabase
-        .from('accounts')
-        .select('id, username, avatar_url')
-        .ilike('username', `%${escaped}%`)
-        .neq('id', user.id)
-        .limit(20)) as any;
+      const { data, error } = await (supabase as any).rpc('search_users_by_username', {
+        search_query: trimmed,
+      });
 
       if (error) throw error;
 

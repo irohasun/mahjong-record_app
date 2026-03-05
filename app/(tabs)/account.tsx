@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Shield, LogOut, Lock, Cloud, CheckCircle } from 'lucide-react-native';
+import { User, Shield, LogOut, Lock, Cloud } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { DeletionService } from '@/services/DeletionService';
@@ -10,12 +10,14 @@ import { AuthService } from '@/services/AuthService';
 // 仕様変更: プレミアム関連UIは不要のため削除
 import { supabase } from '@/lib/supabase';
 import { LocalStorageService } from '@/services/LocalStorageService';
+import { StorageService } from '@/services/StorageService';
 
 export default function AccountScreen() {
   const router = useRouter();
   const [account, setAccount] = useState<any>(null);
   // 仕様変更: プラン管理機能削除に伴い状態を削除
   const [user, setUser] = useState<any>(null);
+  const [avatarDisplayUrl, setAvatarDisplayUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const lastLoadTimeRef = React.useRef<number>(0);
   const isLoadingRef = React.useRef<boolean>(false);
@@ -80,16 +82,24 @@ export default function AccountScreen() {
     loadAccountData(true);
   }, [loadAccountData]);
 
-  // 画面がフォーカスされた時にデータを再読み込み（条件付き）
-  // 前回の読み込みから5分以上経過した場合のみ再読み込み
+  // avatar_url が変わったら署名付きURLに変換して表示
+  useEffect(() => {
+    if (account?.avatar_url) {
+      StorageService.getPublicUrl(account.avatar_url)
+        .then(url => setAvatarDisplayUrl(url))
+        .catch(() => setAvatarDisplayUrl(null));
+    } else {
+      setAvatarDisplayUrl(null);
+    }
+  }, [account?.avatar_url]);
+
+  // 画面がフォーカスされた時にデータを再読み込み（キャッシュ有効時は軽量）
   useFocusEffect(
     React.useCallback(() => {
-      const now = Date.now();
-      const timeSinceLastLoad = now - lastLoadTimeRef.current;
-      const FIVE_MINUTES = 5 * 60 * 1000; // 5分
-
-      // 初回読み込み後、かつ5分以上経過している場合のみ再読み込み
-      if (lastLoadTimeRef.current > 0 && timeSinceLastLoad > FIVE_MINUTES) {
+      // 初回ロード後のフォーカス時は常に再読み込みを試みる
+      // AccountService.getAccount() がキャッシュを管理するため、
+      // キャッシュが有効なら軽量、無効なら（プロフィール更新後など）サーバーから取得
+      if (lastLoadTimeRef.current > 0) {
         loadAccountData(false);
       }
     }, [loadAccountData])
@@ -210,45 +220,32 @@ export default function AccountScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>プロフィール設定</Text>
 
-          {/* 認証情報: ゲスト警告または正式アカウント表示 */}
-          {isAnonymousUser ? (
-            <View style={styles.anonymousWarning}>
-              <Shield size={20} color="#F59E0B" />
-              <View style={styles.anonymousWarningContent}>
-                <Text style={styles.anonymousWarningTitle}>
-                  ゲストアカウントを使用中
-                </Text>
-                <Text style={styles.anonymousWarningText}>
-                  データの永続保存のため、アカウント登録をおすすめします
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.registeredBanner}>
-              <CheckCircle size={20} color="#10B981" />
-              <View style={styles.registeredBannerContent}>
-                <Text style={styles.registeredBannerTitle}>
-                  アカウント登録済み
-                </Text>
-                <Text style={styles.registeredBannerText}>
-                  データはクラウドに安全に保存されています
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* 仕様追加: お客様情報（名前・アイコン編集、メール閲覧） */}
+          {/* プロフィールカード: アバター・名前・ゲストバッジ */}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => router.push('/(tabs)/profile-edit')}
           >
             <View style={styles.menuItemLeft}>
-              <View style={styles.menuIcon}>
-                <User size={20} color="#FF6B35" />
+              <View style={styles.profileAvatar}>
+                {avatarDisplayUrl ? (
+                  <Image
+                    source={{ uri: avatarDisplayUrl }}
+                    style={styles.profileAvatarImage}
+                  />
+                ) : (
+                  <User size={24} color="#FF6B35" />
+                )}
               </View>
               <View style={styles.menuItemContent}>
-                <Text style={styles.menuItemTitle}>お客様情報</Text>
-                <Text style={styles.menuItemSubtitle}>名前・アイコン・メール</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.menuItemTitle}>
+                    {account.username || '名前未設定'}
+                  </Text>
+                  {isAnonymousUser && (
+                    <Text style={styles.guestBadge}>ゲスト</Text>
+                  )}
+                </View>
+                <Text style={styles.menuItemSubtitle}>プロフィールを編集</Text>
               </View>
             </View>
             <Text style={styles.menuItemArrow}>›</Text>
@@ -279,7 +276,7 @@ export default function AccountScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>セキュリティ・プライバシー</Text>
+          <Text style={styles.sectionTitleSmall}>セキュリティ・プライバシー</Text>
 
           <TouchableOpacity
             style={styles.menuItem}
@@ -398,55 +395,41 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     marginBottom: 16,
   },
+  sectionTitleSmall: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+    marginTop: 4,
+    letterSpacing: 0.5,
+  },
   dangerText: {
     color: '#EF4444',
   },
-  anonymousWarning: {
-    flexDirection: 'row',
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
+    marginRight: 12,
+    overflow: 'hidden',
   },
-  anonymousWarningContent: {
-    flex: 1,
+  profileAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
-  anonymousWarningTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  guestBadge: {
+    fontSize: 11,
     color: '#92400E',
-    marginBottom: 4,
-  },
-  anonymousWarningText: {
-    fontSize: 14,
-    color: '#B45309',
-    lineHeight: 20,
-  },
-  // 登録済みアカウント用のバナー
-  registeredBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D1FAE5',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  registeredBannerContent: {
-    flex: 1,
-  },
-  registeredBannerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#065F46',
-    marginBottom: 4,
-  },
-  registeredBannerText: {
-    fontSize: 14,
-    color: '#047857',
-    lineHeight: 20,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   signOutButton: {
     flexDirection: 'row',

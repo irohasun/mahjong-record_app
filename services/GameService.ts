@@ -5,6 +5,7 @@ import { LocalStorageService } from './LocalStorageService';
 import { SyncService } from './SyncService';
 import { MockDataService } from './MockDataService';
 import { GameRecord, Player, PlayerStats, RoundRecord as GameRoundRecord } from '@/types/GameRecord';
+import { RatingService } from './RatingService';
 
 // データベースの型定義
 type Game = Database['public']['Tables']['games']['Row'];
@@ -104,7 +105,7 @@ export class GameService {
   /**
    * プレイヤーデータをデータベース形式に変換
    */
-  private static mapPlayerToDb(player: Player, gameId: string): PlayerRecordInsert {
+  private static mapPlayerToDb(player: Player, gameId: string, accountId?: string | null): PlayerRecordInsert {
     return {
       game_id: gameId,
       player_name: player.name,
@@ -112,6 +113,7 @@ export class GameService {
       final_score: player.finalScore,
       rank: player.rank,
       starting_position: player.startingPosition,
+      account_id: accountId ?? null,
     };
   }
 
@@ -381,9 +383,19 @@ export class GameService {
 
       const gameId = insertedGame.id;
 
+      // プレイヤーの account_id を解決
+      const playerAccountIds = await Promise.all(
+        gameData.players.map(async (player) => {
+          if (player.isMainAccount) {
+            return user.id;
+          }
+          return RatingService.resolveAccountIdByPlayerName(player.name, user.id);
+        })
+      );
+
       // プレイヤー記録を挿入
-      const playerInserts = gameData.players.map(player => 
-        this.mapPlayerToDb(player, gameId)
+      const playerInserts = gameData.players.map((player, idx) =>
+        this.mapPlayerToDb(player, gameId, playerAccountIds[idx])
       );
 
       const { error: playersError } = await supabase
@@ -420,6 +432,9 @@ export class GameService {
 
       // バックグラウンドで同期
       SyncService.backgroundSync().catch(() => {});
+
+      // バックグラウンドでレーティング更新
+      RatingService.updateRatingsForGame(gameId, playerCount as 3 | 4).catch(() => {});
 
       return savedGame;
     } catch (error) {
@@ -601,6 +616,7 @@ export class GameService {
       await this.updateGameRelatedRecords(gameId, gameData);
       await LocalStorageService.saveGame(gameData);
       await LocalStorageService.clearCacheTimestamp();
+      await LocalStorageService.clearStatsCacheAll();
     } catch (error) {
       throw error;
     }
@@ -641,7 +657,8 @@ export class GameService {
           final_honba,
           photo_path,
           chip_counts,
-          player_records (*)
+          player_records (*),
+          round_records (round, points)
         `)
         .eq('account_id', accountId)
         .order('date', { ascending: false })
@@ -656,10 +673,7 @@ export class GameService {
       const hasMore = fetched.length > pageSize;
       const sliced = hasMore ? fetched.slice(0, pageSize) : fetched;
 
-      const mapped = sliced.map((game: any) => this.mapGameFromDb({
-        ...game,
-        round_records: [],
-      }));
+      const mapped = sliced.map((game: any) => this.mapGameFromDb(game));
 
       return { games: mapped, hasMore };
     } catch (error) {

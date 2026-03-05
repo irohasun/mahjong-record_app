@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Check, X, Camera, ArrowLeft } from 'lucide-react-native';
+import { Book, Check, X, Camera, ArrowLeft } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,6 +19,7 @@ import {
   validateTotalScore,
   calculateFourthPlayerScore,
   detectAutoCompleteTarget,
+  reverseCalculateRawScores,
 } from '@/utils/ScoreCalculator';
 
 /**
@@ -125,10 +126,11 @@ export default function EditGameScreen() {
       setPlayers(playerNames);
 
       // ルール設定を復元（編集可能にする）
+      let restoredConfig: RuleConfig = ruleConfig;
       if (editGameData.rules) {
         const rules = editGameData.rules;
         const pc = rules.playerCount ?? 4;
-        const newConfig: RuleConfig = {
+        restoredConfig = {
           startingPoints: rules.startingPoints ?? DEFAULT_RULE_CONFIG.startingPoints,
           returnPoints: (rules.startingPoints ?? DEFAULT_RULE_CONFIG.startingPoints) + (rules.oka ?? 0) / pc,
           uma: parseUmaString(rules.uma) ?? (pc === 3 ? DEFAULT_SANMA_CONFIG.uma : DEFAULT_RULE_CONFIG.uma),
@@ -138,8 +140,8 @@ export default function EditGameScreen() {
           chipValue: rules.chipValue ?? DEFAULT_RULE_CONFIG.chipValue,
           playerCount: pc as 3 | 4,
         };
-        setRuleConfig(newConfig);
-        setTempRuleConfig(newConfig);
+        setRuleConfig(restoredConfig);
+        setTempRuleConfig(restoredConfig);
 
         // プレイヤー数に応じてデータを調整
         const adjustedPlayers = playerNames.length === pc
@@ -148,26 +150,55 @@ export default function EditGameScreen() {
             ? playerNames.slice(0, 3)
             : [...playerNames, ...Array(4 - playerNames.length).fill('').map((_, i) => `P${playerNames.length + i + 1}`)];
         setPlayers(adjustedPlayers);
-
-        // rawScores、tobiWinners、chipsの配列長を調整
-        setRawScores(prev => prev.map(row => {
-          if (row.length === pc) return row;
-          if (row.length < pc) return [...row, ...Array(pc - row.length).fill('')];
-          return row.slice(0, pc);
-        }));
-        setTobiWinners(prev => prev.map(winners => winners.filter(idx => idx < pc)));
         setChips(Array(pc).fill(''));
       }
 
       // 写真を復元
       if (editGameData.photoPath) {
         setUploadedPhotoPath(editGameData.photoPath);
-        // Supabase Storage から写真URLを取得
         const url = await StorageService.getPublicUrl(editGameData.photoPath);
         if (url) setGamePhoto(url);
       }
 
-      // 既存データは収支形式なので、素点への逆変換は行わない（新規入力を促す）
+      // rawScores（素点）を復元
+      const restoredPc = restoredConfig.playerCount;
+      if (editGameData.rounds && editGameData.rounds.length > 0) {
+        const newRawScores = Array(8).fill(null).map(() => Array(restoredPc).fill(''));
+        const newTobiWinners = Array(8).fill(null).map(() => [] as number[]);
+
+        editGameData.rounds.forEach((round: any, hIndex: number) => {
+          if (hIndex >= 8) return;
+
+          let memoData: Record<string, unknown> = {};
+          if (round.memo) {
+            try { memoData = JSON.parse(round.memo); } catch { /* ignore */ }
+          }
+
+          // tobiWinnersを先に復元（逆算時に必要）
+          const tobiWinnersForRound = Array.isArray(memoData.tobiWinners)
+            ? (memoData.tobiWinners as number[])
+            : undefined;
+          if (tobiWinnersForRound) {
+            newTobiWinners[hIndex] = tobiWinnersForRound;
+          }
+
+          if (Array.isArray(memoData.rawScores)) {
+            newRawScores[hIndex] = (memoData.rawScores as number[]).map((s: number) => String(s));
+          } else if (round.points && round.points.length === restoredPc) {
+            const reversed = reverseCalculateRawScores(round.points, restoredConfig, tobiWinnersForRound);
+            newRawScores[hIndex] = reversed.map((r: number) => String(r));
+          }
+        });
+
+        setRawScores(newRawScores);
+        setTobiWinners(newTobiWinners);
+        setHanchanCount(Math.max(editGameData.rounds.length, 1));
+      }
+
+      // チップ枚数を復元
+      if (editGameData.chipCounts && editGameData.chipCounts.length === restoredPc) {
+        setChips(editGameData.chipCounts.map((c: number) => c === 0 ? '' : String(c)));
+      }
     } catch (error) {
       console.error('データ読み込みエラー:', error);
       Alert.alert('エラー', '対局データの読み込みに失敗しました', [{
@@ -561,16 +592,20 @@ export default function EditGameScreen() {
         // 有効なスコアがある半荘のみ保存
         const hasValidScore = scores.some(s => s !== null);
         if (hasValidScore) {
+          const rawScoreValues = rawScores[h].map(s => autoCompleteRawScore(s) ?? 0);
+          const memoData: Record<string, unknown> = {};
+          if (tobiWinners[h].length > 0) {
+            memoData.tobiWinners = tobiWinners[h];
+          }
+          memoData.rawScores = rawScoreValues;
+
           rounds.push({
             round: `半荘${h + 1}`,
             honba: 0,
             riichiSticks: 0,
             handType: 'draw' as const,
             points: scores.map(s => s ?? 0),
-            // 飛ばしたプレイヤー情報を保存
-            memo: tobiWinners[h].length > 0
-              ? JSON.stringify({ tobiWinners: tobiWinners[h] })
-              : undefined,
+            memo: Object.keys(memoData).length > 0 ? JSON.stringify(memoData) : undefined,
           });
         }
       }
@@ -680,15 +715,6 @@ export default function EditGameScreen() {
         chipCounts,
       };
 
-      // 最終バリデーション: gameRecordの整合性チェック
-      console.log('保存前の最終チェック:', {
-        playerCount,
-        playersLength: gameRecord.players.length,
-        roundsCount: gameRecord.rounds.length,
-        chipCountsLength: chipCounts?.length,
-        firstRoundPointsLength: gameRecord.rounds[0]?.points?.length
-      });
-
       // 編集モード: updateGame を呼び出す
       await GameService.updateGame(user.id, gameId, { ...gameRecord, id: gameId });
 
@@ -774,7 +800,7 @@ export default function EditGameScreen() {
           setTempRuleConfig(ruleConfig);
           setShowRuleSettings(true);
         }}>
-          <Settings size={20} color="#FF6B35" />
+          <Book size={20} color="#FF6B35" />
         </TouchableOpacity>
       </View>
 
@@ -1041,7 +1067,7 @@ export default function EditGameScreen() {
                       const fourthChip = calculateFourthPlayerScore(chipTarget.filledScores, 0);
                       return (
                         <TouchableOpacity
-                          style={styles.autoCompleteButtonContainer}
+                          style={fourthChip !== null && fourthChip >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                           onPress={() => {
                             if (fourthChip !== null) {
                               setChips(prev => {
@@ -1053,7 +1079,7 @@ export default function EditGameScreen() {
                             }
                           }}
                         >
-                          <Text style={styles.autoCompleteButtonText}>
+                          <Text style={fourthChip !== null && fourthChip >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                             自動入力 {fourthChip !== null ? (fourthChip >= 0 ? `+${fourthChip}` : fourthChip) : ''}枚
                           </Text>
                         </TouchableOpacity>
@@ -1073,7 +1099,7 @@ export default function EditGameScreen() {
                         if (isNaN(currentChip) || currentChip !== correctChip) {
                           return (
                             <TouchableOpacity
-                              style={styles.autoCompleteButtonContainer}
+                              style={correctChip >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                               onPress={() => {
                                 setChips(prev => {
                                   const newChips = [...prev];
@@ -1083,7 +1109,7 @@ export default function EditGameScreen() {
                                 handleKeyboardInput('ok');
                               }}
                             >
-                              <Text style={styles.autoCompleteButtonText}>
+                              <Text style={correctChip >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                                 自動入力 {correctChip >= 0 ? `+${correctChip}` : correctChip}枚
                               </Text>
                             </TouchableOpacity>
@@ -1111,13 +1137,13 @@ export default function EditGameScreen() {
 
                     return (
                       <TouchableOpacity
-                        style={styles.autoCompleteButtonContainer}
+                        style={fourthScore !== null && fourthScore >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                         onPress={() => {
                           handleAutoComplete(activeCell.hanchan, activeCell.player);
                           handleKeyboardInput('ok');
                         }}
                       >
-                        <Text style={styles.autoCompleteButtonText}>
+                        <Text style={fourthScore !== null && fourthScore >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                           自動入力 {fourthScore !== null ? (fourthScore >= 0 ? `+${fourthScore}` : fourthScore) : ''}
                         </Text>
                       </TouchableOpacity>
@@ -1143,7 +1169,7 @@ export default function EditGameScreen() {
 
                       return (
                         <TouchableOpacity
-                          style={styles.autoCompleteButtonContainer}
+                          style={correctScore !== null && correctScore >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                           onPress={() => {
                             if (correctScore !== null) {
                               const newRawScores = [...rawScores];
@@ -1153,7 +1179,7 @@ export default function EditGameScreen() {
                             }
                           }}
                         >
-                          <Text style={styles.autoCompleteButtonText}>
+                          <Text style={correctScore !== null && correctScore >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                             自動入力 {correctScore !== null ? (correctScore >= 0 ? `+${correctScore}` : correctScore) : ''}
                           </Text>
                         </TouchableOpacity>
@@ -1740,8 +1766,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
   },
-  autoCompleteButtonContainer: {
-    backgroundColor: '#FFF',
+  autoCompleteButtonContainerPositive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
     borderWidth: 2,
     borderColor: '#3B82F6',
     borderRadius: 8,
@@ -1750,9 +1776,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  autoCompleteButtonText: {
+  autoCompleteButtonContainerNegative: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoCompleteButtonTextPositive: {
     fontSize: 14,
     color: '#3B82F6',
+    fontWeight: '600',
+  },
+  autoCompleteButtonTextNegative: {
+    fontSize: 14,
+    color: '#EF4444',
     fontWeight: '600',
   },
   clearButton: {

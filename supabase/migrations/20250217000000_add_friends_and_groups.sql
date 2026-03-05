@@ -50,17 +50,6 @@ CREATE INDEX idx_groups_is_public ON groups(is_public);
 
 ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Group members can view their groups"
-  ON groups FOR SELECT
-  USING (
-    is_public = true
-    OR EXISTS (
-      SELECT 1 FROM group_members
-      WHERE group_members.group_id = groups.id
-      AND group_members.member_id = (SELECT auth.uid())
-    )
-  );
-
 CREATE POLICY "Users can create groups"
   ON groups FOR INSERT
   WITH CHECK ((SELECT auth.uid()) = owner_id);
@@ -88,6 +77,18 @@ CREATE INDEX idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX idx_group_members_member_id ON group_members(member_id);
 
 ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
+
+-- groups の SELECT ポリシー（group_members テーブル作成後に定義）
+CREATE POLICY "Group members can view their groups"
+  ON groups FOR SELECT
+  USING (
+    is_public = true
+    OR EXISTS (
+      SELECT 1 FROM group_members
+      WHERE group_members.group_id = groups.id
+      AND group_members.member_id = (SELECT auth.uid())
+    )
+  );
 
 CREATE POLICY "Group members can view members"
   ON group_members FOR SELECT

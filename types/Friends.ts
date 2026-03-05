@@ -7,6 +7,8 @@ export interface Friend {
   status: 'pending' | 'accepted' | 'blocked';
   createdAt: string;
   updatedAt: string;
+  rating4p?: number;
+  rating3p?: number;
 }
 
 export interface FriendRequest {
@@ -18,18 +20,4 @@ export interface FriendRequest {
   };
   status: 'pending';
   createdAt: string;
-}
-
-export interface FriendshipResponse {
-  id: string;
-  user_id: string;
-  friend_id: string;
-  status: 'pending' | 'accepted' | 'blocked';
-  created_at: string;
-  updated_at: string;
-  accounts?: {
-    id: string;
-    username: string;
-    avatar_url: string | null;
-  };
 }

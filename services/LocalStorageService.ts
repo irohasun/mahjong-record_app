@@ -239,6 +239,24 @@ export class LocalStorageService {
     }
   }
 
+  // 統計データのキャッシュをすべてクリア（ゲーム追加・更新・削除時に呼び出す）
+  static async clearStatsCacheAll(): Promise<void> {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const statsKeys = allKeys.filter(
+        k => k.startsWith(STORAGE_KEYS.STATS_CACHE_PREFIX) ||
+             k.startsWith(STORAGE_KEYS.STATS_CACHE_TIMESTAMP_PREFIX)
+      );
+      if (statsKeys.length > 0) {
+        await AsyncStorage.multiRemove(statsKeys);
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('clearStatsCacheAll failed:', error);
+      }
+    }
+  }
+
   // 統計データのキャッシュ取得（期間キー付き）
   static async getStatsForPeriod(key: string): Promise<any | null> {
     try {

@@ -191,6 +191,65 @@ export function calculateAllScores(
 }
 
 /**
+ * 精算点（収支）から素点を逆算する（飛び賞なし）
+ *
+ * 逆算式:
+ *   rawScore = (finalScore - uma[rank-1] - oka) * 1000 + returnPoints
+ *
+ * @param finalScores 各プレイヤーの精算点
+ * @param config ルール設定
+ * @returns 各プレイヤーの素点（100点単位に丸め）
+ */
+function reverseWithoutTobi(finalScores: number[], config: RuleConfig): number[] {
+  const uniqueSorted = [...new Set(finalScores)].sort((a, b) => b - a);
+  const ranks = finalScores.map(s => uniqueSorted.indexOf(s) + 1);
+
+  return finalScores.map((fs, i) => {
+    const rank = ranks[i];
+    const oka = rank === 1
+      ? ((config.returnPoints - config.startingPoints) * config.playerCount) / 1000
+      : 0;
+    const umaValue = config.uma[rank - 1];
+    const rawScore = (fs - umaValue - oka) * 1000 + config.returnPoints;
+    return Math.round(rawScore / 100) * 100;
+  });
+}
+
+/**
+ * 精算点（収支）+ ルール設定から素点を逆算する
+ * 飛び賞が有効な場合は飛び賞の逆算も行う
+ *
+ * @param finalScores 各プレイヤーの精算点
+ * @param config ルール設定
+ * @param tobiWinners 飛ばしたプレイヤーのインデックス配列（オプション）
+ * @returns 各プレイヤーの素点
+ */
+export function reverseCalculateRawScores(
+  finalScores: number[],
+  config: RuleConfig,
+  tobiWinners?: number[]
+): number[] {
+  let scores = [...finalScores];
+
+  if (config.tobiBonusEnabled && tobiWinners && tobiWinners.length > 0) {
+    const tempRaw = reverseWithoutTobi(scores, config);
+    const isTobi = tempRaw.map(r => r < 0);
+    const tobiCount = isTobi.filter(t => t).length;
+
+    if (tobiCount > 0) {
+      const bonusPerWinner = (config.tobiBonus * tobiCount) / tobiWinners.length;
+      scores = scores.map((s, i) => {
+        if (isTobi[i]) return s + config.tobiBonus;
+        if (tobiWinners.includes(i)) return s - bonusPerWinner;
+        return s;
+      });
+    }
+  }
+
+  return reverseWithoutTobi(scores, config);
+}
+
+/**
  * 素点入力値の自動補完
  * 百点単位に補完する（例: 311 → 31100, 25 → 25000）
  * マイナス値にも対応

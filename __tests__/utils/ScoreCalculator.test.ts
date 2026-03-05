@@ -12,6 +12,7 @@ import {
   calculateFourthPlayerScore,
   detectAutoCompleteTarget,
   applyTobiBonus,
+  reverseCalculateRawScores,
   DEFAULT_RULE_CONFIG,
   DEFAULT_SANMA_CONFIG,
   RuleConfig,
@@ -563,5 +564,55 @@ describe('三麻: calculateFourthPlayerScore（残り1人計算）', () => {
 
   it('マイナス点になる場合も正しく計算する', () => {
     expect(calculateFourthPlayerScore([60000, 50000], 105000)).toBe(-5000);
+  });
+});
+
+describe('reverseCalculateRawScores', () => {
+  it('四麻: 精算点から素点を逆算できる（ラウンドトリップ）', () => {
+    const rawScores = [40000, 30000, 20000, 10000];
+    const { scores } = calculateAllScores(rawScores, DEFAULT_RULE_CONFIG);
+    const reversed = reverseCalculateRawScores(scores as number[], DEFAULT_RULE_CONFIG);
+    expect(reversed).toEqual(rawScores);
+  });
+
+  it('四麻: 異なる素点パターンでも逆算できる', () => {
+    const rawScores = [45000, 28000, 17000, 10000];
+    const { scores } = calculateAllScores(rawScores, DEFAULT_RULE_CONFIG);
+    const reversed = reverseCalculateRawScores(scores as number[], DEFAULT_RULE_CONFIG);
+    expect(reversed).toEqual(rawScores);
+  });
+
+  it('三麻: 精算点から素点を逆算できる', () => {
+    const rawScores = [50000, 35000, 20000];
+    const { scores } = calculateAllScores(rawScores, DEFAULT_SANMA_CONFIG);
+    const reversed = reverseCalculateRawScores(scores as number[], DEFAULT_SANMA_CONFIG);
+    expect(reversed).toEqual(rawScores);
+  });
+
+  it('飛び賞あり: tobiWinnersを渡して正しく逆算できる', () => {
+    const config: RuleConfig = { ...DEFAULT_RULE_CONFIG, tobiBonusEnabled: true, tobiBonus: 10 };
+    const rawScores = [50000, 30000, 25000, -5000];
+    const tobiWinners = [0];
+    const { scores } = calculateAllScores(rawScores, config, tobiWinners);
+    const reversed = reverseCalculateRawScores(scores as number[], config, tobiWinners);
+    expect(reversed).toEqual(rawScores);
+  });
+
+  it('マイナス素点を含むケースでも逆算できる', () => {
+    const rawScores = [55000, 30000, 20000, -5000];
+    const { scores } = calculateAllScores(rawScores, DEFAULT_RULE_CONFIG);
+    const reversed = reverseCalculateRawScores(scores as number[], DEFAULT_RULE_CONFIG);
+    expect(reversed).toEqual(rawScores);
+  });
+
+  it('カスタムウマ設定でも逆算できる', () => {
+    const config: RuleConfig = {
+      ...DEFAULT_RULE_CONFIG,
+      uma: [20, 10, -10, -20],
+    };
+    const rawScores = [40000, 30000, 20000, 10000];
+    const { scores } = calculateAllScores(rawScores, config);
+    const reversed = reverseCalculateRawScores(scores as number[], config);
+    expect(reversed).toEqual(rawScores);
   });
 });

@@ -4,6 +4,7 @@ import {
   GroupMember,
   GroupDetails,
   GroupStatistics,
+  GroupInvitation,
   MemberRanking,
   ScoreHistoryEntry,
 } from '@/types/Groups';
@@ -358,6 +359,111 @@ export class GroupService {
         if (error.code === '23505') return; // 既に紐付いている
         throw error;
       }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * シリーズ招待を送信
+   */
+  static async inviteToGroup(groupId: string, userId: string): Promise<void> {
+    try {
+      if (!isSupabaseConfigured) return;
+
+      const user = await this.getCurrentUser();
+
+      const { error } = await (supabase as any).from('group_invitations').insert({
+        group_id: groupId,
+        invited_by: user.id,
+        invited_user_id: userId,
+        status: 'pending',
+      });
+
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('既に招待済みです');
+        }
+        throw error;
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * 自分宛ての保留中シリーズ招待を取得
+   */
+  static async getPendingInvitations(): Promise<GroupInvitation[]> {
+    try {
+      if (!isSupabaseConfigured) return [];
+
+      const user = await this.getCurrentUser();
+
+      const { data, error } = (await (supabase as any)
+        .from('group_invitations')
+        .select(
+          `
+          id, group_id, invited_by, status, created_at,
+          groups (id, name),
+          accounts!group_invitations_invited_by_fkey (id, username, avatar_url)
+        `
+        )
+        .eq('invited_user_id', user.id)
+        .eq('status', 'pending')) as any;
+
+      if (error) throw error;
+
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        groupId: row.group_id,
+        groupName: row.groups?.name ?? '不明',
+        invitedBy: {
+          id: row.accounts?.id ?? row.invited_by,
+          username: row.accounts?.username ?? '不明',
+          avatarUrl: row.accounts?.avatar_url ?? undefined,
+        },
+        status: 'pending' as const,
+        createdAt: row.created_at,
+      }));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /**
+   * シリーズ招待を承認（RPC経由でgroup_membersに追加）
+   */
+  static async acceptInvitation(invitationId: string): Promise<void> {
+    try {
+      if (!isSupabaseConfigured) return;
+
+      const { error } = await (supabase as any).rpc('accept_group_invitation', {
+        invitation_id: invitationId,
+      });
+
+      if (error) throw error;
+
+      await LocalStorageService.clearGroupsCache();
+      notifyGroupsChanged();
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * シリーズ招待を拒否
+   */
+  static async rejectInvitation(invitationId: string): Promise<void> {
+    try {
+      if (!isSupabaseConfigured) return;
+
+      const { error } = await (supabase as any)
+        .from('group_invitations')
+        .delete()
+        .eq('id', invitationId);
+
+      if (error) throw error;
     } catch (error) {
       throw error;
     }

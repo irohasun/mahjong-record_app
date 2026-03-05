@@ -49,3 +49,16 @@ export interface ScoreHistoryEntry {
   gameIndex: number;
   scores: { memberId: string; username: string; score: number }[];
 }
+
+export interface GroupInvitation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  invitedBy: {
+    id: string;
+    username: string;
+    avatarUrl?: string;
+  };
+  status: 'pending';
+  createdAt: string;
+}

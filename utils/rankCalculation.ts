@@ -13,11 +13,12 @@ export interface RankCounts {
 export function calculateRankCounts(game: GameRecord): RankCounts {
   const rankCounts: RankCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
   const mainIndex = game.players.findIndex((p) => p.isMainAccount);
+  const playerCount = game.players.length || 4;
 
   if (mainIndex !== -1 && game.rounds && game.rounds.length > 0) {
     for (const r of game.rounds) {
       const rawPoints = (r.points as any[]) || [];
-      if (rawPoints.length < 4) continue;
+      if (rawPoints.length < playerCount) continue;
 
       const hasBlank = rawPoints.some(
         (v) => v === null || v === undefined || v === ''

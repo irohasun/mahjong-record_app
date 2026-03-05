@@ -10,29 +10,27 @@ const AUTH_STATE_KEY = 'authState';
 let anonymousAuthDisabled = false;
 
 // Initialize the flag from storage
-const initializeAuthState = () => {
+const initializeAuthState = async (): Promise<void> => {
   try {
-    const stored = localStorage.getItem(ANONYMOUS_AUTH_DISABLED_KEY);
+    const stored = await AsyncStorage.getItem(ANONYMOUS_AUTH_DISABLED_KEY);
     anonymousAuthDisabled = stored === 'true';
-  } catch (error) {
-    // Ignore localStorage errors, default to false
+  } catch {
     anonymousAuthDisabled = false;
   }
 };
 
 // Save the flag to storage
-const saveAnonymousAuthDisabled = (disabled: boolean) => {
+const saveAnonymousAuthDisabled = async (disabled: boolean): Promise<void> => {
   try {
-    localStorage.setItem(ANONYMOUS_AUTH_DISABLED_KEY, disabled.toString());
+    await AsyncStorage.setItem(ANONYMOUS_AUTH_DISABLED_KEY, disabled.toString());
     anonymousAuthDisabled = disabled;
-  } catch (error) {
-    // Ignore localStorage errors
+  } catch {
     anonymousAuthDisabled = disabled;
   }
 };
 
-// Initialize on module load
-initializeAuthState();
+// Initialize on module load (fire-and-forget; flag defaults to false until resolved)
+initializeAuthState().catch(() => {});
 
 export class AuthService {
   /**
@@ -198,7 +196,7 @@ export class AuthService {
         if (error.message.includes('Anonymous sign-ins are disabled') || 
             error.message.includes('anonymous_provider_disabled')) {
           // Set flag to prevent future attempts and persist it
-          saveAnonymousAuthDisabled(true);
+          await saveAnonymousAuthDisabled(true);
           // 匿名認証が無効な場合はログを出さずにダミーユーザーを返す
         } else {
           // その他のエラーの場合のみログを出力
@@ -241,24 +239,21 @@ export class AuthService {
       // ローカル認証状態を確認
       return await this.getLocalAuthState();
     }
-    
+
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      // getSession()はAsyncStorageから読み込み、必要なら自動リフレッシュをトリガーする
+      const { data: { session }, error } = await supabase.auth.getSession();
 
       if (error) {
-        // セッションエラーの場合はローカル状態もクリア
-        if (error.message === 'Auth session missing!') {
-          await this.clearAuthState();
-        }
-        throw error;
-      }
-
-      return user;
-    } catch (error) {
-      // Don't log "Auth session missing!" as it's expected when not authenticated
-      if (error instanceof Error && error.message === 'Auth session missing!') {
         return null;
       }
+
+      if (!session) {
+        return null;
+      }
+
+      return session.user;
+    } catch (error) {
       console.error('Failed to get current user:', error);
       return null;
     }
@@ -345,8 +340,6 @@ export class AuthService {
     }
 
     try {
-      console.log('🔄 Upgrading anonymous user to permanent account');
-
       // 現在のユーザーを確認
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       
@@ -361,7 +354,6 @@ export class AuthService {
 
       // ダミーユーザーの場合は通常の登録を行う
       if (currentUser.id === 'dummy-user-id') {
-        console.log('⚠️ Dummy user detected, performing normal sign up');
         return await this.signUp(email, password);
       }
 
@@ -375,8 +367,6 @@ export class AuthService {
         const message = this.translateAuthError(error.message);
         throw new Error(message);
       }
-
-      console.log('✅ Anonymous user upgraded successfully');
 
       // 認証状態を更新
       if (data.user) {

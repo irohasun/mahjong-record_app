@@ -119,7 +119,7 @@ export class AccountService {
         // 新しいアカウントを作成
         const newAccount: PostgrestInsertArg = {
           id: user.id,
-          username: 'プレイヤー',
+          username: AccountService.generateRandomUsername(),
           created_at: new Date().toISOString(),
           is_premium: false,
           monthly_game_count: 0,
@@ -281,6 +281,39 @@ export class AccountService {
     } catch {
       return 0;
     }
+  }
+
+  static async getMyRating(): Promise<{ rating4p: number; rating3p: number }> {
+    try {
+      const { account } = await this.getAccount();
+      return {
+        rating4p: account.rating_4p ?? 1500,
+        rating3p: account.rating_3p ?? 1500,
+      };
+    } catch {
+      return { rating4p: 1500, rating3p: 1500 };
+    }
+  }
+
+  static async getAllRatings(): Promise<Array<{ id: string; username: string; avatarUrl?: string; rating4p: number; rating3p: number }>> {
+    const { data, error } = await supabase.rpc('get_all_ratings');
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      id: r.id,
+      username: r.username,
+      avatarUrl: r.avatar_url ?? undefined,
+      rating4p: r.rating_4p ?? 1500,
+      rating3p: r.rating_3p ?? 1500,
+    }));
+  }
+
+  private static generateRandomUsername(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 10; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   }
 
   static async resetAccount(): Promise<void> {

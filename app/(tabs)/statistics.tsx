@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TrendingUp, Trophy, Calendar, Target } from 'lucide-react-native';
+import { TrendingUp, Trophy, Calendar, Target, Flag } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { LineChart } from 'react-native-chart-kit';
 import { GameService } from '@/services/GameService';
 import { LocalStorageService } from '@/services/LocalStorageService';
 import { ensureAuthenticated } from '@/utils/authUtils';
+import { onGamesChanged } from '@/utils/cacheInvalidation';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SimpleChart } from '@/components/statistics/SimpleChart';
 import { StatCard } from '@/components/statistics/StatCard';
@@ -112,6 +113,14 @@ export default function StatisticsScreen() {
     }, [loadStats])
   );
 
+  // ゲームデータが変更されたら（追加・更新・削除）、staleチェックをリセットして次のfocusで強制リロード
+  useEffect(() => {
+    const unsubscribe = onGamesChanged(() => {
+      lastLoadTimeRef.current = 0;
+    });
+    return unsubscribe;
+  }, []);
+
   const totalGames = stats?.totalGames || 0;
 
   // ランク分布を動的に生成（3人麻雀/4人麻雀で切り替え）
@@ -133,6 +142,17 @@ export default function StatisticsScreen() {
 
     return distribution;
   }, [stats, selectedPlayerCount, totalGames]);
+
+  const rankChartDimensions = useMemo(() => {
+    const maxVisiblePoints = 10;
+    const yAxisWidth = 35;
+    const containerWidth = screenWidth - 40;
+    const scrollableWidth = containerWidth - yAxisWidth;
+    const pointWidth = scrollableWidth / maxVisiblePoints;
+    const dataLength = chartData?.ranks?.length ?? 0;
+    const chartWidth = Math.max(scrollableWidth, dataLength * pointWidth);
+    return { scrollableWidth, chartWidth };
+  }, [chartData?.ranks?.length]);
 
   if (!stats) {
     return (
@@ -228,13 +248,13 @@ export default function StatisticsScreen() {
                 <StatCard
                   title="平均順位"
                   value={stats.averageRank?.toFixed(2) || '-'}
-                  icon={Trophy}
+                  icon={Flag}
                   color="#3B82F6"
                 />
                 <StatCard
                   title="1位率"
                   value={stats.firstPlaceRate ? `${(stats.firstPlaceRate * 100).toFixed(1)}%` : '-'}
-                  icon={TrendingUp}
+                  icon={Trophy}
                   color="#10B981"
                 />
                 <StatCard
@@ -258,71 +278,77 @@ export default function StatisticsScreen() {
                 <View style={styles.chartSection}>
                   <Text style={styles.sectionTitle}>順位推移</Text>
                   <View style={styles.chartContainer}>
-                    <LineChart
-                      data={{
-                        labels: chartData.ranks.map((_: any, index: number) => `${index + 1}`),
-                        datasets: [
-                          {
-                            data: chartData.ranks.map((rank: number) => 5 - rank),
+                    <View style={styles.rankChartRow}>
+                      {/* 固定Y軸ラベル */}
+                      <View style={styles.fixedYAxis}>
+                        {[1, 2, 3, 4].map((rank) => (
+                          <Text key={rank} style={styles.fixedYAxisLabel}>{rank}位</Text>
+                        ))}
+                      </View>
+                      {/* 横スクロール可能なチャート */}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                        contentOffset={{ x: Math.max(0, rankChartDimensions.chartWidth - rankChartDimensions.scrollableWidth), y: 0 }}
+                        style={styles.rankChartScroll}
+                      >
+                        <LineChart
+                          data={{
+                            labels: chartData.ranks.map((_: any, index: number) => `${index + 1}`),
+                            datasets: [
+                              {
+                                data: chartData.ranks.map((rank: number) => 5 - rank),
+                                color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
+                                strokeWidth: 3,
+                                withDots: true,
+                              },
+                              {
+                                data: [1, 4],
+                                color: () => 'rgba(0,0,0,0)',
+                                strokeWidth: 0,
+                                withDots: false,
+                              },
+                            ],
+                          }}
+                          width={rankChartDimensions.chartWidth}
+                          height={220}
+                          chartConfig={{
+                            backgroundColor: '#FFFFFF',
+                            backgroundGradientFrom: '#FFFFFF',
+                            backgroundGradientTo: '#FFFFFF',
+                            decimalPlaces: 0,
                             color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
-                            strokeWidth: 3,
-                            withDots: true,
-                          },
-                          {
-                            data: [1, 4],
-                            color: () => 'rgba(0,0,0,0)',
-                            strokeWidth: 0,
-                            withDots: false,
-                          },
-                        ],
-                      }}
-                      width={screenWidth - 40}
-                      height={220}
-                      chartConfig={{
-                        backgroundColor: '#FFFFFF',
-                        backgroundGradientFrom: '#FFFFFF',
-                        backgroundGradientTo: '#FFFFFF',
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(108, 108, 112, ${opacity})`,
-                        style: {
-                          borderRadius: 16,
-                        },
-                        propsForDots: {
-                          r: '4',
-                          strokeWidth: '0',
-                          stroke: 'transparent',
-                        },
-                        propsForBackgroundLines: {
-                          strokeDasharray: '',
-                          stroke: '#F2F2F7',
-                          strokeWidth: 1,
-                        },
-                      }}
-                      bezier
-                      style={styles.chart}
-                      withDots={true}
-                      withShadow={false}
-                      withInnerLines={true}
-                      withOuterLines={false}
-                      withVerticalLines={false}
-                      withHorizontalLines={true}
-                      fromZero={false}
-                      segments={3}
-                      yAxisSuffix="位"
-                      yAxisInterval={1}
-                      yLabelsOffset={10}
-                      withVerticalLabels={true}
-                      formatYLabel={(value) => {
-                        const convertedValue = parseInt(value);
-                        const originalRank = 5 - convertedValue;
-                        if (originalRank === 1) return '1';
-                        if (originalRank === 2) return '2';
-                        if (originalRank === 3) return '3';
-                        if (originalRank === 4) return '4';
-                        return `${originalRank}`;
-                      }}
-                    />
+                            labelColor: (opacity = 1) => `rgba(108, 108, 112, ${opacity})`,
+                            style: {
+                              borderRadius: 16,
+                            },
+                            propsForDots: {
+                              r: '4',
+                              strokeWidth: '0',
+                              stroke: 'transparent',
+                            },
+                            propsForBackgroundLines: {
+                              strokeDasharray: '',
+                              stroke: '#F2F2F7',
+                              strokeWidth: 1,
+                            },
+                          }}
+                          bezier
+                          style={styles.chart}
+                          withDots={true}
+                          withShadow={false}
+                          withInnerLines={true}
+                          withOuterLines={false}
+                          withVerticalLines={false}
+                          withHorizontalLines={true}
+                          withHorizontalLabels={false}
+                          fromZero={false}
+                          segments={3}
+                          withVerticalLabels={true}
+                        />
+                      </ScrollView>
+                    </View>
                     <Text style={styles.chartSubtext}>
                       {chartData?.ranks?.length ?? 0}回の対局
                     </Text>
@@ -511,6 +537,25 @@ const styles = StyleSheet.create({
   },
   chart: {
     borderRadius: 16,
+  },
+  rankChartRow: {
+    flexDirection: 'row',
+  },
+  fixedYAxis: {
+    width: 35,
+    height: 220,
+    justifyContent: 'space-between',
+    paddingTop: 22,
+    paddingBottom: 34,
+    alignItems: 'flex-end',
+    paddingRight: 4,
+  },
+  fixedYAxisLabel: {
+    fontSize: 10,
+    color: '#6D6D70',
+  },
+  rankChartScroll: {
+    flex: 1,
   },
   chartSubtext: {
     fontSize: 14,

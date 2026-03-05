@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Check, X, Camera } from 'lucide-react-native';
+import { Book, Check, X, Camera } from 'lucide-react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -35,7 +35,7 @@ export default function AddGameScreen() {
   // 基本状態
   const [gameDate, setGameDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [players, setPlayers] = useState(['自分', 'P2', 'P3', 'P4']);
+  const [players, setPlayers] = useState(['', 'P2', 'P3', 'P4']);
   const [loading, setLoading] = useState(false);
 
   // 写真関連
@@ -127,15 +127,24 @@ export default function AddGameScreen() {
 
         // playersの長さも調整
         const adjustedPlayers = !draft.players
-          ? (pc === 3 ? ['自分', 'P2', 'P3'] : ['自分', 'P2', 'P3', 'P4'])
+          ? (pc === 3 ? ['', 'P2', 'P3'] : ['', 'P2', 'P3', 'P4'])
           : draft.players.length === pc
             ? draft.players
             : draft.players.length < pc
               ? [...draft.players, ...Array(pc - draft.players.length).fill('').map((_, i) => `P${draft.players.length + i + 1}`)]
               : draft.players.slice(0, pc);
 
+        // P1は常にアカウント名と同期する
+        let finalPlayers = adjustedPlayers;
+        try {
+          const { account } = await AccountService.getAccount();
+          if (account.username) {
+            finalPlayers = [account.username, ...adjustedPlayers.slice(1)];
+          }
+        } catch { }
+
         setGameDate(new Date(draft.gameDate));
-        setPlayers(adjustedPlayers);
+        setPlayers(finalPlayers);
         setRuleConfig({ ...draft.ruleConfig, playerCount: pc });
         setHanchanCount(draft.hanchanCount);
         setRawScores(adjustedRawScores);
@@ -147,8 +156,8 @@ export default function AddGameScreen() {
         try {
           const { account } = await AccountService.getAccount();
           const defaultNames = playerCount === 3
-            ? [account.username || '自分', 'P2', 'P3']
-            : [account.username || '自分', 'P2', 'P3', 'P4'];
+            ? [account.username || '', 'P2', 'P3']
+            : [account.username || '', 'P2', 'P3', 'P4'];
           setPlayers(defaultNames);
         } catch { }
       }
@@ -163,7 +172,7 @@ export default function AddGameScreen() {
     // デフォルトは4人麻雀（config未指定時）
     const resetConfig = config ?? DEFAULT_RULE_CONFIG;
     const pc = resetConfig.playerCount;
-    const defaultNames = pc === 3 ? ['自分', 'P2', 'P3'] : ['自分', 'P2', 'P3', 'P4'];
+    const defaultNames = pc === 3 ? ['', 'P2', 'P3'] : ['', 'P2', 'P3', 'P4'];
     setGameDate(new Date());
     setHanchanCount(5);
     setRawScores(Array(8).fill(null).map(() => Array(pc).fill('')));
@@ -594,16 +603,20 @@ export default function AddGameScreen() {
         // 有効なスコアがある半荘のみ保存
         const hasValidScore = scores.some(s => s !== null);
         if (hasValidScore) {
+          const rawScoreValues = rawScores[h].map(s => autoCompleteRawScore(s) ?? 0);
+          const memoData: Record<string, unknown> = {};
+          if (tobiWinners[h].length > 0) {
+            memoData.tobiWinners = tobiWinners[h];
+          }
+          memoData.rawScores = rawScoreValues;
+
           rounds.push({
             round: `半荘${h + 1}`,
             honba: 0,
             riichiSticks: 0,
             handType: 'draw' as const,
             points: scores.map(s => s ?? 0),
-            // 飛ばしたプレイヤー情報を保存
-            memo: tobiWinners[h].length > 0
-              ? JSON.stringify({ tobiWinners: tobiWinners[h] })
-              : undefined,
+            memo: Object.keys(memoData).length > 0 ? JSON.stringify(memoData) : undefined,
           });
         }
       }
@@ -793,7 +806,7 @@ export default function AddGameScreen() {
           setTempRuleConfig(ruleConfig);
           setShowRuleSettings(true);
         }}>
-          <Settings size={20} color="#FF6B35" />
+          <Book size={20} color="#FF6B35" />
         </TouchableOpacity>
       </View>
 
@@ -1060,7 +1073,7 @@ export default function AddGameScreen() {
                       const fourthChip = calculateFourthPlayerScore(chipTarget.filledScores, 0);
                       return (
                         <TouchableOpacity
-                          style={styles.autoCompleteButtonContainer}
+                          style={fourthChip !== null && fourthChip >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                           onPress={() => {
                             if (fourthChip !== null) {
                               setChips(prev => {
@@ -1072,7 +1085,7 @@ export default function AddGameScreen() {
                             }
                           }}
                         >
-                          <Text style={styles.autoCompleteButtonText}>
+                          <Text style={fourthChip !== null && fourthChip >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                             自動入力 {fourthChip !== null ? (fourthChip >= 0 ? `+${fourthChip}` : fourthChip) : ''}枚
                           </Text>
                         </TouchableOpacity>
@@ -1092,7 +1105,7 @@ export default function AddGameScreen() {
                         if (isNaN(currentChip) || currentChip !== correctChip) {
                           return (
                             <TouchableOpacity
-                              style={styles.autoCompleteButtonContainer}
+                              style={correctChip >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                               onPress={() => {
                                 setChips(prev => {
                                   const newChips = [...prev];
@@ -1102,7 +1115,7 @@ export default function AddGameScreen() {
                                 handleKeyboardInput('ok');
                               }}
                             >
-                              <Text style={styles.autoCompleteButtonText}>
+                              <Text style={correctChip >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                                 自動入力 {correctChip >= 0 ? `+${correctChip}` : correctChip}枚
                               </Text>
                             </TouchableOpacity>
@@ -1130,13 +1143,13 @@ export default function AddGameScreen() {
 
                     return (
                       <TouchableOpacity
-                        style={styles.autoCompleteButtonContainer}
+                        style={fourthScore !== null && fourthScore >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                         onPress={() => {
                           handleAutoComplete(activeCell.hanchan, activeCell.player);
                           handleKeyboardInput('ok');
                         }}
                       >
-                        <Text style={styles.autoCompleteButtonText}>
+                        <Text style={fourthScore !== null && fourthScore >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                           自動入力 {fourthScore !== null ? (fourthScore >= 0 ? `+${fourthScore}` : fourthScore) : ''}
                         </Text>
                       </TouchableOpacity>
@@ -1162,7 +1175,7 @@ export default function AddGameScreen() {
 
                       return (
                         <TouchableOpacity
-                          style={styles.autoCompleteButtonContainer}
+                          style={correctScore !== null && correctScore >= 0 ? styles.autoCompleteButtonContainerPositive : styles.autoCompleteButtonContainerNegative}
                           onPress={() => {
                             if (correctScore !== null) {
                               const newRawScores = [...rawScores];
@@ -1172,7 +1185,7 @@ export default function AddGameScreen() {
                             }
                           }}
                         >
-                          <Text style={styles.autoCompleteButtonText}>
+                          <Text style={correctScore !== null && correctScore >= 0 ? styles.autoCompleteButtonTextPositive : styles.autoCompleteButtonTextNegative}>
                             自動入力 {correctScore !== null ? (correctScore >= 0 ? `+${correctScore}` : correctScore) : ''}
                           </Text>
                         </TouchableOpacity>
@@ -1746,8 +1759,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
   },
-  autoCompleteButtonContainer: {
-    backgroundColor: '#FFF',
+  autoCompleteButtonContainerPositive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
     borderWidth: 2,
     borderColor: '#3B82F6',
     borderRadius: 8,
@@ -1756,9 +1769,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  autoCompleteButtonText: {
+  autoCompleteButtonContainerNegative: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoCompleteButtonTextPositive: {
     fontSize: 14,
     color: '#3B82F6',
+    fontWeight: '600',
+  },
+  autoCompleteButtonTextNegative: {
+    fontSize: 14,
+    color: '#EF4444',
     fontWeight: '600',
   },
   clearButton: {

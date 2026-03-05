@@ -1,5 +1,14 @@
+# Claude Code
+.claude/
+
+# MCP config (contains secrets)
+.mcp.json
+
 # dependencies
 node_modules/
+
+# test coverage
+coverage/
 
 # expo
 .expo/

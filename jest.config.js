@@ -7,5 +7,5 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/$1',
   },
   setupFiles: ['<rootDir>/__mocks__/setup.ts'],
-  testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/'],
+  testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '/.claude/'],
 };

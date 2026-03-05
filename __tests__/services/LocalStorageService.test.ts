@@ -175,4 +175,22 @@ describe('LocalStorageService - Stats Cache', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('clearStatsCacheAll', () => {
+    it('removes all saved stats cache entries so they return null', async () => {
+      await LocalStorageService.saveStatsForPeriod('stats-all-4p', mockStats);
+      await LocalStorageService.saveStatsForPeriod('stats-month-2025-2-4p', mockStats);
+      await LocalStorageService.saveStatsForPeriod('chart-all-4p', mockStats);
+
+      await LocalStorageService.clearStatsCacheAll();
+
+      expect(await LocalStorageService.getStatsForPeriod('stats-all-4p')).toBeNull();
+      expect(await LocalStorageService.getStatsForPeriod('stats-month-2025-2-4p')).toBeNull();
+      expect(await LocalStorageService.getStatsForPeriod('chart-all-4p')).toBeNull();
+    });
+
+    it('is a no-op when no cache exists', async () => {
+      await expect(LocalStorageService.clearStatsCacheAll()).resolves.not.toThrow();
+    });
+  });
 });
