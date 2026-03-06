@@ -143,6 +143,25 @@ export class FriendService {
         throw new Error('自分自身にフレンドリクエストを送信できません');
       }
 
+      // フレンド済みチェック（双方向）
+      const { data: existingFriendships } = await (supabase as any)
+        .from('friendships')
+        .select('id, status, user_id, friend_id')
+        .or(
+          `and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`
+        );
+
+      const alreadyFriend = existingFriendships?.some((f: any) => f.status === 'accepted');
+      if (alreadyFriend) throw new Error('既にフレンドです');
+
+      const reverseRequest = existingFriendships?.some(
+        (f: any) => f.user_id === friendId && f.status === 'pending'
+      );
+      if (reverseRequest)
+        throw new Error(
+          '相手からフレンドリクエストが届いています。受信リクエストから承認してください'
+        );
+
       const { error } = await (supabase as any).from('friendships').insert({
         user_id: user.id,
         friend_id: friendId,

@@ -279,7 +279,7 @@ export default function FriendsScreen() {
 
         {/* グループセクション */}
         <AccordionSection
-          title="参加中のシリーズ"
+          title="参加中のグループ"
           count={groups.length}
           onAdd={() => setShowCreateGroup(true)}
           defaultExpanded={true}

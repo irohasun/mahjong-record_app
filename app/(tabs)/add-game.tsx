@@ -11,6 +11,7 @@ import { AccountService } from '@/services/AccountService';
 import { LocalStorageService } from '@/services/LocalStorageService';
 import { notifyGamesChanged } from '@/utils/cacheInvalidation';
 import { StorageService } from '@/services/StorageService';
+import PlayerAvatar from '@/components/PlayerAvatar';
 import { GameDraft } from '@/types/GameRecord';
 import {
   RuleConfig,
@@ -76,13 +77,43 @@ export default function AddGameScreen() {
   // プレイヤー名編集
   const [editingPlayerIndex, setEditingPlayerIndex] = useState<number | null>(null);
 
+  // アバターURL
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+  const [playerAvatarUrls, setPlayerAvatarUrls] = useState<(string | null)[]>([null, null, null, null]);
 
-  // 画面フォーカス時のドラフト復元
+  // グループ対戦パラメータ
+  const { groupMatchPlayers, groupMatchPlayerCount } = useLocalSearchParams<{
+    groupMatchPlayers?: string;
+    groupMatchPlayerCount?: string;
+  }>();
+
+  // 画面フォーカス時のドラフト復元 or グループ対戦初期化
   useFocusEffect(
     useCallback(() => {
-      loadDraft();
-    }, [])
+      if (groupMatchPlayers) {
+        initGroupMatch(groupMatchPlayers, groupMatchPlayerCount);
+      } else {
+        setPlayerAvatarUrls([null, null, null, null]);
+        loadDraft();
+      }
+    }, [groupMatchPlayers, groupMatchPlayerCount])
   );
+
+  // グループ対戦初期化
+  const initGroupMatch = async (playersParam: string, countParam?: string) => {
+    try {
+      const parsed: { name: string; avatarUrl: string | null }[] = JSON.parse(playersParam);
+      const pc = (parseInt(countParam ?? '4') as 3 | 4) === 3 ? 3 : 4;
+      const config = pc === 3 ? DEFAULT_SANMA_CONFIG : DEFAULT_RULE_CONFIG;
+      resetForm(config);
+      setPlayers(parsed.map((p) => p.name));
+      const urls = parsed.map((p) => p.avatarUrl);
+      setPlayerAvatarUrls(urls);
+      setMyAvatarUrl(urls[0] ?? null);
+    } catch {
+      loadDraft();
+    }
+  };
 
   // ドラフト復元
   const loadDraft = async () => {
@@ -141,6 +172,10 @@ export default function AddGameScreen() {
           if (account.username) {
             finalPlayers = [account.username, ...adjustedPlayers.slice(1)];
           }
+          if (account.avatar_url) {
+            const url = await StorageService.getPublicUrl(account.avatar_url);
+            setMyAvatarUrl(url);
+          }
         } catch { }
 
         setGameDate(new Date(draft.gameDate));
@@ -159,6 +194,10 @@ export default function AddGameScreen() {
             ? [account.username || '', 'P2', 'P3']
             : [account.username || '', 'P2', 'P3', 'P4'];
           setPlayers(defaultNames);
+          if (account.avatar_url) {
+            const url = await StorageService.getPublicUrl(account.avatar_url);
+            setMyAvatarUrl(url);
+          }
         } catch { }
       }
     } catch (error) {
@@ -827,6 +866,11 @@ export default function AddGameScreen() {
                   style={styles.playerCell}
                   onPress={() => setEditingPlayerIndex(idx)}
                 >
+                  <PlayerAvatar
+                    name={name || `P${idx + 1}`}
+                    avatarUrl={playerAvatarUrls[idx] ?? (idx === 0 ? myAvatarUrl : null)}
+                    size={32}
+                  />
                   {editingPlayerIndex === idx ? (
                     <TextInput
                       style={styles.playerNameInput}
@@ -1296,7 +1340,6 @@ export default function AddGameScreen() {
                     '4人麻雀に切り替え',
                     '入力データがリセットされます。よろしいですか？',
                     [
-                      { text: 'キャンセル', style: 'cancel' },
                       {
                         text: '切り替え',
                         onPress: () => {
@@ -1304,6 +1347,7 @@ export default function AddGameScreen() {
                           setShowRuleSettings(false);
                         },
                       },
+                      { text: 'キャンセル', style: 'cancel' },
                     ]
                   );
                 }}
@@ -1324,7 +1368,6 @@ export default function AddGameScreen() {
                     '3人麻雀に切り替え',
                     '入力データがリセットされます。よろしいですか？',
                     [
-                      { text: 'キャンセル', style: 'cancel' },
                       {
                         text: '切り替え',
                         onPress: () => {
@@ -1332,6 +1375,7 @@ export default function AddGameScreen() {
                           setShowRuleSettings(false);
                         },
                       },
+                      { text: 'キャンセル', style: 'cancel' },
                     ]
                   );
                 }}
@@ -1564,10 +1608,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRightWidth: 1,
     borderRightColor: '#E5E7EB',
-    minHeight: 48,
+    minHeight: 64,
   },
   playerName: {
     fontSize: 14,

@@ -10,6 +10,7 @@ import {
 } from '@/types/Groups';
 import { LocalStorageService } from './LocalStorageService';
 import { notifyGroupsChanged } from '@/utils/cacheInvalidation';
+import { StorageService } from './StorageService';
 
 export class GroupService {
   /**
@@ -137,8 +138,15 @@ export class GroupService {
 
       if (membersError) throw membersError;
 
-      const members = (membersData || []).map((row: any) =>
-        this.mapMemberFromDb(row)
+      const members = await Promise.all(
+        (membersData || []).map(async (row: any) => {
+          const member = this.mapMemberFromDb(row);
+          if (member.avatarUrl) {
+            const url = await StorageService.getPublicUrl(member.avatarUrl);
+            return { ...member, avatarUrl: url ?? undefined };
+          }
+          return member;
+        })
       );
 
       // 対局数
@@ -334,7 +342,16 @@ export class GroupService {
 
       if (error) throw error;
 
-      return (data || []).map((row: any) => this.mapMemberFromDb(row));
+      return await Promise.all(
+        (data || []).map(async (row: any) => {
+          const member = this.mapMemberFromDb(row);
+          if (member.avatarUrl) {
+            const url = await StorageService.getPublicUrl(member.avatarUrl);
+            return { ...member, avatarUrl: url ?? undefined };
+          }
+          return member;
+        })
+      );
     } catch (error) {
       return [];
     }

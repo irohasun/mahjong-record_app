@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
   myPositionRating: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FF9B73',
+    color: '#FF6B35',
   },
   sectionLabel: {
     fontSize: 13,
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   rankRating: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FF9B73',
+    color: '#1C1C1E',
   },
   emptyContainer: {
     backgroundColor: '#FFF',

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LocalStorageService } from './LocalStorageService';
 
 // Storage key for tracking if anonymous auth is disabled
 const ANONYMOUS_AUTH_DISABLED_KEY = 'anonymousAuthDisabled';
@@ -132,26 +133,22 @@ export class AuthService {
    * ログアウト
    */
   static async signOut() {
-    if (!isSupabaseConfigured) {
-      // ローカル認証状態をクリア
-      await this.clearAuthState();
-      return;
-    }
-    
     try {
-      const { error } = await supabase.auth.signOut();
-
-      if (error) {
-        throw error;
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
       }
-
-      // ローカル認証状態をクリア
-      await this.clearAuthState();
     } catch (error) {
       console.error('Failed to sign out:', error);
-      // エラーが発生してもローカル状態はクリア
-      await this.clearAuthState();
       throw new Error('ログアウトに失敗しました');
+    } finally {
+      try {
+        await LocalStorageService.clearAll();
+        await LocalStorageService.clearStatsCacheAll();
+      } catch {
+        // キャッシュクリア失敗は無視（ベストエフォート）
+      }
+      await this.clearAuthState();
     }
   }
 

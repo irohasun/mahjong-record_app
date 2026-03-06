@@ -8,7 +8,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { GameService } from '@/services/GameService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { notifyGamesChanged } from '@/utils/cacheInvalidation';
+import { AccountService } from '@/services/AccountService';
 import { StorageService } from '@/services/StorageService';
+import PlayerAvatar from '@/components/PlayerAvatar';
 import {
   RuleConfig,
   DEFAULT_RULE_CONFIG,
@@ -75,6 +77,9 @@ export default function EditGameScreen() {
   // プレイヤー名編集
   const [editingPlayerIndex, setEditingPlayerIndex] = useState<number | null>(null);
 
+  // アバターURL
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+
   // 画面フォーカス時のデータロード
   useFocusEffect(
     useCallback(() => {
@@ -125,6 +130,15 @@ export default function EditGameScreen() {
       const playerNames = editGameData.players?.map((p: any) => p.name) || ['自分', 'P2', 'P3', 'P4'];
       setPlayers(playerNames);
 
+      // アバターURLを取得
+      try {
+        const { account } = await AccountService.getAccount();
+        if (account.avatar_url) {
+          const url = await StorageService.getPublicUrl(account.avatar_url);
+          setMyAvatarUrl(url);
+        }
+      } catch { }
+
       // ルール設定を復元（編集可能にする）
       let restoredConfig: RuleConfig = ruleConfig;
       if (editGameData.rules) {
@@ -158,6 +172,9 @@ export default function EditGameScreen() {
         setUploadedPhotoPath(editGameData.photoPath);
         const url = await StorageService.getPublicUrl(editGameData.photoPath);
         if (url) setGamePhoto(url);
+      } else {
+        setUploadedPhotoPath(null);
+        setGamePhoto(null);
       }
 
       // rawScores（素点）を復元
@@ -821,6 +838,11 @@ export default function EditGameScreen() {
                   style={styles.playerCell}
                   onPress={() => setEditingPlayerIndex(idx)}
                 >
+                  <PlayerAvatar
+                    name={name || `P${idx + 1}`}
+                    avatarUrl={idx === 0 ? myAvatarUrl : null}
+                    size={32}
+                  />
                   {editingPlayerIndex === idx ? (
                     <TextInput
                       style={styles.playerNameInput}
@@ -1571,10 +1593,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRightWidth: 1,
     borderRightColor: '#E5E7EB',
-    minHeight: 48,
+    minHeight: 64,
   },
   playerName: {
     fontSize: 14,

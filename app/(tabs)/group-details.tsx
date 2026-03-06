@@ -11,15 +11,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Settings, UserPlus } from 'lucide-react-native';
+import { ArrowLeft, Settings, UserPlus, Swords } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { GroupDetails } from '@/types/Groups';
 import { GroupStatistics as GroupStatisticsType } from '@/types/Groups';
 import { GroupService } from '@/services/GroupService';
 import { FriendService } from '@/services/FriendService';
 import { GroupStatisticsView } from '@/components/groups/GroupStatistics';
+import { GroupMatchModal } from '@/components/groups/GroupMatchModal';
 import { ScoreChart } from '@/components/groups/ScoreChart';
 import { MemberRankingList } from '@/components/groups/MemberRanking';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export default function GroupDetailsScreen() {
   const router = useRouter();
@@ -33,6 +35,8 @@ export default function GroupDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [showMatchModal, setShowMatchModal] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!groupId) return;
@@ -52,6 +56,7 @@ export default function GroupDetailsScreen() {
       } = await supabase.auth.getUser();
       if (user && groupDetails) {
         setIsOwner(groupDetails.ownerId === user.id);
+        setCurrentUserId(user.id);
       }
     } catch (error) {
       Alert.alert('エラー', 'データの取得に失敗しました');
@@ -129,7 +134,7 @@ export default function GroupDetailsScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/friends')}>
             <ArrowLeft size={24} color="#1C1C1E" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>グループ</Text>
@@ -145,13 +150,21 @@ export default function GroupDetailsScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/friends')}>
           <ArrowLeft size={24} color="#1C1C1E" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {details.name}
         </Text>
         <View style={styles.headerRight}>
+          {details.members.length >= 3 && currentUserId && (
+            <TouchableOpacity style={styles.iconButton} onPress={() => setShowMatchModal(true)}>
+              <View style={styles.swordsContainer}>
+                <Swords size={20} color="#FF6B35" />
+                <Text style={styles.swordsPlusBadge}>+</Text>
+              </View>
+            </TouchableOpacity>
+          )}
           {isOwner && (
             <TouchableOpacity style={styles.iconButton} onPress={handleAddMember}>
               <UserPlus size={20} color="#FF6B35" />
@@ -175,7 +188,14 @@ export default function GroupDetailsScreen() {
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>メンバー</Text>
-            <Text style={styles.infoValue}>{details.memberCount}人</Text>
+            <View style={styles.memberRight}>
+              {details.members.slice(0, 5).map((member, i) => (
+                <View key={member.memberId} style={i > 0 ? styles.avatarOverlap : undefined}>
+                  <PlayerAvatar name={member.username} avatarUrl={member.avatarUrl} size={36} />
+                </View>
+              ))}
+              <Text style={[styles.infoValue, styles.memberCount]}>{details.memberCount}人</Text>
+            </View>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>対局数</Text>
@@ -204,6 +224,17 @@ export default function GroupDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {currentUserId && details && (
+        <GroupMatchModal
+          visible={showMatchModal}
+          onClose={() => setShowMatchModal(false)}
+          members={details.members}
+          currentUserId={currentUserId}
+          groupId={groupId!}
+          groupName={details.name}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -234,11 +265,26 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   headerRight: {
-    width: 36,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    minWidth: 36,
   },
   iconButton: {
     padding: 8,
+  },
+  swordsContainer: {
+    position: 'relative',
+  },
+  swordsPlusBadge: {
+    position: 'absolute',
+    right: -5,
+    top: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FF6B35',
+    lineHeight: 12,
   },
   scrollView: {
     flex: 1,
@@ -281,6 +327,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1C1C1E',
+  },
+  memberRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  avatarOverlap: {
+    marginLeft: -8,
+  },
+  memberCount: {
+    marginLeft: 6,
   },
   descriptionText: {
     fontSize: 14,
