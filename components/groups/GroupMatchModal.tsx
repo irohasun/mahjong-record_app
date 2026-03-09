@@ -126,6 +126,8 @@ export function GroupMatchModal({
       params: {
         groupMatchPlayers: playersParam,
         groupMatchPlayerCount: String(playerCount),
+        groupMatchGroupId: groupId,
+        groupMatchGroupName: groupName,
       },
     });
   }, [members, selectedIds, currentUserId, resolvedUrls, playerCount, onClose, router]);

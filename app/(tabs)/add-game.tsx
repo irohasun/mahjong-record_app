@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { GameService } from '@/services/GameService';
+import { GroupService } from '@/services/GroupService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { AccountService } from '@/services/AccountService';
 import { LocalStorageService } from '@/services/LocalStorageService';
@@ -82,10 +83,13 @@ export default function AddGameScreen() {
   const [playerAvatarUrls, setPlayerAvatarUrls] = useState<(string | null)[]>([null, null, null, null]);
 
   // グループ対戦パラメータ
-  const { groupMatchPlayers, groupMatchPlayerCount } = useLocalSearchParams<{
-    groupMatchPlayers?: string;
-    groupMatchPlayerCount?: string;
-  }>();
+  const { groupMatchPlayers, groupMatchPlayerCount, groupMatchGroupId, groupMatchGroupName } =
+    useLocalSearchParams<{
+      groupMatchPlayers?: string;
+      groupMatchPlayerCount?: string;
+      groupMatchGroupId?: string;
+      groupMatchGroupName?: string;
+    }>();
 
   // 画面フォーカス時のドラフト復元 or グループ対戦初期化
   useFocusEffect(
@@ -776,7 +780,13 @@ export default function AddGameScreen() {
       });
 
       // 新規作成モード
-      await GameService.addGame(gameRecord);
+      const savedGame = await GameService.addGame(gameRecord);
+      // グループ対戦の場合、game_groups に紐付け
+      if (groupMatchGroupId) {
+        await GroupService.linkGameToGroup(savedGame.id, groupMatchGroupId).catch((err) => {
+          console.error('グループ紐付けエラー:', err);
+        });
+      }
       // ドラフトを削除
       await LocalStorageService.clearGameDraft().catch(() => {});
       // キャッシュ無効化（履歴画面の再取得をトリガー）
@@ -822,6 +832,9 @@ export default function AddGameScreen() {
           <Text style={styles.dateText}>
             {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日の対局
           </Text>
+          {groupMatchGroupName && (
+            <Text style={styles.groupMatchTag}>{groupMatchGroupName}</Text>
+          )}
         </TouchableOpacity>
 
         {/* 右側: カメラ＋ルールアイコン */}
@@ -1532,6 +1545,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'left',
+  },
+  groupMatchTag: {
+    fontSize: 11,
+    color: '#FF6B35',
+    fontWeight: '500',
+    textAlign: 'left',
+    marginTop: 2,
   },
   iconButton: {
     padding: 8,
