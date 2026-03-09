@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Settings, UserPlus, Swords, Camera, Users } from 'lucide-react-native';
+import { ArrowLeft, Settings, UserPlus, Swords, Camera, Users, Pencil } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { StorageService } from '@/services/StorageService';
 import { supabase } from '@/lib/supabase';
@@ -124,6 +124,22 @@ export default function GroupDetailsScreen() {
     }
   }, [groupId, details, loadData]);
 
+  const handleRenameGroup = useCallback(() => {
+    Alert.prompt(
+      'グループ名を変更',
+      '',
+      (newName) => {
+        const trimmed = newName?.trim();
+        if (!trimmed) return;
+        GroupService.updateGroup(groupId!, { name: trimmed })
+          .then(loadData)
+          .catch(() => Alert.alert('エラー', 'グループ名の変更に失敗しました'));
+      },
+      'plain-text',
+      details?.name ?? ''
+    );
+  }, [groupId, details, loadData]);
+
   const handleChangeGroupPhoto = useCallback(async () => {
     if (!groupId || !isOwner) return;
 
@@ -204,6 +220,11 @@ export default function GroupDetailsScreen() {
             </TouchableOpacity>
           )}
           {isOwner && (
+            <TouchableOpacity style={styles.iconButton} onPress={handleRenameGroup}>
+              <Pencil size={20} color="#FF6B35" />
+            </TouchableOpacity>
+          )}
+          {isOwner && (
             <TouchableOpacity
               style={styles.iconButton}
               onPress={handleChangeGroupPhoto}
@@ -237,31 +258,35 @@ export default function GroupDetailsScreen() {
       >
         {/* グループ情報 */}
         <View style={styles.infoCard}>
-          {/* グループアバター */}
-          <View style={styles.groupAvatarRow}>
-            {details.avatarUrl ? (
-              <Image source={{ uri: details.avatarUrl }} style={styles.groupAvatar} />
-            ) : (
-              <View style={[styles.groupAvatar, styles.groupAvatarPlaceholder]}>
-                <Users size={28} color="#8E8E93" />
-              </View>
-            )}
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>メンバー</Text>
-            <View style={styles.memberRight}>
-              {details.members.slice(0, 5).map((member, i) => (
-                <View key={member.memberId} style={i > 0 ? styles.avatarOverlap : undefined}>
-                  <PlayerAvatar name={member.username} avatarUrl={member.avatarUrl} size={36} />
+          <View style={styles.infoTopRow}>
+            {/* 左: グループアバター */}
+            <View style={styles.avatarSide}>
+              {details.avatarUrl ? (
+                <Image source={{ uri: details.avatarUrl }} style={styles.groupAvatar} />
+              ) : (
+                <View style={[styles.groupAvatar, styles.groupAvatarPlaceholder]}>
+                  <Users size={28} color="#8E8E93" />
                 </View>
-              ))}
-              <Text style={[styles.infoValue, styles.memberCount]}>{details.memberCount}人</Text>
+              )}
             </View>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>対局数</Text>
-            <Text style={styles.infoValue}>{details.gameCount}戦</Text>
+            {/* 右: メンバー・対局数 */}
+            <View style={styles.infoSide}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>メンバー</Text>
+                <View style={styles.memberRight}>
+                  {details.members.slice(0, 5).map((member, i) => (
+                    <View key={member.memberId} style={i > 0 ? styles.avatarOverlap : undefined}>
+                      <PlayerAvatar name={member.username} avatarUrl={member.avatarUrl} size={36} />
+                    </View>
+                  ))}
+                  <Text style={[styles.infoValue, styles.memberCount]}>{details.memberCount}人</Text>
+                </View>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>対局数</Text>
+                <Text style={styles.infoValue}>{details.gameCount}戦</Text>
+              </View>
+            </View>
           </View>
           {details.description ? (
             <Text style={styles.descriptionText}>{details.description}</Text>
@@ -392,12 +417,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1C1C1E',
   },
-  groupAvatarRow: {
+  infoTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 16,
+    gap: 16,
     marginBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F2F2F7',
+  },
+  avatarSide: {
+    flexShrink: 0,
+  },
+  infoSide: {
+    flex: 1,
   },
   groupAvatar: {
     width: 64,
