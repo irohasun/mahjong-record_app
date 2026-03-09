@@ -273,6 +273,7 @@ export default function FriendsScreen() {
         >
           <FriendsList
             friends={acceptedFriends}
+            maxDisplay={acceptedFriends.length}
             onRemove={handleRemoveFriend}
           />
         </AccordionSection>

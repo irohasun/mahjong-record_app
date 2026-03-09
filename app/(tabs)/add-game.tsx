@@ -817,36 +817,37 @@ export default function AddGameScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* ヘッダー（グリーンバー） */}
       <View style={styles.headerBar}>
-        {/* 左側: 写真ボタン */}
-        <TouchableOpacity
-          style={styles.photoButton}
-          onPress={handlePickPhoto}
-        >
-          {(gamePhoto || uploadedPhotoPath) ? (
-            <Image
-              source={{ uri: gamePhoto || uploadedPhotoPath || '' }}
-              style={styles.photoThumbnail}
-              resizeMode="cover"
-            />
-          ) : (
-            <Camera size={20} color="#FF6B35" />
-          )}
-        </TouchableOpacity>
-
-        {/* 中央: 日付 */}
+        {/* 左側: 日付 */}
         <TouchableOpacity style={styles.headerCenter} onPress={() => setShowDatePicker(true)}>
           <Text style={styles.dateText}>
             {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日の対局
           </Text>
         </TouchableOpacity>
 
-        {/* 右側: 設定アイコン */}
-        <TouchableOpacity style={styles.iconButton} onPress={() => {
-          setTempRuleConfig(ruleConfig);
-          setShowRuleSettings(true);
-        }}>
-          <Book size={20} color="#FF6B35" />
-        </TouchableOpacity>
+        {/* 右側: カメラ＋ルールアイコン */}
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.photoButton}
+            onPress={handlePickPhoto}
+          >
+            {(gamePhoto || uploadedPhotoPath) ? (
+              <Image
+                source={{ uri: gamePhoto || uploadedPhotoPath || '' }}
+                style={styles.photoThumbnail}
+                resizeMode="cover"
+              />
+            ) : (
+              <Camera size={20} color="#FF6B35" />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => {
+            setTempRuleConfig(ruleConfig);
+            setShowRuleSettings(true);
+          }}>
+            <Book size={20} color="#FF6B35" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -1521,11 +1522,16 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   dateText: {
     color: '#1C1C1E',
     fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   iconButton: {
     padding: 8,

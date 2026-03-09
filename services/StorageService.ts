@@ -152,6 +152,47 @@ export class StorageService {
       throw error;
     }
   }
+
+  static async uploadGroupPhoto(groupId: string, uri: string): Promise<string> {
+    const bucket = 'group-photos';
+    const ext = uri.split('?')[0].split('#')[0].split('.').pop() || 'jpg';
+    const path = `groups/${groupId}/avatar.${ext}`;
+
+    try {
+      const res = await fetch(uri);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch image: ${res.status} ${res.statusText}`);
+      }
+
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        throw new Error('Image file is empty (0 bytes)');
+      }
+
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+      });
+
+      reader.readAsDataURL(blob);
+      const base64 = await base64Promise;
+
+      const { data, error } = await supabase.storage.from(bucket).upload(path, decode(base64), {
+        upsert: true,
+        contentType: blob.type || 'image/jpeg',
+      });
+
+      if (error) throw error;
+      return `${bucket}/${data.path}`;
+    } catch (error) {
+      throw error;
+    }
+  }
 }
 
 

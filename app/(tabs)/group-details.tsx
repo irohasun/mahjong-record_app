@@ -8,10 +8,13 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Settings, UserPlus, Swords } from 'lucide-react-native';
+import { ArrowLeft, Settings, UserPlus, Swords, Camera, Users } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { StorageService } from '@/services/StorageService';
 import { supabase } from '@/lib/supabase';
 import { GroupDetails } from '@/types/Groups';
 import { GroupStatistics as GroupStatisticsType } from '@/types/Groups';
@@ -37,6 +40,7 @@ export default function GroupDetailsScreen() {
   const [isOwner, setIsOwner] = useState(false);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!groupId) return;
@@ -120,6 +124,40 @@ export default function GroupDetailsScreen() {
     }
   }, [groupId, details, loadData]);
 
+  const handleChangeGroupPhoto = useCallback(async () => {
+    if (!groupId || !isOwner) return;
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('権限が必要', '写真へのアクセス権限が必要です');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      setUploadingPhoto(true);
+      try {
+        const storagePath = await StorageService.uploadGroupPhoto(groupId, result.assets[0].uri);
+        await GroupService.updateGroup(groupId, { avatarUrl: storagePath });
+        await loadData();
+      } catch {
+        Alert.alert('エラー', 'アイコンのアップロードに失敗しました');
+      } finally {
+        setUploadingPhoto(false);
+      }
+    } catch {
+      Alert.alert('エラー', '画像の選択に失敗しました');
+    }
+  }, [groupId, isOwner, loadData]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -166,6 +204,19 @@ export default function GroupDetailsScreen() {
             </TouchableOpacity>
           )}
           {isOwner && (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleChangeGroupPhoto}
+              disabled={uploadingPhoto}
+            >
+              {uploadingPhoto ? (
+                <ActivityIndicator size="small" color="#FF6B35" />
+              ) : (
+                <Camera size={20} color="#FF6B35" />
+              )}
+            </TouchableOpacity>
+          )}
+          {isOwner && (
             <TouchableOpacity style={styles.iconButton} onPress={handleAddMember}>
               <UserPlus size={20} color="#FF6B35" />
             </TouchableOpacity>
@@ -186,6 +237,17 @@ export default function GroupDetailsScreen() {
       >
         {/* グループ情報 */}
         <View style={styles.infoCard}>
+          {/* グループアバター */}
+          <View style={styles.groupAvatarRow}>
+            {details.avatarUrl ? (
+              <Image source={{ uri: details.avatarUrl }} style={styles.groupAvatar} />
+            ) : (
+              <View style={[styles.groupAvatar, styles.groupAvatarPlaceholder]}>
+                <Users size={28} color="#8E8E93" />
+              </View>
+            )}
+          </View>
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>メンバー</Text>
             <View style={styles.memberRight}>
@@ -273,6 +335,8 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 8,
+    backgroundColor: '#FFF5F0',
+    borderRadius: 8,
   },
   swordsContainer: {
     position: 'relative',
@@ -327,6 +391,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1C1C1E',
+  },
+  groupAvatarRow: {
+    alignItems: 'center',
+    paddingBottom: 16,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+  },
+  groupAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  groupAvatarPlaceholder: {
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   memberRight: {
     flexDirection: 'row',

@@ -37,7 +37,7 @@ export class FriendService {
         (data || []).map(async (row: any) => ({
           id: row.id,
           userId: row.user_id,
-          friendId: row.friend_id,
+          friendId: row.friend_account_id,
           username: row.friend_username ?? '不明',
           avatarUrl: row.friend_avatar_url
             ? (await StorageService.getPublicUrl(row.friend_avatar_url)) ?? undefined

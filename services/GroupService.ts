@@ -155,8 +155,14 @@ export class GroupService {
         .select('*', { count: 'exact', head: true })
         .eq('group_id', groupId)) as any;
 
+      const group = this.mapGroupFromDb(groupData, members.length);
+      const resolvedAvatarUrl = group.avatarUrl
+        ? await StorageService.getPublicUrl(group.avatarUrl)
+        : undefined;
+
       return {
-        ...this.mapGroupFromDb(groupData, members.length),
+        ...group,
+        avatarUrl: resolvedAvatarUrl ?? undefined,
         members,
         gameCount: gameCount ?? 0,
       };
@@ -220,7 +226,7 @@ export class GroupService {
    */
   static async updateGroup(
     groupId: string,
-    updates: { name?: string; description?: string; isPublic?: boolean }
+    updates: { name?: string; description?: string; isPublic?: boolean; avatarUrl?: string }
   ): Promise<void> {
     try {
       if (!isSupabaseConfigured) return;
@@ -231,6 +237,8 @@ export class GroupService {
         updatePayload.description = updates.description;
       if (updates.isPublic !== undefined)
         updatePayload.is_public = updates.isPublic;
+      if (updates.avatarUrl !== undefined)
+        updatePayload.avatar_url = updates.avatarUrl;
 
       const { error } = await (supabase as any)
         .from('groups')
