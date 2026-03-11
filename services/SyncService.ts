@@ -296,7 +296,7 @@ export class SyncService {
       }
 
       // ローカルストレージからすべてのゲームを取得
-      const localGames = await LocalStorageService.getAllGames();
+      const localGames = await LocalStorageService.getGames();
 
       if (localGames.length === 0) {
         return 0;
@@ -392,7 +392,7 @@ export class SyncService {
 
     try {
       // ローカルストレージからすべてのゲームを取得
-      const localGames = await LocalStorageService.getAllGames();
+      const localGames = await LocalStorageService.getGames();
 
       if (localGames.length === 0) {
         return 0;

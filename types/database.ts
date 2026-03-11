@@ -337,6 +337,174 @@ export type Database = {
           },
         ]
       }
+      game_groups: {
+        Row: {
+          id: string
+          game_id: string
+          group_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          game_id: string
+          group_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          game_id?: string
+          group_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_groups_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_groups_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_invitations: {
+        Row: {
+          id: string
+          group_id: string
+          invited_by: string
+          invited_user_id: string
+          status: string
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          invited_by: string
+          invited_user_id: string
+          status?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          invited_by?: string
+          invited_user_id?: string
+          status?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_invitations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_invited_user_id_fkey"
+            columns: ["invited_user_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_members: {
+        Row: {
+          id: string
+          group_id: string
+          member_id: string
+          role: string
+          joined_at: string | null
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          member_id: string
+          role?: string
+          joined_at?: string | null
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          member_id?: string
+          role?: string
+          joined_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_members_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          avatar_url: string | null
+          owner_id: string
+          is_public: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          avatar_url?: string | null
+          owner_id: string
+          is_public?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          avatar_url?: string | null
+          owner_id?: string
+          is_public?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "groups_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           bio: string | null
@@ -392,7 +560,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_group_invitation: {
+        Args: { invitation_id: string }
+        Returns: undefined
+      }
       delete_user: { Args: never; Returns: undefined }
+      get_all_ratings: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          username: string
+          avatar_url: string | null
+          rating_4p: number
+          rating_3p: number
+        }[]
+      }
       get_chart_data: {
         Args: {
           period_end?: string
@@ -400,7 +582,9 @@ export type Database = {
           player_count?: number
           user_id: string
         }
-        Returns: Json
+        Returns: {
+          rankHistory: { date: string; rank: number }[]
+        } | null
       }
       get_player_stats: {
         Args: {
@@ -409,7 +593,17 @@ export type Database = {
           player_count?: number
           user_id: string
         }
-        Returns: Json
+        Returns: {
+          totalGames: number
+          averageRank: number
+          averageScore: number
+          firstPlaceRate: number
+          topTwoRate: number
+          avoidLastRate: number
+          highestScore: number
+          lowestScore: number
+          rankDistribution: { '1': number; '2': number; '3': number; '4': number }
+        } | null
       }
       log_security_event: {
         Args: {
@@ -423,6 +617,15 @@ export type Database = {
         Returns: string
       }
       reset_monthly_game_count: { Args: never; Returns: undefined }
+      update_ratings_for_game: {
+        Args: {
+          p_game_id: string
+          p_changes: Json
+          p_player_count: number
+          p_rating_field: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

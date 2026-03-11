@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Settings, UserPlus, Swords, Camera, Users, Pencil } from 'lucide-react-native';
+import { ArrowLeft, Settings, UserPlus, Swords, Camera, Pencil, Calendar, Flag, Trophy, Target } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { StorageService } from '@/services/StorageService';
 import { supabase } from '@/lib/supabase';
@@ -20,11 +20,10 @@ import { GroupDetails } from '@/types/Groups';
 import { GroupStatistics as GroupStatisticsType } from '@/types/Groups';
 import { GroupService } from '@/services/GroupService';
 import { FriendService } from '@/services/FriendService';
-import { GroupStatisticsView } from '@/components/groups/GroupStatistics';
 import { GroupMatchModal } from '@/components/groups/GroupMatchModal';
 import { ScoreChart } from '@/components/groups/ScoreChart';
 import { MemberRankingList } from '@/components/groups/MemberRanking';
-import PlayerAvatar from '@/components/PlayerAvatar';
+
 
 export default function GroupDetailsScreen() {
   const router = useRouter();
@@ -41,6 +40,8 @@ export default function GroupDetailsScreen() {
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+
 
   const loadData = useCallback(async () => {
     if (!groupId) return;
@@ -159,12 +160,16 @@ export default function GroupDetailsScreen() {
 
       if (result.canceled || !result.assets[0]) return;
 
+      const localUri = result.assets[0].uri;
+      setLocalAvatarUri(localUri);
       setUploadingPhoto(true);
       try {
-        const storagePath = await StorageService.uploadGroupPhoto(groupId, result.assets[0].uri);
+        const storagePath = await StorageService.uploadGroupPhoto(groupId, localUri);
         await GroupService.updateGroup(groupId, { avatarUrl: storagePath });
         await loadData();
+        setLocalAvatarUri(null);
       } catch {
+        setLocalAvatarUri(null);
         Alert.alert('エラー', 'アイコンのアップロードに失敗しました');
       } finally {
         setUploadingPhoto(false);
@@ -207,34 +212,38 @@ export default function GroupDetailsScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/friends')}>
           <ArrowLeft size={24} color="#1C1C1E" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {details.name}
-        </Text>
+        <TouchableOpacity style={styles.headerTitleRow} onPress={handleRenameGroup} disabled={!isOwner}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {details.name}
+          </Text>
+          {isOwner && <Pencil size={14} color="#1C1C1E" />}
+        </TouchableOpacity>
         <View style={styles.headerRight}>
+          {isOwner && (
+            <TouchableOpacity
+              style={styles.photoButton}
+              onPress={handleChangeGroupPhoto}
+              disabled={uploadingPhoto}
+            >
+              {uploadingPhoto && !localAvatarUri ? (
+                <ActivityIndicator size="small" color="#FF6B35" />
+              ) : localAvatarUri || details.avatarUrl ? (
+                <Image
+                  source={{ uri: (localAvatarUri ?? details.avatarUrl)! }}
+                  style={styles.photoThumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Camera size={20} color="#FF6B35" />
+              )}
+            </TouchableOpacity>
+          )}
           {details.members.length >= 3 && currentUserId && (
             <TouchableOpacity style={styles.iconButton} onPress={() => setShowMatchModal(true)}>
               <View style={styles.swordsContainer}>
                 <Swords size={20} color="#FF6B35" />
                 <Text style={styles.swordsPlusBadge}>+</Text>
               </View>
-            </TouchableOpacity>
-          )}
-          {isOwner && (
-            <TouchableOpacity style={styles.iconButton} onPress={handleRenameGroup}>
-              <Pencil size={20} color="#FF6B35" />
-            </TouchableOpacity>
-          )}
-          {isOwner && (
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={handleChangeGroupPhoto}
-              disabled={uploadingPhoto}
-            >
-              {uploadingPhoto ? (
-                <ActivityIndicator size="small" color="#FF6B35" />
-              ) : (
-                <Camera size={20} color="#FF6B35" />
-              )}
             </TouchableOpacity>
           )}
           {isOwner && (
@@ -256,49 +265,63 @@ export default function GroupDetailsScreen() {
           />
         }
       >
-        {/* グループ情報 */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoTopRow}>
-            {/* 左: グループアバター */}
-            <View style={styles.avatarSide}>
-              {details.avatarUrl ? (
-                <Image source={{ uri: details.avatarUrl }} style={styles.groupAvatar} />
-              ) : (
-                <View style={[styles.groupAvatar, styles.groupAvatarPlaceholder]}>
-                  <Users size={28} color="#8E8E93" />
-                </View>
-              )}
-            </View>
-            {/* 右: メンバー・対局数 */}
-            <View style={styles.infoSide}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>メンバー</Text>
-                <View style={styles.memberRight}>
-                  {details.members.slice(0, 5).map((member, i) => (
-                    <View key={member.memberId} style={i > 0 ? styles.avatarOverlap : undefined}>
-                      <PlayerAvatar name={member.username} avatarUrl={member.avatarUrl} size={36} />
-                    </View>
-                  ))}
-                  <Text style={[styles.infoValue, styles.memberCount]}>{details.memberCount}人</Text>
-                </View>
+        {/* コンパクト統計グリッド */}
+        {statistics && (
+          <>
+          <Text style={styles.sectionTitle}>個人成績</Text>
+          <View style={styles.compactGrid}>
+            <View style={styles.compactCard}>
+              <View style={[styles.compactIcon, { backgroundColor: '#FF6B3520' }]}>
+                <Calendar size={18} color="#FF6B35" />
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>対局数</Text>
-                <Text style={styles.infoValue}>{details.gameCount}戦</Text>
+              <View style={styles.compactTextGroup}>
+                <Text style={styles.compactValue}>{details.gameCount}</Text>
+                <Text style={styles.compactLabel}>総対局数</Text>
+              </View>
+            </View>
+            <View style={styles.compactCard}>
+              <View style={[styles.compactIcon, { backgroundColor: '#3B82F620' }]}>
+                <Flag size={18} color="#3B82F6" />
+              </View>
+              <View style={styles.compactTextGroup}>
+                <Text style={styles.compactValue}>{statistics.averageRank.toFixed(2)}</Text>
+                <Text style={styles.compactLabel}>平均順位</Text>
+              </View>
+            </View>
+            <View style={styles.compactCard}>
+              <View style={[styles.compactIcon, { backgroundColor: '#10B98120' }]}>
+                <Trophy size={18} color="#10B981" />
+              </View>
+              <View style={styles.compactTextGroup}>
+                <Text style={styles.compactValue}>
+                  {statistics.rankDistribution.find(r => r.rank === 1)?.percentage
+                    ? `${statistics.rankDistribution.find(r => r.rank === 1)!.percentage.toFixed(1)}%`
+                    : '-'}
+                </Text>
+                <Text style={styles.compactLabel}>1位率</Text>
+              </View>
+            </View>
+            <View style={styles.compactCard}>
+              <View style={[styles.compactIcon, { backgroundColor: '#F59E0B20' }]}>
+                <Target size={18} color="#F59E0B" />
+              </View>
+              <View style={styles.compactTextGroup}>
+                <Text style={styles.compactValue}>
+                  {statistics.totalScore > 0 ? `+${statistics.totalScore}` : `${statistics.totalScore}`}
+                </Text>
+                <Text style={styles.compactLabel}>合計収支</Text>
               </View>
             </View>
           </View>
-          {details.description ? (
-            <Text style={styles.descriptionText}>{details.description}</Text>
-          ) : null}
-        </View>
+          </>
+        )}
+
 
         {/* 統計 */}
         {statistics ? (
           <>
-            <GroupStatisticsView statistics={statistics} />
-            <ScoreChart scoreHistory={statistics.scoreHistory} />
             <MemberRankingList rankings={statistics.memberRankings} />
+            <ScoreChart scoreHistory={statistics.scoreHistory} memberRankings={statistics.memberRankings} />
           </>
         ) : (
           <View style={styles.noDataCard}>
@@ -343,13 +366,20 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
-  headerTitle: {
+  headerTitleRow: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    gap: 6,
+  },
+  headerTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#1C1C1E',
     textAlign: 'center',
-    marginHorizontal: 8,
+    flexShrink: 1,
   },
   headerRight: {
     flexDirection: 'row',
@@ -381,6 +411,51 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 32,
+    gap: 12,
+  },
+  compactGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  compactCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  compactIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  compactTextGroup: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  compactValue: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 2,
+  },
+  compactLabel: {
+    fontSize: 11,
+    color: '#6D6D70',
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
@@ -396,67 +471,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#8E8E93',
   },
-  infoCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  infoLabel: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
-  infoTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 4,
-  },
-  avatarSide: {
-    flexShrink: 0,
-  },
-  infoSide: {
-    flex: 1,
-  },
-  groupAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  groupAvatarPlaceholder: {
-    backgroundColor: '#F2F2F7',
-    alignItems: 'center',
+  photoButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#FFF5F0',
     justifyContent: 'center',
-  },
-  memberRight: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    overflow: 'hidden',
   },
-  avatarOverlap: {
-    marginLeft: -8,
-  },
-  memberCount: {
-    marginLeft: 6,
-  },
-  descriptionText: {
-    fontSize: 14,
-    color: '#6D6D70',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
+  photoThumbnail: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
   },
   noDataCard: {
     backgroundColor: '#FFF',

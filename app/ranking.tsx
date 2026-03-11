@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, Trophy } from 'lucide-react-native';
 import { AccountService } from '@/services/AccountService';
 import { FriendService } from '@/services/FriendService';
 import { StorageService } from '@/services/StorageService';
@@ -66,11 +66,16 @@ function AvatarBadge({ username, rank, avatarUrl }: { username: string; rank: nu
 
 function RankBadge({ rank }: { rank: number }) {
   const color = getRankColor(rank);
+  if (rank <= 3) {
+    return (
+      <View style={[styles.rankBadge, { backgroundColor: color + '25' }]}>
+        <Trophy size={16} color={color} />
+      </View>
+    );
+  }
   return (
-    <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? color : '#F2F2F7' }]}>
-      <Text style={[styles.rankBadgeText, { color: rank <= 3 ? '#FFF' : '#8E8E93' }]}>
-        {rank}
-      </Text>
+    <View style={[styles.rankBadge, { backgroundColor: '#F2F2F7' }]}>
+      <Text style={[styles.rankBadgeText, { color: '#8E8E93' }]}>{rank}</Text>
     </View>
   );
 }

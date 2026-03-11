@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { Tables, TablesUpdate } from '@/types/database';
 import {
   Group,
   GroupMember,
@@ -11,6 +12,22 @@ import {
 import { LocalStorageService } from './LocalStorageService';
 import { notifyGroupsChanged } from '@/utils/cacheInvalidation';
 import { StorageService } from './StorageService';
+
+/** group_members + accounts join クエリの結果型 */
+type GroupMemberRow = Tables<'group_members'> & {
+  accounts: Pick<Tables<'accounts'>, 'id' | 'username' | 'avatar_url'> | null;
+};
+
+/** group_invitations + groups + accounts join クエリの結果型 */
+type InvitationRow = Tables<'group_invitations'> & {
+  groups: Pick<Tables<'groups'>, 'id' | 'name'> | null;
+  accounts: Pick<Tables<'accounts'>, 'id' | 'username' | 'avatar_url'> | null;
+};
+
+/** game_groups + games + player_records join クエリの結果型 */
+type GameWithPlayerRecords = Tables<'games'> & {
+  player_records: Tables<'player_records'>[];
+};
 
 export class GroupService {
   /**
@@ -29,7 +46,7 @@ export class GroupService {
   /**
    * DBのグループ行をGroup型に変換
    */
-  private static mapGroupFromDb(row: any, memberCount: number = 0): Group {
+  private static mapGroupFromDb(row: Tables<'groups'>, memberCount: number = 0): Group {
     return {
       id: row.id,
       name: row.name,
@@ -38,23 +55,23 @@ export class GroupService {
       ownerId: row.owner_id,
       isPublic: row.is_public ?? false,
       memberCount,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: row.created_at ?? '',
+      updatedAt: row.updated_at ?? '',
     };
   }
 
   /**
    * DBのメンバー行をGroupMember型に変換
    */
-  private static mapMemberFromDb(row: any): GroupMember {
+  private static mapMemberFromDb(row: GroupMemberRow): GroupMember {
     return {
       id: row.id,
       groupId: row.group_id,
       memberId: row.member_id,
       username: row.accounts?.username ?? '不明',
       avatarUrl: row.accounts?.avatar_url ?? undefined,
-      role: row.role,
-      joinedAt: row.joined_at,
+      role: (row.role as GroupMember['role']) ?? 'member',
+      joinedAt: row.joined_at ?? '',
     };
   }
 
@@ -71,33 +88,38 @@ export class GroupService {
       const user = await this.getCurrentUser();
 
       // 自分が参加しているグループのIDを取得
-      const { data: memberData, error: memberError } = (await (supabase as any)
+      const { data: memberData, error: memberError } = await supabase
         .from('group_members')
         .select('group_id')
-        .eq('member_id', user.id)) as any;
+        .eq('member_id', user.id);
 
       if (memberError) throw memberError;
 
-      const groupIds = (memberData || []).map((m: any) => m.group_id);
+      const groupIds = (memberData || []).map((m) => m.group_id);
       if (groupIds.length === 0) return [];
 
       // グループ情報を取得
-      const { data: groupsData, error: groupsError } = (await (supabase as any)
+      const { data: groupsData, error: groupsError } = await supabase
         .from('groups')
         .select('*')
         .in('id', groupIds)
-        .order('updated_at', { ascending: false })) as any;
+        .order('updated_at', { ascending: false });
 
       if (groupsError) throw groupsError;
 
       // 各グループのメンバー数を取得
       const groups: Group[] = await Promise.all(
-        (groupsData || []).map(async (row: any) => {
-          const { count } = (await (supabase as any)
+        (groupsData || []).map(async (row) => {
+          const { count } = await supabase
             .from('group_members')
             .select('*', { count: 'exact', head: true })
-            .eq('group_id', row.id)) as any;
-          return this.mapGroupFromDb(row, count ?? 0);
+            .eq('group_id', row.id);
+          const group = this.mapGroupFromDb(row, count ?? 0);
+          if (group.avatarUrl) {
+            const url = await StorageService.getPublicUrl(group.avatarUrl);
+            return { ...group, avatarUrl: url ?? undefined };
+          }
+          return group;
         })
       );
 
@@ -117,16 +139,16 @@ export class GroupService {
       if (!isSupabaseConfigured) return null;
 
       // グループ情報
-      const { data: groupData, error: groupError } = (await (supabase as any)
+      const { data: groupData, error: groupError } = await supabase
         .from('groups')
         .select('*')
         .eq('id', groupId)
-        .single()) as any;
+        .single();
 
       if (groupError || !groupData) return null;
 
       // メンバー情報
-      const { data: membersData, error: membersError } = (await (supabase as any)
+      const { data: membersData, error: membersError } = await supabase
         .from('group_members')
         .select(
           `
@@ -134,13 +156,13 @@ export class GroupService {
           accounts (id, username, avatar_url)
         `
         )
-        .eq('group_id', groupId)) as any;
+        .eq('group_id', groupId);
 
       if (membersError) throw membersError;
 
       const members = await Promise.all(
-        (membersData || []).map(async (row: any) => {
-          const member = this.mapMemberFromDb(row);
+        (membersData || []).map(async (row) => {
+          const member = this.mapMemberFromDb(row as GroupMemberRow);
           if (member.avatarUrl) {
             const url = await StorageService.getPublicUrl(member.avatarUrl);
             return { ...member, avatarUrl: url ?? undefined };
@@ -150,10 +172,10 @@ export class GroupService {
       );
 
       // 対局数
-      const { count: gameCount } = (await (supabase as any)
+      const { count: gameCount } = await supabase
         .from('game_groups')
         .select('*', { count: 'exact', head: true })
-        .eq('group_id', groupId)) as any;
+        .eq('group_id', groupId);
 
       const group = this.mapGroupFromDb(groupData, members.length);
       const resolvedAvatarUrl = group.avatarUrl
@@ -187,7 +209,7 @@ export class GroupService {
       const user = await this.getCurrentUser();
 
       // グループを作成
-      const { data: groupData, error: groupError } = (await (supabase as any)
+      const { data: groupData, error: groupError } = await supabase
         .from('groups')
         .insert({
           owner_id: user.id,
@@ -196,14 +218,14 @@ export class GroupService {
           is_public: isPublic,
         })
         .select()
-        .single()) as any;
+        .single();
 
       if (groupError || !groupData) {
         throw groupError ?? new Error('グループの作成に失敗しました');
       }
 
       // オーナーをメンバーとして追加
-      const { error: memberError } = await (supabase as any)
+      const { error: memberError } = await supabase
         .from('group_members')
         .insert({
           group_id: groupData.id,
@@ -231,7 +253,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const updatePayload: any = { updated_at: new Date().toISOString() };
+      const updatePayload: TablesUpdate<'groups'> = { updated_at: new Date().toISOString() };
       if (updates.name !== undefined) updatePayload.name = updates.name;
       if (updates.description !== undefined)
         updatePayload.description = updates.description;
@@ -240,7 +262,7 @@ export class GroupService {
       if (updates.avatarUrl !== undefined)
         updatePayload.avatar_url = updates.avatarUrl;
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('groups')
         .update(updatePayload)
         .eq('id', groupId);
@@ -261,7 +283,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('groups')
         .delete()
         .eq('id', groupId);
@@ -286,7 +308,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any).from('group_members').insert({
+      const { error } = await supabase.from('group_members').insert({
         group_id: groupId,
         member_id: memberId,
         role,
@@ -316,7 +338,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('group_members')
         .delete()
         .eq('group_id', groupId)
@@ -338,7 +360,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return [];
 
-      const { data, error } = (await (supabase as any)
+      const { data, error } = await supabase
         .from('group_members')
         .select(
           `
@@ -346,13 +368,13 @@ export class GroupService {
           accounts (id, username, avatar_url)
         `
         )
-        .eq('group_id', groupId)) as any;
+        .eq('group_id', groupId);
 
       if (error) throw error;
 
       return await Promise.all(
-        (data || []).map(async (row: any) => {
-          const member = this.mapMemberFromDb(row);
+        (data || []).map(async (row) => {
+          const member = this.mapMemberFromDb(row as GroupMemberRow);
           if (member.avatarUrl) {
             const url = await StorageService.getPublicUrl(member.avatarUrl);
             return { ...member, avatarUrl: url ?? undefined };
@@ -366,6 +388,29 @@ export class GroupService {
   }
 
   /**
+   * 対局に紐づいているグループ名を取得
+   */
+  static async getGroupNameByGameId(gameId: string): Promise<string | null> {
+    if (!gameId || typeof gameId !== 'string') return null;
+    try {
+      if (!isSupabaseConfigured) return null;
+
+      const { data, error } = await supabase
+        .from('game_groups')
+        .select('groups (name)')
+        .eq('game_id', gameId)
+        .limit(1)
+        .single();
+
+      if (error || !data) return null;
+      const groups = data.groups as { name: string } | null;
+      return groups?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 対局をグループに紐づけ
    */
   static async linkGameToGroup(
@@ -375,7 +420,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any).from('game_groups').insert({
+      const { error } = await supabase.from('game_groups').insert({
         game_id: gameId,
         group_id: groupId,
       });
@@ -398,7 +443,7 @@ export class GroupService {
 
       const user = await this.getCurrentUser();
 
-      const { error } = await (supabase as any).from('group_invitations').insert({
+      const { error } = await supabase.from('group_invitations').insert({
         group_id: groupId,
         invited_by: user.id,
         invited_user_id: userId,
@@ -425,7 +470,7 @@ export class GroupService {
 
       const user = await this.getCurrentUser();
 
-      const { data, error } = (await (supabase as any)
+      const { data, error } = await supabase
         .from('group_invitations')
         .select(
           `
@@ -435,22 +480,25 @@ export class GroupService {
         `
         )
         .eq('invited_user_id', user.id)
-        .eq('status', 'pending')) as any;
+        .eq('status', 'pending');
 
       if (error) throw error;
 
-      return (data || []).map((row: any) => ({
-        id: row.id,
-        groupId: row.group_id,
-        groupName: row.groups?.name ?? '不明',
-        invitedBy: {
-          id: row.accounts?.id ?? row.invited_by,
-          username: row.accounts?.username ?? '不明',
-          avatarUrl: row.accounts?.avatar_url ?? undefined,
-        },
-        status: 'pending' as const,
-        createdAt: row.created_at,
-      }));
+      return (data || []).map((row) => {
+        const r = row as unknown as InvitationRow;
+        return {
+          id: r.id,
+          groupId: r.group_id,
+          groupName: r.groups?.name ?? '不明',
+          invitedBy: {
+            id: r.accounts?.id ?? r.invited_by,
+            username: r.accounts?.username ?? '不明',
+            avatarUrl: r.accounts?.avatar_url ?? undefined,
+          },
+          status: 'pending' as const,
+          createdAt: r.created_at ?? '',
+        };
+      });
     } catch (error) {
       return [];
     }
@@ -463,7 +511,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any).rpc('accept_group_invitation', {
+      const { error } = await supabase.rpc('accept_group_invitation', {
         invitation_id: invitationId,
       });
 
@@ -483,7 +531,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('group_invitations')
         .delete()
         .eq('id', invitationId);
@@ -504,7 +552,7 @@ export class GroupService {
     try {
       if (!isSupabaseConfigured) return;
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('game_groups')
         .delete()
         .eq('game_id', gameId)
@@ -519,11 +567,11 @@ export class GroupService {
   /**
    * グループ内の対局一覧取得
    */
-  static async getGroupGames(groupId: string): Promise<any[]> {
+  static async getGroupGames(groupId: string): Promise<GameWithPlayerRecords[]> {
     try {
       if (!isSupabaseConfigured) return [];
 
-      const { data, error } = (await (supabase as any)
+      const { data, error } = await supabase
         .from('game_groups')
         .select(
           `
@@ -537,12 +585,12 @@ export class GroupService {
         `
         )
         .eq('group_id', groupId)
-        .order('created_at', { ascending: false })) as any;
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       return (data || [])
-        .map((row: any) => row.games)
+        .map((row) => row.games as unknown as GameWithPlayerRecords)
         .filter(Boolean);
     } catch (error) {
       return [];
@@ -575,8 +623,6 @@ export class GroupService {
       for (const game of games) {
         const playerRecords = game.player_records || [];
         for (const pr of playerRecords) {
-          const memberId = pr.player_name; // player_name にメンバー名を使用
-          // メンバーIDで検索（player_records.player_name がメンバー名の場合）
           const member = Array.from(memberMap.values()).find(
             (m) => m.username === pr.player_name
           );
@@ -646,10 +692,10 @@ export class GroupService {
       // スコア推移
       const scoreHistory: ScoreHistoryEntry[] = games
         .reverse()
-        .map((game: any, idx: number) => {
+        .map((game, idx) => {
           const playerRecords = game.player_records || [];
           const scores = playerRecords
-            .map((pr: any) => {
+            .map((pr) => {
               const member = Array.from(memberMap.values()).find(
                 (m) => m.username === pr.player_name
               );
@@ -660,7 +706,7 @@ export class GroupService {
                 score: pr.final_score ?? 0,
               };
             })
-            .filter(Boolean);
+            .filter(Boolean) as { memberId: string; username: string; score: number }[];
 
           return { gameIndex: idx + 1, scores };
         });

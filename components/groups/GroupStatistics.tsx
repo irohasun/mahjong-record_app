@@ -94,12 +94,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2F2F7',
     borderRadius: 10,
     padding: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   statLabel: {
     fontSize: 12,
     color: '#8E8E93',
-    marginBottom: 4,
   },
   statValue: {
     fontSize: 18,

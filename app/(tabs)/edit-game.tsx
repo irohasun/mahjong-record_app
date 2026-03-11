@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { GameService } from '@/services/GameService';
+import { GroupService } from '@/services/GroupService';
 import { ensureAuthenticated } from '@/utils/authUtils';
 import { notifyGamesChanged } from '@/utils/cacheInvalidation';
 import { AccountService } from '@/services/AccountService';
@@ -80,6 +81,9 @@ export default function EditGameScreen() {
   // アバターURL
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
 
+  // 紐づいているグループ名
+  const [linkedGroupName, setLinkedGroupName] = useState<string | null>(null);
+
   // 画面フォーカス時のデータロード
   useFocusEffect(
     useCallback(() => {
@@ -137,6 +141,12 @@ export default function EditGameScreen() {
           const url = await StorageService.getPublicUrl(account.avatar_url);
           setMyAvatarUrl(url);
         }
+      } catch { }
+
+      // 紐づいているグループ名を取得
+      try {
+        const groupName = await GroupService.getGroupNameByGameId(gameId);
+        setLinkedGroupName(groupName);
       } catch { }
 
       // ルール設定を復元（編集可能にする）
@@ -794,6 +804,9 @@ export default function EditGameScreen() {
           <Text style={styles.dateText}>
             {gameDate.getFullYear()}年{gameDate.getMonth() + 1}月{gameDate.getDate()}日の対局
           </Text>
+          {linkedGroupName && (
+            <Text style={styles.groupMatchTag}>{linkedGroupName}</Text>
+          )}
         </TouchableOpacity>
 
         {/* 右側: カメラ＋ルールアイコン */}
@@ -1548,6 +1561,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'left',
+  },
+  groupMatchTag: {
+    fontSize: 11,
+    color: '#FF6B35',
+    fontWeight: '500',
+    textAlign: 'left',
+    marginTop: 2,
   },
   iconButton: {
     padding: 8,

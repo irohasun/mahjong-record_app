@@ -6,6 +6,7 @@ import { GameRecord } from '@/types/GameRecord';
 import { usePhotoUrl } from '@/hooks/usePhotoUrl';
 import { calculateRankCounts, calculateAverageRank } from '@/utils/rankCalculation';
 
+
 interface GameCardProps {
   game: GameRecord;
   onEdit: (game: GameRecord) => void;
@@ -76,10 +77,6 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
 
           <View style={styles.centerSection}>
             <View style={styles.statRow}>
-              <Text style={styles.statLabel}>平均着順</Text>
-              <Text style={styles.averageRankText}>{averageRank.toFixed(1)}位</Text>
-            </View>
-            <View style={styles.statRow}>
               <Text style={styles.statLabel}>収支</Text>
               <Text
                 style={[
@@ -94,7 +91,6 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
           </View>
 
           <View style={styles.rightSection}>
-            <Text style={styles.rankDistributionTitle}>着順</Text>
             <View style={styles.rankDistribution}>
               {([1, 2, 3, 4] as const).map((rank) => (
                 <View key={rank} style={styles.rankBadge}>
@@ -112,6 +108,10 @@ function GameCardInner({ game, onEdit, onDelete }: GameCardProps) {
                   <Text style={styles.rankCount}>{rankCounts[rank]}</Text>
                 </View>
               ))}
+            </View>
+            <View style={styles.avgRankRow}>
+              <Text style={styles.statLabel}>平均着順</Text>
+              <Text style={styles.averageRankText}>{averageRank.toFixed(1)}位</Text>
             </View>
           </View>
         </View>
@@ -165,8 +165,8 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
   },
   thumbnail: {
-    width: 72,
-    height: 72,
+    width: 80,
+    height: 56,
     borderRadius: 8,
     backgroundColor: '#F2F2F7',
   },
@@ -202,14 +202,15 @@ const styles = StyleSheet.create({
   rightSection: {
     alignItems: 'center',
   },
-  rankDistributionTitle: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
   rankDistribution: {
     flexDirection: 'row',
+    gap: 4,
+  },
+  avgRankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
     gap: 4,
   },
   rankBadge: {

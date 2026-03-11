@@ -17,15 +17,16 @@ export function MemberRankingList({ rankings }: MemberRankingProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.wrapper}>
       <Text style={styles.sectionTitle}>メンバーランキング</Text>
-
+      <View style={styles.container}>
       {/* ヘッダー */}
       <View style={styles.headerRow}>
         <Text style={[styles.headerCell, styles.rankCell]}>順位</Text>
         <Text style={[styles.headerCell, styles.nameCell]}>メンバー</Text>
+        <Text style={[styles.headerCell, styles.avgRankCell]}>平均順位</Text>
         <Text style={[styles.headerCell, styles.gamesCell]}>対局数</Text>
-        <Text style={[styles.headerCell, styles.scoreCell]}>ポイント</Text>
+        <Text style={[styles.headerCell, styles.scoreCell, { textAlign: 'right' }]}>ポイント</Text>
       </View>
 
       {rankings.map((member) => (
@@ -65,15 +66,14 @@ export function MemberRankingList({ rankings }: MemberRankingProps) {
                   <User size={14} color="#8E8E93" />
                 </View>
               )}
-              <View>
-                <Text style={styles.memberName} numberOfLines={1}>
-                  {member.username}
-                </Text>
-                <Text style={styles.avgRank}>
-                  平均{member.averageRank.toFixed(2)}位
-                </Text>
-              </View>
+              <Text style={styles.memberName} numberOfLines={1}>
+                {member.username}
+              </Text>
             </View>
+          </View>
+
+          <View style={styles.avgRankCell}>
+            <Text style={styles.avgRankText}>{member.averageRank.toFixed(2)}位</Text>
           </View>
 
           <View style={styles.gamesCell}>
@@ -93,16 +93,20 @@ export function MemberRankingList({ rankings }: MemberRankingProps) {
           </View>
         </View>
       ))}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
   container: {
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
   },
   emptyContainer: {
     backgroundColor: '#FFF',
@@ -119,7 +123,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1C1C1E',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   headerRow: {
     flexDirection: 'row',
@@ -142,15 +146,24 @@ const styles = StyleSheet.create({
   },
   rankCell: {
     width: 36,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
   nameCell: {
     flex: 1,
     marginRight: 8,
   },
+  avgRankCell: {
+    width: 52,
+    alignItems: 'center',
+  },
+  avgRankText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1C1C1E',
+  },
   gamesCell: {
-    width: 50,
+    width: 44,
     alignItems: 'center',
   },
   scoreCell: {
@@ -174,9 +187,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5EE',
   },
   rankText: {
+    width: 24,
     fontSize: 14,
     fontWeight: '600',
     color: '#8E8E93',
+    textAlign: 'center',
   },
   memberInfo: {
     flexDirection: 'row',
@@ -200,10 +215,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1C1C1E',
-  },
-  avgRank: {
-    fontSize: 11,
-    color: '#8E8E93',
   },
   gamesText: {
     fontSize: 14,

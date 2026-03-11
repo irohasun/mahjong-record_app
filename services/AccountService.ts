@@ -230,9 +230,9 @@ export class AccountService {
       
       // 月が変わったかチェック
       const now = new Date();
-      const lastReset = new Date(account.last_reset_date);
-      
-      let newCount = account.monthly_game_count + 1;
+      const lastReset = new Date(account.last_reset_date ?? new Date().toISOString());
+
+      let newCount = (account.monthly_game_count ?? 0) + 1;
       let newResetDate = account.last_reset_date;
       
       if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
@@ -271,13 +271,13 @@ export class AccountService {
       
       // 月が変わったかチェック
       const now = new Date();
-      const lastReset = new Date(account.last_reset_date);
-      
+      const lastReset = new Date(account.last_reset_date ?? new Date().toISOString());
+
       if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
         return 0;
       }
-      
-      return account.monthly_game_count;
+
+      return account.monthly_game_count ?? 0;
     } catch {
       return 0;
     }
