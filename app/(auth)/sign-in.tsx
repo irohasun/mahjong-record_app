@@ -19,9 +19,7 @@ export default function SignInScreen() {
 
     setLoading(true);
     try {
-      console.log('🔍 DEBUG: Attempting sign in with email:', email.trim());
       await AuthService.signIn(email.trim(), password);
-      console.log('🔍 DEBUG: Sign in successful');
       router.replace('/(tabs)/history');
     } catch (error: any) {
       console.error('❌ DEBUG: Sign in error:', error);

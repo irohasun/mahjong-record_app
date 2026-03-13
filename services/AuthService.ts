@@ -284,19 +284,6 @@ export class AuthService {
   }
 
   /**
-   * メールアドレス確認状態をチェック
-   * @returns 確認済みかどうか
-   */
-  static async isEmailVerified(): Promise<boolean> {
-    try {
-      const user = await this.getCurrentUser();
-      return user?.email_confirmed_at != null;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
    * メール確認メールを再送信
    * @param email メールアドレス
    */

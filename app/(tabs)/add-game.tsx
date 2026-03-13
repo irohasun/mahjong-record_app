@@ -770,15 +770,6 @@ export default function AddGameScreen() {
         chipCounts,
       };
 
-      // 最終バリデーション: gameRecordの整合性チェック
-      console.log('保存前の最終チェック:', {
-        playerCount,
-        playersLength: gameRecord.players.length,
-        roundsCount: gameRecord.rounds.length,
-        chipCountsLength: chipCounts?.length,
-        firstRoundPointsLength: gameRecord.rounds[0]?.points?.length
-      });
-
       // 新規作成モード
       const savedGame = await GameService.addGame(gameRecord);
       // グループ対戦の場合、game_groups に紐付け

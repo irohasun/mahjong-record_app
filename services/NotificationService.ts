@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 通知の設定を定義
-export interface NotificationSettings {
+interface NotificationSettings {
   enabled: boolean;
   gameReminders: boolean;
   weeklyStats: boolean;

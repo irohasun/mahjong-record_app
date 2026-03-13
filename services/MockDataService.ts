@@ -30,13 +30,6 @@ export class MockDataService {
   }
 
   /**
-   * 過去12ヶ月の月別統計データ
-   */
-  static generateMonthlyStats() {
-    return [];
-  }
-
-  /**
    * チャート用の得点推移データ
    */
   static generateChartData(period: 'month' | 'year' | 'all') {

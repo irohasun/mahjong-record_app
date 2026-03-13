@@ -50,7 +50,6 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       // 匿名ユーザーの場合はアップグレード、そうでない場合は新規登録
-      console.log('🔄 Attempting to upgrade anonymous user or create new account');
       const result = await AuthService.upgradeAnonymousUser(email.trim(), password);
 
       // メール確認が必要な場合（sessionがnullの場合）
@@ -71,8 +70,6 @@ export default function SignUpScreen() {
         );
       } else if (result.user) {
         // アップグレード成功（開発環境でメール確認不要の場合）
-        console.log('✅ Anonymous user upgraded successfully');
-        
         // ローカルデータをSupabaseに同期
         try {
           const syncedCount = await SyncService.syncLocalDataToSupabase();

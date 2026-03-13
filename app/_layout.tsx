@@ -34,7 +34,6 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeNotifications = async () => {
       try {
-        console.log('🔔 DEBUG: Initializing notifications in app layout...');
         await NotificationService.initialize();
       } catch (error) {
         console.error('❌ DEBUG: Failed to initialize notifications in app layout:', error);
