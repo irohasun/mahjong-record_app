@@ -166,10 +166,10 @@ export default function StatisticsScreen() {
   const highestRevenue: number | null =
     typeof stats?.highestScore === 'number' ? stats.highestScore : null;
 
-  // 合計収支（平均収支 × 総対局数）
+  // 合計収支（平均収支 × 総対局数 + チップ合計）
   const totalRevenue: number | null =
     typeof stats?.averageScore === 'number' && typeof stats?.totalGames === 'number'
-      ? stats.averageScore * stats.totalGames
+      ? stats.averageScore * stats.totalGames + (stats.totalChipScore ?? 0)
       : null;
 
   return (

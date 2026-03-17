@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Trophy } from 'lucide-react-native';
+import { ChevronLeft, Trophy, Users } from 'lucide-react-native';
 import { AccountService } from '@/services/AccountService';
 import { FriendService } from '@/services/FriendService';
 import { StorageService } from '@/services/StorageService';
@@ -148,15 +148,6 @@ export default function RankingScreen() {
 
   const currentRating = mode === '4p' ? myRating.rating4p : myRating.rating3p;
 
-  const playerEntries = allPlayers
-    .filter((p) => p.id !== myId)
-    .map((p) => ({
-      id: p.id,
-      username: p.username,
-      resolvedAvatarUrl: p.resolvedAvatarUrl,
-      rating: mode === '4p' ? p.rating4p : p.rating3p,
-    }));
-
   const denseRank = <T extends { rating: number }>(items: T[]): (T & { rank: number })[] => {
     const sorted = [...items].sort((a, b) => b.rating - a.rating);
     let currentRank = 1;
@@ -168,14 +159,22 @@ export default function RankingScreen() {
     });
   };
 
-  const rankedPlayers: RankedPlayer[] = denseRank(playerEntries);
+  const playerEntries = allPlayers.map((p) => ({
+    id: p.id,
+    username: p.username,
+    resolvedAvatarUrl: p.resolvedAvatarUrl,
+    rating: mode === '4p' ? p.rating4p : p.rating3p,
+  }));
 
-  const allSorted = denseRank([
-    { id: 'me', username: myUsername, rating: currentRating },
-    ...playerEntries,
-  ]);
-  const myRank = allSorted.find((e) => e.id === 'me')?.rank ?? 1;
-  const totalCount = allPlayers.length > 0 ? allPlayers.length : allSorted.length;
+  // 自分がallPlayersに含まれていない場合は追加
+  const meInList = playerEntries.some((p) => p.id === myId);
+  const fullEntries = meInList
+    ? playerEntries
+    : [{ id: myId, username: myUsername, resolvedAvatarUrl: undefined as string | undefined, rating: currentRating }, ...playerEntries];
+
+  const rankedPlayers: RankedPlayer[] = denseRank(fullEntries);
+  const myRank = rankedPlayers.find((e) => e.id === myId)?.rank ?? 1;
+  const totalCount = rankedPlayers.length;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -236,23 +235,24 @@ export default function RankingScreen() {
               <Text style={styles.emptyText}>プレイヤーのレーティングデータがありません</Text>
             </View>
           ) : (
-            rankedPlayers.map((player) => (
-              <View key={player.id} style={styles.rankRow}>
-                <RankBadge rank={player.rank} />
-                <AvatarBadge username={player.username} rank={player.rank} avatarUrl={player.resolvedAvatarUrl} />
-                <View style={styles.nameContainer}>
-                  <Text style={styles.rankUsername} numberOfLines={1}>
-                    {player.username}
-                  </Text>
-                  {friendIds.has(player.id) && (
-                    <View style={styles.friendBadge}>
-                      <Text style={styles.friendBadgeText}>フレンド</Text>
-                    </View>
-                  )}
+            rankedPlayers.map((player) => {
+              const isMe = player.id === myId;
+              return (
+                <View key={player.id} style={[styles.rankRow, isMe && styles.rankRowMe]}>
+                  <RankBadge rank={player.rank} />
+                  <AvatarBadge username={player.username} rank={player.rank} avatarUrl={player.resolvedAvatarUrl} />
+                  <View style={styles.nameContainer}>
+                    <Text style={styles.rankUsername} numberOfLines={1}>
+                      {player.username}
+                    </Text>
+                    {!isMe && friendIds.has(player.id) && (
+                      <Users size={16} color="#007AFF" />
+                    )}
+                  </View>
+                  <Text style={styles.rankRating}>{player.rating}</Text>
                 </View>
-                <Text style={styles.rankRating}>{player.rating}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -394,6 +394,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  rankRowMe: {
+    borderColor: '#FF6B35',
+    backgroundColor: '#FFF8F5',
   },
   rankBadge: {
     width: 28,
@@ -410,7 +416,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FF6B35',
+    backgroundColor: '#8E8E93',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -437,13 +443,16 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     flexShrink: 1,
   },
-  friendBadge: {
-    backgroundColor: '#007AFF',
+  rankUsernameMe: {
+    color: '#FF6B35',
+  },
+  meBadge: {
+    backgroundColor: '#FF6B35',
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  friendBadgeText: {
+  meBadgeText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#FFF',
@@ -452,6 +461,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#1C1C1E',
+  },
+  rankRatingMe: {
+    color: '#FF6B35',
   },
   emptyContainer: {
     backgroundColor: '#FFF',

@@ -912,6 +912,7 @@ export class GameService {
         highestScore: data.highestScore ?? 0,
         lowestScore: data.lowestScore ?? 0,
         maxConsecutiveWins: 0,
+        totalChipScore: data.totalChipScore ?? 0,
         rankDistribution: {
           1: data.rankDistribution?.['1'] ?? 0,
           2: data.rankDistribution?.['2'] ?? 0,

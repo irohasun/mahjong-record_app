@@ -233,8 +233,6 @@ export default function FriendsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-      </View>
 
       <ScrollView
         style={styles.scrollView}

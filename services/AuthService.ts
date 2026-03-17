@@ -242,6 +242,14 @@ export class AuthService {
       const { data: { session }, error } = await supabase.auth.getSession();
 
       if (error) {
+        // 無効なリフレッシュトークンの場合はセッションをクリアする
+        if (
+          error.message.includes('Invalid Refresh Token') ||
+          error.message.includes('Refresh Token Not Found')
+        ) {
+          await supabase.auth.signOut();
+          await this.clearAuthState();
+        }
         return null;
       }
 
@@ -376,9 +384,17 @@ export class AuthService {
     if (!isSupabaseConfigured) {
       return () => {}; // 何もしない関数を返す
     }
-    
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // リフレッシュトークンが無効な場合、ローカルのセッションをクリアしてサインアウト
+        if (event === 'TOKEN_REFRESH_FAILED') {
+          await supabase.auth.signOut();
+          await this.clearAuthState();
+          callback(null);
+          return;
+        }
+
         if (session?.user) {
           await this.saveAuthState(session.user, session);
         } else {

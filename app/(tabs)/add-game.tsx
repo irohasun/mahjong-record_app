@@ -48,6 +48,17 @@ export default function AddGameScreen() {
   const [ruleConfig, setRuleConfig] = useState<RuleConfig>(DEFAULT_RULE_CONFIG);
   const [showRuleSettings, setShowRuleSettings] = useState(false);
   const [tempRuleConfig, setTempRuleConfig] = useState<RuleConfig>(DEFAULT_RULE_CONFIG);
+  // 入力中の生テキスト（parseInt || 0 で途中クリアができなくなるため別管理）
+  const [tobiBonusText, setTobiBonusText] = useState(String(DEFAULT_RULE_CONFIG.tobiBonus));
+  const [chipValueText, setChipValueText] = useState(String(DEFAULT_RULE_CONFIG.chipValue));
+
+  // モーダルが開いたときにテキスト状態を同期
+  useEffect(() => {
+    if (showRuleSettings) {
+      setTobiBonusText(String(tempRuleConfig.tobiBonus));
+      setChipValueText(String(tempRuleConfig.chipValue));
+    }
+  }, [showRuleSettings]);
 
   // playerCount のショートカット
   const playerCount = ruleConfig.playerCount;
@@ -1316,20 +1327,21 @@ export default function AddGameScreen() {
 
       {/* ルール設定モーダル */}
       <Modal visible={showRuleSettings} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => {
-            // 外側タップ時は変更を破棄して閉じる
-            setTempRuleConfig(ruleConfig);
-            setShowRuleSettings(false);
-          }}
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <TouchableOpacity
-            style={styles.ruleSettingsModal}
+            style={styles.modalOverlay}
             activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+            onPress={() => {
+              // 外側タップ時は変更を破棄して閉じる
+              setTempRuleConfig(ruleConfig);
+              setShowRuleSettings(false);
+            }}
           >
+            <TouchableOpacity
+              style={styles.ruleSettingsModal}
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+            >
             <Text style={styles.ruleSettingsTitle}>ルール設定</Text>
 
             {/* 4人麻雀 / 3人麻雀 切り替え */}
@@ -1453,11 +1465,11 @@ export default function AddGameScreen() {
                   styles.ruleSettingsInput,
                   !tempRuleConfig.tobiBonusEnabled && styles.disabledInput
                 ]}
-                value={String(tempRuleConfig.tobiBonus)}
-                onChangeText={(t) => setTempRuleConfig({
-                  ...tempRuleConfig,
-                  tobiBonus: parseInt(t) || 0
-                })}
+                value={tobiBonusText}
+                onChangeText={(t) => {
+                  setTobiBonusText(t);
+                  setTempRuleConfig({ ...tempRuleConfig, tobiBonus: parseInt(t) || 0 });
+                }}
                 keyboardType="number-pad"
                 editable={tempRuleConfig.tobiBonusEnabled}
               />
@@ -1483,11 +1495,11 @@ export default function AddGameScreen() {
                   styles.ruleSettingsInput,
                   !tempRuleConfig.chipEnabled && styles.disabledInput
                 ]}
-                value={String(tempRuleConfig.chipValue)}
-                onChangeText={(t) => setTempRuleConfig({
-                  ...tempRuleConfig,
-                  chipValue: parseInt(t) || 0
-                })}
+                value={chipValueText}
+                onChangeText={(t) => {
+                  setChipValueText(t);
+                  setTempRuleConfig({ ...tempRuleConfig, chipValue: parseInt(t) || 0 });
+                }}
                 keyboardType="number-pad"
                 editable={tempRuleConfig.chipEnabled}
               />
@@ -1504,6 +1516,7 @@ export default function AddGameScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

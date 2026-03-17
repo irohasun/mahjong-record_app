@@ -195,8 +195,6 @@ export default function HistoryScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
-        <View style={styles.header} />
-
         {games.length === 0 ? (
           <View style={styles.emptyState}>
             <Calendar size={64} color="#C7C7CC" />

@@ -211,7 +211,6 @@ export default function AccountScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
-      <View style={styles.header} />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -390,10 +389,12 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 16,
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+    marginTop: 4,
   },
   sectionTitleSmall: {
     fontSize: 13,

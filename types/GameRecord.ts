@@ -64,6 +64,7 @@ export interface PlayerStats {
   lowestScore: number;
   maxConsecutiveWins: number;
   rankDistribution: { [key: number]: number };
+  totalChipScore?: number;
 }
 
 // ドラフト保存用の型（add-game.tsx のローカルステート永続化用）
