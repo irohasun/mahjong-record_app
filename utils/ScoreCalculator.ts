@@ -264,30 +264,27 @@ export function autoCompleteRawScore(input: string): number | null {
   const num = parseInt(trimmed, 10);
   if (isNaN(num)) return null;
 
-  // マイナス値の場合、絶対値で桁数を判定
-  const absNum = Math.abs(num);
-  const isNegative = num < 0;
+  // マイナス値はそのまま返す（飛びスコアは自動計算された実際の値）
+  if (num < 0) return num;
 
-  let result: number;
+  const absNum = num;
 
   // 5桁以上ならそのまま返す
   if (absNum >= 10000) {
-    result = absNum;
+    return absNum;
   } else if (absNum >= 1000) {
     // 4桁はそのまま（1000〜9999）
-    result = absNum;
+    return absNum;
   } else if (absNum >= 100) {
     // 3桁は100倍（100〜999 → 10000〜99900）
-    result = absNum * 100;
+    return absNum * 100;
   } else if (absNum >= 10) {
     // 2桁は1000倍（10〜99 → 10000〜99000）
-    result = absNum * 1000;
+    return absNum * 1000;
   } else {
     // 1桁は10000倍（1〜9 → 10000〜90000）
-    result = absNum * 10000;
+    return absNum * 10000;
   }
-
-  return isNegative ? -result : result;
 }
 
 /**

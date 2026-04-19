@@ -248,29 +248,18 @@ describe('autoCompleteRawScore', () => {
     expect(autoCompleteRawScore('1')).toBe(10000);
   });
 
-  it('マイナス値：5桁以上はそのまま返す', () => {
+  it('マイナス値はスケーリングせずそのまま返す（飛びスコアは実際の値）', () => {
     expect(autoCompleteRawScore('-25000')).toBe(-25000);
     expect(autoCompleteRawScore('-100000')).toBe(-100000);
-  });
-
-  it('マイナス値：4桁はそのまま返す', () => {
     expect(autoCompleteRawScore('-2500')).toBe(-2500);
     expect(autoCompleteRawScore('-1000')).toBe(-1000);
-  });
-
-  it('マイナス値：3桁は100倍', () => {
-    expect(autoCompleteRawScore('-311')).toBe(-31100);
-    expect(autoCompleteRawScore('-100')).toBe(-10000);
-  });
-
-  it('マイナス値：2桁は1000倍', () => {
-    expect(autoCompleteRawScore('-25')).toBe(-25000);
-    expect(autoCompleteRawScore('-10')).toBe(-10000);
-  });
-
-  it('マイナス値：1桁は10000倍', () => {
-    expect(autoCompleteRawScore('-3')).toBe(-30000);
-    expect(autoCompleteRawScore('-1')).toBe(-10000);
+    expect(autoCompleteRawScore('-800')).toBe(-800);
+    expect(autoCompleteRawScore('-311')).toBe(-311);
+    expect(autoCompleteRawScore('-100')).toBe(-100);
+    expect(autoCompleteRawScore('-25')).toBe(-25);
+    expect(autoCompleteRawScore('-10')).toBe(-10);
+    expect(autoCompleteRawScore('-3')).toBe(-3);
+    expect(autoCompleteRawScore('-1')).toBe(-1);
   });
 });
 

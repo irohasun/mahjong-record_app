@@ -11,6 +11,7 @@ import { ensureAuthenticated } from '@/utils/authUtils';
 import { notifyGamesChanged } from '@/utils/cacheInvalidation';
 import { AccountService } from '@/services/AccountService';
 import { StorageService } from '@/services/StorageService';
+import { MAX_HANCHAN } from '@/utils/constants';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import {
   RuleConfig,
@@ -63,16 +64,16 @@ export default function EditGameScreen() {
   // playerCount のショートカット
   const playerCount = ruleConfig.playerCount;
 
-  // 半荘データ（最大8半荘）
+  // 半荘データ（最大20半荘）
   // rawScores[hanchanIndex][playerIndex] = 素点（文字列）
   const [hanchanCount, setHanchanCount] = useState(5);
   const [rawScores, setRawScores] = useState<string[][]>(
-    Array(8).fill(null).map(() => Array(4).fill(''))
+    Array(MAX_HANCHAN).fill(null).map(() => Array(4).fill(''))
   );
 
-  // 飛ばしたプレイヤーのデータ（8半荘 × 最大4プレイヤー）
+  // 飛ばしたプレイヤーのデータ（20半荘 × 最大4プレイヤー）
   const [tobiWinners, setTobiWinners] = useState<number[][]>(
-    Array(8).fill(null).map(() => [])
+    Array(MAX_HANCHAN).fill(null).map(() => [])
   );
 
   // チップ枚数（プレイヤーごと）
@@ -201,11 +202,11 @@ export default function EditGameScreen() {
       // rawScores（素点）を復元
       const restoredPc = restoredConfig.playerCount;
       if (editGameData.rounds && editGameData.rounds.length > 0) {
-        const newRawScores = Array(8).fill(null).map(() => Array(restoredPc).fill(''));
-        const newTobiWinners = Array(8).fill(null).map(() => [] as number[]);
+        const newRawScores = Array(MAX_HANCHAN).fill(null).map(() => Array(restoredPc).fill(''));
+        const newTobiWinners = Array(MAX_HANCHAN).fill(null).map(() => [] as number[]);
 
         editGameData.rounds.forEach((round: any, hIndex: number) => {
-          if (hIndex >= 8) return;
+          if (hIndex >= MAX_HANCHAN) return;
 
           let memoData: Record<string, unknown> = {};
           if (round.memo) {
@@ -310,7 +311,7 @@ export default function EditGameScreen() {
 
   // 各半荘の検証結果を計算
   const validationResults = useMemo(() => {
-    return Array(8).fill(null).map((_, index) => {
+    return Array(MAX_HANCHAN).fill(null).map((_, index) => {
       if (index >= hanchanCount) return null;
       const rawScoreRow = rawScores[index];
       const allEntered = rawScoreRow.every(s => s !== '');
@@ -559,7 +560,7 @@ export default function EditGameScreen() {
 
   // 半荘追加
   const addHanchan = () => {
-    if (hanchanCount < 8) {
+    if (hanchanCount < MAX_HANCHAN) {
       setHanchanCount(hanchanCount + 1);
     }
   };
@@ -996,7 +997,7 @@ export default function EditGameScreen() {
             })}
 
             {/* 半荘追加ボタン */}
-            {hanchanCount < 8 && (
+            {hanchanCount < MAX_HANCHAN && (
               <TouchableOpacity style={styles.addHanchanBtn} onPress={addHanchan}>
                 <Text style={styles.addHanchanText}>+ 半荘を追加</Text>
               </TouchableOpacity>
@@ -1346,8 +1347,8 @@ export default function EditGameScreen() {
                           setRuleConfig(newConfig);
                           setTempRuleConfig(newConfig);
                           setPlayers(['自分', 'P2', 'P3', 'P4']);
-                          setRawScores(Array(8).fill(null).map(() => Array(4).fill('')));
-                          setTobiWinners(Array(8).fill(null).map(() => []));
+                          setRawScores(Array(MAX_HANCHAN).fill(null).map(() => Array(4).fill('')));
+                          setTobiWinners(Array(MAX_HANCHAN).fill(null).map(() => []));
                           setChips(Array(4).fill(''));
                           setShowRuleSettings(false);
                         },
@@ -1380,8 +1381,8 @@ export default function EditGameScreen() {
                           setRuleConfig(newConfig);
                           setTempRuleConfig(newConfig);
                           setPlayers(['自分', 'P2', 'P3']);
-                          setRawScores(Array(8).fill(null).map(() => Array(3).fill('')));
-                          setTobiWinners(Array(8).fill(null).map(() => []));
+                          setRawScores(Array(MAX_HANCHAN).fill(null).map(() => Array(3).fill('')));
+                          setTobiWinners(Array(MAX_HANCHAN).fill(null).map(() => []));
                           setChips(Array(3).fill(''));
                           setShowRuleSettings(false);
                         },
