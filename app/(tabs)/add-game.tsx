@@ -1,7 +1,11 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Modal, Image, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Book, Check, X, Camera } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import ShareCard from '@/components/ShareCard';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,13 +30,13 @@ import {
   detectAutoCompleteTarget,
 } from '@/utils/ScoreCalculator';
 
-/**
- * 対局記録追加画面
- * 素点入力 → 自動計算形式
- */
+const MAX_HANCHAN_COUNT = 20;
+
 export default function AddGameScreen() {
   const router = useRouter();
   const keyboardAnimation = useRef(new Animated.Value(0)).current;
+  const ruleSheetAnimation = useRef(new Animated.Value(0)).current;
+  const shareCardRef = useRef<View>(null);
 
   // 基本状態
   const [gameDate, setGameDate] = useState(new Date());
@@ -63,16 +67,16 @@ export default function AddGameScreen() {
   // playerCount のショートカット
   const playerCount = ruleConfig.playerCount;
 
-  // 半荘データ（最大8半荘）
+  // 半荘データ
   // rawScores[hanchanIndex][playerIndex] = 素点（文字列）
   const [hanchanCount, setHanchanCount] = useState(5);
   const [rawScores, setRawScores] = useState<string[][]>(
-    Array(8).fill(null).map(() => Array(4).fill(''))
+    Array(MAX_HANCHAN_COUNT).fill(null).map(() => Array(4).fill(''))
   );
 
-  // 飛ばしたプレイヤーのデータ（8半荘 × 最大4プレイヤー）
+  // 飛ばしたプレイヤーのデータ
   const [tobiWinners, setTobiWinners] = useState<number[][]>(
-    Array(8).fill(null).map(() => [])
+    Array(MAX_HANCHAN_COUNT).fill(null).map(() => [])
   );
 
   // チップ枚数（プレイヤーごと）
@@ -229,8 +233,8 @@ export default function AddGameScreen() {
     const defaultNames = pc === 3 ? ['', 'P2', 'P3'] : ['', 'P2', 'P3', 'P4'];
     setGameDate(new Date());
     setHanchanCount(5);
-    setRawScores(Array(8).fill(null).map(() => Array(pc).fill('')));
-    setTobiWinners(Array(8).fill(null).map(() => []));
+    setRawScores(Array(MAX_HANCHAN_COUNT).fill(null).map(() => Array(pc).fill('')));
+    setTobiWinners(Array(MAX_HANCHAN_COUNT).fill(null).map(() => []));
     setPlayers(defaultNames);
     setRuleConfig(resetConfig);
     setChips(Array(pc).fill(''));
@@ -341,7 +345,7 @@ export default function AddGameScreen() {
 
   // 各半荘の検証結果を計算
   const validationResults = useMemo(() => {
-    return Array(8).fill(null).map((_, index) => {
+    return Array(MAX_HANCHAN_COUNT).fill(null).map((_, index) => {
       if (index >= hanchanCount) return null;
       const rawScoreRow = rawScores[index];
       const allEntered = rawScoreRow.every(s => s !== '');
@@ -377,8 +381,8 @@ export default function AddGameScreen() {
     });
   }, [chips, ruleConfig.chipEnabled, ruleConfig.chipValue, playerCount]);
 
-  // 合計収支を計算
-  const getTotalScores = useCallback((): (number | null)[] => {
+  // 半荘のみの合計収支を計算（チップ除く）
+  const getHanchanOnlyTotals = useCallback((): number[] => {
     const totals = Array(playerCount).fill(0);
     for (let h = 0; h < hanchanCount; h++) {
       const { scores } = getCalculatedResults(h);
@@ -386,13 +390,70 @@ export default function AddGameScreen() {
         if (s !== null) totals[i] += s;
       });
     }
+    return totals;
+  }, [hanchanCount, getCalculatedResults, playerCount]);
+
+  // 合計収支を計算
+  const getTotalScores = useCallback((): (number | null)[] => {
+    const totals = getHanchanOnlyTotals() as (number | null)[];
     // チップ精算点を加算
     const chipScores = getChipScores();
-    totals.forEach((_, i) => {
-      totals[i] += chipScores[i];
+    return totals.map((t, i) => (t !== null ? t + chipScores[i] : null));
+  }, [getHanchanOnlyTotals, getChipScores]);
+
+  // 共有テキストを生成
+  const buildShareText = useCallback(() => {
+    const dateStr = `${gameDate.getFullYear()}年${gameDate.getMonth() + 1}月${gameDate.getDate()}日`;
+    const totals = getTotalScores();
+    const ranked = players.slice(0, playerCount)
+      .map((name, i) => ({ name: name || `P${i + 1}`, total: totals[i] ?? 0 }))
+      .sort((a, b) => b.total - a.total);
+    const rankLabels = ['1位', '2位', '3位', '4位'];
+    const lines = ranked.map((p, i) => {
+      const sign = p.total > 0 ? '+' : '';
+      return `${rankLabels[i]} ${p.name}: ${sign}${p.total.toFixed(1)}`;
     });
-    return totals;
-  }, [hanchanCount, getCalculatedResults, getChipScores, playerCount]);
+    return [`🀄 ${dateStr}の対局（${hanchanCount}半荘）`, '', ...lines].join('\n');
+  }, [gameDate, players, playerCount, hanchanCount, getTotalScores]);
+
+  const handleShare = useCallback(async () => {
+    if (showCustomKeyboard) {
+      setShowCustomKeyboard(false);
+      Animated.timing(keyboardAnimation, { toValue: 0, duration: 150, useNativeDriver: true }).start();
+    }
+    try {
+      const uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
+      const text = buildShareText();
+      if (Platform.OS === 'ios') {
+        await Share.share({ message: text, url: uri });
+      } else {
+        await Sharing.shareAsync(uri);
+      }
+    } catch {
+      Alert.alert('エラー', '共有に失敗しました');
+    }
+  }, [showCustomKeyboard, keyboardAnimation, buildShareText]);
+
+  const handleOpenRuleSettings = useCallback(() => {
+    setTempRuleConfig(ruleConfig);
+    ruleSheetAnimation.setValue(0);
+    setShowRuleSettings(true);
+    Animated.spring(ruleSheetAnimation, {
+      toValue: 1,
+      damping: 20,
+      stiffness: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [ruleConfig, ruleSheetAnimation]);
+
+  const handleCloseRuleSettings = useCallback((discard = false) => {
+    if (discard) setTempRuleConfig(ruleConfig);
+    Animated.timing(ruleSheetAnimation, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setShowRuleSettings(false));
+  }, [ruleSheetAnimation, ruleConfig]);
 
   // 保存可能かチェック（エラーがある半荘がないか）
   const hasValidationError = useMemo(() => {
@@ -591,7 +652,7 @@ export default function AddGameScreen() {
 
   // 半荘追加
   const addHanchan = () => {
-    if (hanchanCount < 8) {
+    if (hanchanCount < MAX_HANCHAN_COUNT) {
       setHanchanCount(hanchanCount + 1);
     }
   };
@@ -827,6 +888,19 @@ export default function AddGameScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <Animated.View
+        style={[
+          { flex: 1 },
+          {
+            transform: [{
+              scale: ruleSheetAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0.92],
+              }),
+            }],
+          },
+        ]}
+      >
       {/* ヘッダー（グリーンバー） */}
       <View style={styles.headerBar}>
         {/* 左側: 日付 */}
@@ -839,8 +913,20 @@ export default function AddGameScreen() {
           )}
         </TouchableOpacity>
 
-        {/* 右側: カメラ＋ルールアイコン */}
+        {/* 右側: シェア＋カメラ＋ルールアイコン */}
         <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleShare}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M3 19 C3 10 9 7 15 7 L15 3 L22 11 L15 19 L15 15 C9 15 5 17 3 19 Z"
+                stroke="#FF6B35"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </Svg>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.photoButton}
             onPress={handlePickPhoto}
@@ -856,10 +942,7 @@ export default function AddGameScreen() {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.iconButton} onPress={() => {
-            setTempRuleConfig(ruleConfig);
-            setShowRuleSettings(true);
-          }}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleOpenRuleSettings}>
             <Book size={20} color="#FF6B35" />
           </TouchableOpacity>
         </View>
@@ -870,10 +953,9 @@ export default function AddGameScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
-          {/* スコアテーブル */}
-          <View style={styles.scoreTable}>
-            {/* プレイヤーヘッダー */}
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }} stickyHeaderIndices={[0]}>
+          {/* スティッキープレイヤーヘッダー (index 0) */}
+          <View style={styles.playerHeaderContainer}>
             <View style={styles.tableRow}>
               <View style={styles.rowLabel} />
               {players.map((name, idx) => (
@@ -906,7 +988,10 @@ export default function AddGameScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
 
+          {/* スコアテーブル本体 */}
+          <View style={styles.scoreTableBody}>
             {/* 各半荘 */}
             {Array.from({ length: hanchanCount }).map((_, hIndex) => {
               const { scores, ranks, isTobi } = getCalculatedResults(hIndex);
@@ -1015,16 +1100,36 @@ export default function AddGameScreen() {
             })}
 
             {/* 半荘追加ボタン */}
-            {hanchanCount < 8 && (
+            {hanchanCount < MAX_HANCHAN_COUNT && (
               <TouchableOpacity style={styles.addHanchanBtn} onPress={addHanchan}>
                 <Text style={styles.addHanchanText}>+ 半荘を追加</Text>
               </TouchableOpacity>
             )}
 
+            {/* 半荘計行（チップ有効時のみ） */}
+            {ruleConfig.chipEnabled && (
+              <View style={[styles.tableRow, styles.subtotalRow]}>
+                <View style={styles.rowLabel}>
+                  <Text style={styles.subtotalLabel}>半荘計</Text>
+                </View>
+                {getHanchanOnlyTotals().map((total, idx) => (
+                  <View key={idx} style={styles.subtotalCell}>
+                    <Text style={[
+                      styles.subtotalScore,
+                      total > 0 && styles.positiveScore,
+                      total < 0 && styles.negativeScore,
+                    ]}>
+                      {total > 0 ? `+${total.toFixed(1)}` : total.toFixed(1)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             {/* チップ行（チップ有効時のみ） */}
             {ruleConfig.chipEnabled && (
               <>
-                <View style={styles.tableRow}>
+                <View style={[styles.tableRow, styles.subtotalRow]}>
                   <View style={styles.rowLabel}>
                     <Text style={styles.chipLabel}>チップ</Text>
                   </View>
@@ -1036,7 +1141,7 @@ export default function AddGameScreen() {
                       <TouchableOpacity
                         key={pIndex}
                         style={[
-                          styles.scoreCell,
+                          styles.chipCell,
                           isActive && styles.scoreCellActive,
                         ]}
                         onPress={() => handleChipCellPress(pIndex)}
@@ -1047,7 +1152,7 @@ export default function AddGameScreen() {
                               {chipNum > 0 ? `+${chipNum}枚` : `${chipNum}枚`}
                             </Text>
                             <Text style={[
-                              styles.calculatedScore,
+                              styles.subtotalScore,
                               chipScore > 0 && styles.positiveScore,
                               chipScore < 0 && styles.negativeScore,
                             ]}>
@@ -1290,6 +1395,7 @@ export default function AddGameScreen() {
           </Animated.View>
         )}
       </KeyboardAvoidingView>
+      </Animated.View>
 
       {/* 日付ピッカー */}
       {Platform.OS === 'ios' ? (
@@ -1325,199 +1431,239 @@ export default function AddGameScreen() {
         )
       )}
 
-      {/* ルール設定モーダル */}
-      <Modal visible={showRuleSettings} transparent animationType="fade">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => {
-              // 外側タップ時は変更を破棄して閉じる
-              setTempRuleConfig(ruleConfig);
-              setShowRuleSettings(false);
-            }}
+      {/* ルール設定シート（アニメーション付き） */}
+      {showRuleSettings && (
+        <>
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: '#000',
+                opacity: ruleSheetAnimation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 0.45],
+                }),
+              },
+            ]}
           >
             <TouchableOpacity
-              style={styles.ruleSettingsModal}
+              style={{ flex: 1 }}
               activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}
+              onPress={() => handleCloseRuleSettings(true)}
+            />
+          </Animated.View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
+            pointerEvents="box-none"
+          >
+            <Animated.View
+              style={[
+                styles.ruleSettingsModal,
+                {
+                  transform: [{
+                    translateY: ruleSheetAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [600, 0],
+                    }),
+                  }],
+                },
+              ]}
             >
-            <Text style={styles.ruleSettingsTitle}>ルール設定</Text>
+              <Text style={styles.ruleSettingsTitle}>ルール設定</Text>
 
-            {/* 4人麻雀 / 3人麻雀 切り替え */}
-            <View style={styles.playerCountSegment}>
-              <TouchableOpacity
-                style={[
-                  styles.segmentButton,
-                  playerCount === 4 && styles.segmentButtonActive,
-                ]}
-                onPress={() => {
-                  if (playerCount === 4) return;
-                  Alert.alert(
-                    '4人麻雀に切り替え',
-                    '入力データがリセットされます。よろしいですか？',
-                    [
-                      {
-                        text: '切り替え',
-                        onPress: () => {
-                          resetForm(DEFAULT_RULE_CONFIG);
-                          setShowRuleSettings(false);
+              {/* 4人麻雀 / 3人麻雀 切り替え */}
+              <View style={styles.playerCountSegment}>
+                <TouchableOpacity
+                  style={[
+                    styles.segmentButton,
+                    playerCount === 4 && styles.segmentButtonActive,
+                  ]}
+                  onPress={() => {
+                    if (playerCount === 4) return;
+                    Alert.alert(
+                      '4人麻雀に切り替え',
+                      '入力データがリセットされます。よろしいですか？',
+                      [
+                        {
+                          text: '切り替え',
+                          onPress: () => {
+                            resetForm(DEFAULT_RULE_CONFIG);
+                            handleCloseRuleSettings();
+                          },
                         },
-                      },
-                      { text: 'キャンセル', style: 'cancel' },
-                    ]
-                  );
-                }}
-              >
-                <Text style={[
-                  styles.segmentText,
-                  playerCount === 4 && styles.segmentTextActive,
-                ]}>4人麻雀</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.segmentButton,
-                  playerCount === 3 && styles.segmentButtonActive,
-                ]}
-                onPress={() => {
-                  if (playerCount === 3) return;
-                  Alert.alert(
-                    '3人麻雀に切り替え',
-                    '入力データがリセットされます。よろしいですか？',
-                    [
-                      {
-                        text: '切り替え',
-                        onPress: () => {
-                          resetForm(DEFAULT_SANMA_CONFIG);
-                          setShowRuleSettings(false);
-                        },
-                      },
-                      { text: 'キャンセル', style: 'cancel' },
-                    ]
-                  );
-                }}
-              >
-                <Text style={[
-                  styles.segmentText,
-                  playerCount === 3 && styles.segmentTextActive,
-                ]}>3人麻雀</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.ruleSettingsRow}>
-              <Text style={styles.ruleSettingsLabel}>開始持ち点</Text>
-              <TextInput
-                style={styles.ruleSettingsInput}
-                value={String(tempRuleConfig.startingPoints)}
-                onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, startingPoints: parseInt(t) || 25000 })}
-                keyboardType="number-pad"
-              />
-            </View>
-
-            <View style={styles.ruleSettingsRow}>
-              <Text style={styles.ruleSettingsLabel}>返し点</Text>
-              <TextInput
-                style={styles.ruleSettingsInput}
-                value={String(tempRuleConfig.returnPoints)}
-                onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, returnPoints: parseInt(t) || 30000 })}
-                keyboardType="number-pad"
-              />
-            </View>
-
-            <View style={styles.ruleSettingsRow}>
-              <Text style={styles.ruleSettingsLabel}>
-                ウマ ({playerCount === 3 ? '1位/2位/3位' : '1位/2位/3位/4位'})
-              </Text>
-            </View>
-            <View style={styles.umaRow}>
-              {tempRuleConfig.uma.map((val, idx) => (
-                <TextInput
-                  key={idx}
-                  style={styles.umaInput}
-                  value={String(val)}
-                  onChangeText={(t) => {
-                    const newUma = [...tempRuleConfig.uma];
-                    newUma[idx] = parseInt(t) || 0;
-                    setTempRuleConfig({ ...tempRuleConfig, uma: newUma });
+                        { text: 'キャンセル', style: 'cancel' },
+                      ]
+                    );
                   }}
-                  keyboardType="numbers-and-punctuation"
+                >
+                  <Text style={[
+                    styles.segmentText,
+                    playerCount === 4 && styles.segmentTextActive,
+                  ]}>4人麻雀</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.segmentButton,
+                    playerCount === 3 && styles.segmentButtonActive,
+                  ]}
+                  onPress={() => {
+                    if (playerCount === 3) return;
+                    Alert.alert(
+                      '3人麻雀に切り替え',
+                      '入力データがリセットされます。よろしいですか？',
+                      [
+                        {
+                          text: '切り替え',
+                          onPress: () => {
+                            resetForm(DEFAULT_SANMA_CONFIG);
+                            handleCloseRuleSettings();
+                          },
+                        },
+                        { text: 'キャンセル', style: 'cancel' },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={[
+                    styles.segmentText,
+                    playerCount === 3 && styles.segmentTextActive,
+                  ]}>3人麻雀</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.ruleSettingsRow}>
+                <Text style={styles.ruleSettingsLabel}>開始持ち点</Text>
+                <TextInput
+                  style={styles.ruleSettingsInput}
+                  value={String(tempRuleConfig.startingPoints)}
+                  onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, startingPoints: parseInt(t) || 25000 })}
+                  keyboardType="number-pad"
                 />
-              ))}
-            </View>
+              </View>
 
-            {/* 飛び賞の点数（ラベルタップで有効/無効切替） */}
-            <View style={styles.ruleSettingsRow}>
-              <TouchableOpacity
-                onPress={() => setTempRuleConfig({
-                  ...tempRuleConfig,
-                  tobiBonusEnabled: !tempRuleConfig.tobiBonusEnabled
-                })}
-              >
-                <Text style={[
-                  styles.ruleSettingsLabel,
-                  !tempRuleConfig.tobiBonusEnabled && styles.toggleLabelDisabled,
-                ]}>
-                  飛び賞の点数
+              <View style={styles.ruleSettingsRow}>
+                <Text style={styles.ruleSettingsLabel}>返し点</Text>
+                <TextInput
+                  style={styles.ruleSettingsInput}
+                  value={String(tempRuleConfig.returnPoints)}
+                  onChangeText={(t) => setTempRuleConfig({ ...tempRuleConfig, returnPoints: parseInt(t) || 30000 })}
+                  keyboardType="number-pad"
+                />
+              </View>
+
+              <View style={styles.ruleSettingsRow}>
+                <Text style={styles.ruleSettingsLabel}>
+                  ウマ ({playerCount === 3 ? '1位/2位/3位' : '1位/2位/3位/4位'})
                 </Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[
-                  styles.ruleSettingsInput,
-                  !tempRuleConfig.tobiBonusEnabled && styles.disabledInput
-                ]}
-                value={tobiBonusText}
-                onChangeText={(t) => {
-                  setTobiBonusText(t);
-                  setTempRuleConfig({ ...tempRuleConfig, tobiBonus: parseInt(t) || 0 });
-                }}
-                keyboardType="number-pad"
-                editable={tempRuleConfig.tobiBonusEnabled}
-              />
-            </View>
+              </View>
+              <View style={styles.umaRow}>
+                {tempRuleConfig.uma.map((val, idx) => (
+                  <TextInput
+                    key={idx}
+                    style={styles.umaInput}
+                    value={String(val)}
+                    onChangeText={(t) => {
+                      const newUma = [...tempRuleConfig.uma];
+                      newUma[idx] = parseInt(t) || 0;
+                      setTempRuleConfig({ ...tempRuleConfig, uma: newUma });
+                    }}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                ))}
+              </View>
 
-            {/* チップ1枚の点数（ラベルタップで有効/無効切替） */}
-            <View style={styles.ruleSettingsRow}>
+              {/* 飛び賞の点数（ラベルタップで有効/無効切替） */}
+              <View style={styles.ruleSettingsRow}>
+                <TouchableOpacity
+                  onPress={() => setTempRuleConfig({
+                    ...tempRuleConfig,
+                    tobiBonusEnabled: !tempRuleConfig.tobiBonusEnabled
+                  })}
+                >
+                  <Text style={[
+                    styles.ruleSettingsLabel,
+                    !tempRuleConfig.tobiBonusEnabled && styles.toggleLabelDisabled,
+                  ]}>
+                    飛び賞の点数
+                  </Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={[
+                    styles.ruleSettingsInput,
+                    !tempRuleConfig.tobiBonusEnabled && styles.disabledInput
+                  ]}
+                  value={tobiBonusText}
+                  onChangeText={(t) => {
+                    setTobiBonusText(t);
+                    setTempRuleConfig({ ...tempRuleConfig, tobiBonus: parseInt(t) || 0 });
+                  }}
+                  keyboardType="number-pad"
+                  editable={tempRuleConfig.tobiBonusEnabled}
+                />
+              </View>
+
+              {/* チップ1枚の点数（ラベルタップで有効/無効切替） */}
+              <View style={styles.ruleSettingsRow}>
+                <TouchableOpacity
+                  onPress={() => setTempRuleConfig({
+                    ...tempRuleConfig,
+                    chipEnabled: !tempRuleConfig.chipEnabled
+                  })}
+                >
+                  <Text style={[
+                    styles.ruleSettingsLabel,
+                    !tempRuleConfig.chipEnabled && styles.toggleLabelDisabled,
+                  ]}>
+                    チップ1枚の点数
+                  </Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={[
+                    styles.ruleSettingsInput,
+                    !tempRuleConfig.chipEnabled && styles.disabledInput
+                  ]}
+                  value={chipValueText}
+                  onChangeText={(t) => {
+                    setChipValueText(t);
+                    setTempRuleConfig({ ...tempRuleConfig, chipValue: parseInt(t) || 0 });
+                  }}
+                  keyboardType="number-pad"
+                  editable={tempRuleConfig.chipEnabled}
+                />
+              </View>
+
               <TouchableOpacity
-                onPress={() => setTempRuleConfig({
-                  ...tempRuleConfig,
-                  chipEnabled: !tempRuleConfig.chipEnabled
-                })}
-              >
-                <Text style={[
-                  styles.ruleSettingsLabel,
-                  !tempRuleConfig.chipEnabled && styles.toggleLabelDisabled,
-                ]}>
-                  チップ1枚の点数
-                </Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[
-                  styles.ruleSettingsInput,
-                  !tempRuleConfig.chipEnabled && styles.disabledInput
-                ]}
-                value={chipValueText}
-                onChangeText={(t) => {
-                  setChipValueText(t);
-                  setTempRuleConfig({ ...tempRuleConfig, chipValue: parseInt(t) || 0 });
+                style={styles.ruleSettingsCloseBtn}
+                onPress={() => {
+                  setRuleConfig(tempRuleConfig);
+                  handleCloseRuleSettings();
                 }}
-                keyboardType="number-pad"
-                editable={tempRuleConfig.chipEnabled}
-              />
-            </View>
+              >
+                <Text style={styles.ruleSettingsCloseText}>反映する</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </>
+      )}
 
-            <TouchableOpacity
-              style={styles.ruleSettingsCloseBtn}
-              onPress={() => {
-                setRuleConfig(tempRuleConfig);
-                setShowRuleSettings(false);
-              }}
-            >
-              <Text style={styles.ruleSettingsCloseText}>反映する</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* オフスクリーン共有カード（captureRef用） */}
+      <ShareCard
+        cardRef={shareCardRef}
+        date={gameDate}
+        groupName={groupMatchGroupName}
+        players={players}
+        playerCount={playerCount}
+        hanchanCount={hanchanCount}
+        rawScores={rawScores}
+        chips={chips}
+        chipEnabled={ruleConfig.chipEnabled}
+        chipValue={ruleConfig.chipValue}
+        getCalculatedResults={getCalculatedResults}
+        getHanchanOnlyTotals={getHanchanOnlyTotals}
+        getTotalScores={getTotalScores}
+      />
     </SafeAreaView>
   );
 }
@@ -1601,6 +1747,22 @@ const styles = StyleSheet.create({
     margin: 8,
     backgroundColor: '#FFF',
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  playerHeaderContainer: {
+    marginHorizontal: 8,
+    marginTop: 8,
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  scoreTableBody: {
+    marginHorizontal: 8,
+    marginBottom: 8,
+    backgroundColor: '#FFF',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
     overflow: 'hidden',
   },
   tableRow: {
@@ -1744,10 +1906,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#8B5CF6',
   },
+  chipCell: {
+    flex: 1,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+  },
   chipCountText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#374151',
+    color: '#6B7280',
   },
   addHanchanBtn: {
     paddingVertical: 16,
@@ -1759,6 +1929,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FF6B35',
     fontWeight: '600',
+  },
+  subtotalRow: {
+    backgroundColor: '#F3F4F6',
+  },
+  subtotalLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  subtotalCell: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+  },
+  subtotalScore: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
   },
   totalRow: {
     backgroundColor: '#F9FAFB',
