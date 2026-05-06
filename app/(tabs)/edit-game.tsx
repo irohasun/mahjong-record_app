@@ -55,6 +55,7 @@ export default function EditGameScreen() {
   // 入力中の生テキスト（parseInt || 0 で途中クリアができなくなるため別管理）
   const [tobiBonusText, setTobiBonusText] = useState(String(DEFAULT_RULE_CONFIG.tobiBonus));
   const [chipValueText, setChipValueText] = useState(String(DEFAULT_RULE_CONFIG.chipValue));
+  const [showTieUma, setShowTieUma] = useState(false);
 
   // モーダルが開いたときにテキスト状態を同期
   useEffect(() => {
@@ -1547,11 +1548,18 @@ export default function EditGameScreen() {
                 />
               </View>
 
-              <View style={styles.ruleSettingsRow}>
+              <TouchableOpacity
+                style={styles.ruleSettingsRow}
+                onPress={() => playerCount === 4 && setShowTieUma(prev => !prev)}
+                disabled={playerCount !== 4}
+              >
                 <Text style={styles.ruleSettingsLabel}>
                   ウマ ({playerCount === 3 ? '1位/2位/3位' : '1位/2位/3位/4位'})
                 </Text>
-              </View>
+                {playerCount === 4 && (
+                  <Text style={styles.tieUmaChevron}>{showTieUma ? '▲' : '▼'}</Text>
+                )}
+              </TouchableOpacity>
               <View style={styles.umaRow}>
                 {tempRuleConfig.uma.map((val, idx) => (
                   <TextInput
@@ -1567,6 +1575,43 @@ export default function EditGameScreen() {
                   />
                 ))}
               </View>
+
+              {/* 同点時ウマ（自動計算・読み取り専用） - 4人麻雀のみ */}
+              {playerCount === 4 && (() => {
+                const [u1, u2, u3, u4] = tempRuleConfig.uma;
+                const mid23 = (u2 + u3) / 2;
+                const mid34 = (u3 + u4) / 2;
+                const tie23 = [u1, mid23, mid23, u4];
+                const tie34 = [u1, u2, mid34, mid34];
+                const fmtVal = (v: number) =>
+                  Number.isInteger(v) ? Math.abs(v) : Math.abs(v).toFixed(1);
+                return showTieUma && (
+                  <>
+                    <View style={styles.ruleSettingsRow}>
+                      <Text style={styles.ruleSettingsSublabel}>同点時 (1位/2位/2位/3位)</Text>
+                    </View>
+                    <View style={styles.umaRow}>
+                      {tie23.map((val, idx) => (
+                        <View key={idx} style={[styles.umaInputWrapper, styles.umaReadOnly]}>
+                          {val < 0 && <Text style={styles.umaMinusLabel}>−</Text>}
+                          <Text style={styles.umaReadOnlyText}>{fmtVal(val)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.ruleSettingsRow}>
+                      <Text style={styles.ruleSettingsSublabel}>同点時 (1位/2位/3位/3位)</Text>
+                    </View>
+                    <View style={styles.umaRow}>
+                      {tie34.map((val, idx) => (
+                        <View key={idx} style={[styles.umaInputWrapper, styles.umaReadOnly]}>
+                          {val < 0 && <Text style={styles.umaMinusLabel}>−</Text>}
+                          <Text style={styles.umaReadOnlyText}>{fmtVal(val)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                );
+              })()}
 
               {/* 飛び賞の点数（ラベルタップで有効/無効切替） */}
               <View style={styles.ruleSettingsRow}>
@@ -2184,6 +2229,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
+  },
+  umaInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+  },
+  umaMinusLabel: {
+    fontSize: 14,
+    color: '#374151',
+    marginRight: 2,
+  },
+  ruleSettingsSublabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  tieUmaChevron: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  umaReadOnly: {
+    backgroundColor: '#F3F4F6',
+  },
+  umaReadOnlyText: {
+    flex: 1,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#6B7280',
   },
   umaInput: {
     flex: 1,

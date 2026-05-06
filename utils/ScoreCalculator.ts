@@ -28,7 +28,7 @@ export const DEFAULT_RULE_CONFIG: RuleConfig = {
   tobiBonus: 10,            // 飛び賞
   tobiBonusEnabled: false,  // デフォルトはOFF
   chipEnabled: false,       // チップデフォルトはOFF
-  chipValue: 2,             // チップ1枚あたり2ポイント
+  chipValue: 1,             // チップ1枚あたり1ポイント
   playerCount: 4,           // 4人麻雀
 };
 
@@ -43,37 +43,29 @@ export const DEFAULT_SANMA_CONFIG: RuleConfig = {
   tobiBonus: 10,
   tobiBonusEnabled: false,
   chipEnabled: false,
-  chipValue: 2,
+  chipValue: 1,
   playerCount: 3,
 };
 
 /**
- * 素点から順位を決定する
- * 同点の場合は同順位（席順考慮なし）
- * 
- * @param rawScores 各プレイヤーの素点（4人分）
+ * 素点から順位を決定する（Standard Competition Ranking）
+ * 順位 = 1 + 自分より素点が高いプレイヤーの人数
+ * 同点の場合は上位の順位を共有し、下位のプレイヤーはその分だけ順位が下がる
+ * 例: [1位/2位/2位/4位] — 2位タイが2人いると最下位は4位になる
+ *
+ * @param rawScores 各プレイヤーの素点
  * @returns 各プレイヤーの順位（1〜4）
  */
 export function determineRanks(rawScores: (number | null)[]): (1 | 2 | 3 | 4 | null)[] {
-  // null値がある場合はそのプレイヤーの順位もnull
   const validScores = rawScores.filter((s): s is number => s !== null);
   if (validScores.length === 0) {
     return rawScores.map(() => null);
   }
 
-  // ユニークな点数を降順にソート
-  const uniqueSorted = Array.from(new Set(validScores)).sort((a, b) => b - a);
-  
-  // 各点数に対応する順位を設定
-  const scoreToRank = new Map<number, 1 | 2 | 3 | 4>();
-  uniqueSorted.forEach((score, idx) => {
-    scoreToRank.set(score, (idx + 1) as 1 | 2 | 3 | 4);
-  });
-
-  // 各プレイヤーの順位を返す
   return rawScores.map(score => {
     if (score === null) return null;
-    return scoreToRank.get(score) ?? null;
+    const rank = 1 + validScores.filter(s => s > score).length;
+    return rank as 1 | 2 | 3 | 4;
   });
 }
 
@@ -157,7 +149,39 @@ export function applyTobiBonus(
 }
 
 /**
+ * 同点プレイヤーの按分ウマを計算する
+ * 同じ順位のプレイヤーが複数いる場合、該当順位が占めるポジションのウマを平均する
+ * 例: ranks=[1,2,2,3], uma=[30,10,-10,-30] → [30, 0, 0, -30]
+ */
+function getAdjustedUmaValues(
+  ranks: (1 | 2 | 3 | 4 | null)[],
+  uma: number[]
+): (number | null)[] {
+  const rankCounts = new Map<number, number>();
+  ranks.forEach(r => {
+    if (r !== null) rankCounts.set(r, (rankCounts.get(r) ?? 0) + 1);
+  });
+
+  const sortedRanks = Array.from(rankCounts.keys()).sort((a, b) => a - b);
+  const adjustedUmaByRank = new Map<number, number>();
+  let positionOffset = 0;
+
+  sortedRanks.forEach(rank => {
+    const count = rankCounts.get(rank)!;
+    let umaSum = 0;
+    for (let i = 0; i < count; i++) {
+      umaSum += uma[positionOffset + i] ?? 0;
+    }
+    adjustedUmaByRank.set(rank, umaSum / count);
+    positionOffset += count;
+  });
+
+  return ranks.map(rank => (rank === null ? null : adjustedUmaByRank.get(rank) ?? 0));
+}
+
+/**
  * 全プレイヤーの収支を一括計算
+ * 同点の場合は該当ポジションのウマを按分して適用する
  *
  * @param rawScores 各プレイヤーの素点（4人分）
  * @param config ルール設定
@@ -170,10 +194,16 @@ export function calculateAllScores(
   tobiWinners?: number[]
 ): { scores: (number | null)[]; ranks: (1 | 2 | 3 | 4 | null)[]; isTobi: boolean[] } {
   const ranks = determineRanks(rawScores);
+  const adjustedUma = getAdjustedUmaValues(ranks, config.uma);
 
   let scores = rawScores.map((rawScore, index) => {
-    if (rawScore === null || ranks[index] === null) return null;
-    return calculateFinalScore(rawScore, ranks[index]!, config);
+    if (rawScore === null || ranks[index] === null || adjustedUma[index] === null) return null;
+    const baseScore = (rawScore - config.returnPoints) / 1000;
+    const umaValue = adjustedUma[index]!;
+    const oka = ranks[index] === 1
+      ? ((config.returnPoints - config.startingPoints) * config.playerCount) / 1000
+      : 0;
+    return baseScore + umaValue + oka;
   });
 
   // 飛び判定: 素点が0未満（マイナス）の場合
@@ -202,14 +232,15 @@ export function calculateAllScores(
  */
 function reverseWithoutTobi(finalScores: number[], config: RuleConfig): number[] {
   const uniqueSorted = [...new Set(finalScores)].sort((a, b) => b - a);
-  const ranks = finalScores.map(s => uniqueSorted.indexOf(s) + 1);
+  const ranks = finalScores.map(s => (uniqueSorted.indexOf(s) + 1) as 1 | 2 | 3 | 4);
+  const adjustedUma = getAdjustedUmaValues(ranks, config.uma);
 
   return finalScores.map((fs, i) => {
     const rank = ranks[i];
     const oka = rank === 1
       ? ((config.returnPoints - config.startingPoints) * config.playerCount) / 1000
       : 0;
-    const umaValue = config.uma[rank - 1];
+    const umaValue = adjustedUma[i] ?? 0;
     const rawScore = (fs - umaValue - oka) * 1000 + config.returnPoints;
     return Math.round(rawScore / 100) * 100;
   });
@@ -277,8 +308,9 @@ export function autoCompleteRawScore(input: string): number | null {
     // 4桁はそのまま（1000〜9999）
     result = absNum;
   } else if (absNum >= 100) {
-    // 3桁は100倍（100〜999 → 10000〜99900）
-    result = absNum * 100;
+    // 3桁の場合: 100の倍数はキーボード入力済みの完成値（例: 800 → 800）
+    // 100の倍数でない場合はショートフォーム（例: 311 → 31100）
+    result = (absNum % 100 === 0) ? absNum : absNum * 100;
   } else if (absNum >= 10) {
     // 2桁は1000倍（10〜99 → 10000〜99000）
     result = absNum * 1000;

@@ -24,9 +24,15 @@ describe('determineRanks', () => {
     expect(result).toEqual([1, 2, 3, 4]);
   });
 
-  it('同点は同順位になる', () => {
+  it('同点は上位の順位を共有し下位はその分ずれる (Standard Competition Ranking)', () => {
+    // 1位/1位/3位/3位 — 1位タイ2人がいるため3位は3位、4位は4位
     const result = determineRanks([30000, 30000, 20000, 20000]);
-    expect(result).toEqual([1, 1, 2, 2]);
+    expect(result).toEqual([1, 1, 3, 3]);
+  });
+
+  it('2位タイの場合は最下位が4位になる', () => {
+    const result = determineRanks([40000, 25000, 25000, 10000]);
+    expect(result).toEqual([1, 2, 2, 4]);
   });
 
   it('全員同点の場合は全員1位', () => {
@@ -158,6 +164,40 @@ describe('calculateAllScores', () => {
     const total = result.scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0);
     expect(total).toBe(0);
   });
+
+  it('2位タイ: 最下位が4位になり、ウマを按分して両者に適用する', () => {
+    // ranks = [1, 2, 2, 4], uma=[30,10,-10,-30] → 2位ウマ=(10-10)/2=0
+    const rawScores = [73000, 25000, 25000, -23000];
+    const result = calculateAllScores(rawScores);
+
+    expect(result.ranks).toEqual([1, 2, 2, 4]);
+    // 2位タイ: (25000-30000)/1000 + 0 = -5
+    // 4位: (-23000-30000)/1000 + (-30) = -83
+    expect(result.scores[1]).toBe(-5);
+    expect(result.scores[2]).toBe(-5);
+    const total = result.scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0);
+    expect(total).toBe(0);
+  });
+
+  it('3位・4位同点: ウマを按分して両者に適用する', () => {
+    // ranks = [1, 2, 3, 3], uma=[30,10,-10,-30] → 3位ウマ=(-10-30)/2=-20
+    const rawScores = [40000, 30000, 15000, 15000];
+    const result = calculateAllScores(rawScores);
+
+    expect(result.ranks).toEqual([1, 2, 3, 3]);
+    // 3位タイ: (15000-30000)/1000 + (-20) = -35
+    expect(result.scores[2]).toBe(-35);
+    expect(result.scores[3]).toBe(-35);
+    const total = result.scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0);
+    expect(total).toBe(0);
+  });
+
+  it('同点時のウマ按分後もゼロサムになる', () => {
+    const rawScores = [50000, 25000, 25000, 0];
+    const result = calculateAllScores(rawScores);
+    const total = result.scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0);
+    expect(total).toBe(0);
+  });
 });
 
 describe('calculateFourthPlayerScore', () => {
@@ -258,9 +298,11 @@ describe('autoCompleteRawScore', () => {
     expect(autoCompleteRawScore('-1000')).toBe(-1000);
   });
 
-  it('マイナス値：3桁は100倍', () => {
-    expect(autoCompleteRawScore('-311')).toBe(-31100);
-    expect(autoCompleteRawScore('-100')).toBe(-10000);
+  it('マイナス値：3桁は100の倍数なら完成値、それ以外は100倍', () => {
+    expect(autoCompleteRawScore('-311')).toBe(-31100);  // 311 % 100 !== 0 → ×100
+    expect(autoCompleteRawScore('-100')).toBe(-100);    // 100 % 100 === 0 → as-is（キーボード入力済み）
+    expect(autoCompleteRawScore('-800')).toBe(-800);    // 800 % 100 === 0 → as-is
+    expect(autoCompleteRawScore('-500')).toBe(-500);    // 500 % 100 === 0 → as-is
   });
 
   it('マイナス値：2桁は1000倍', () => {
