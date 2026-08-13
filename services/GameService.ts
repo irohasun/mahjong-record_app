@@ -60,6 +60,18 @@ export class GameService {
   }
 
   /**
+   * "半荘N" のような文字列から N を抽出して数値順ソートする。
+   * 辞書順ソート（"半荘10" < "半荘2"）によるバグを防ぐ。
+   */
+  private static sortRoundsByNumber(rounds: any[]): any[] {
+    return [...rounds].sort((a, b) => {
+      const numA = parseInt(String(a.round).replace(/[^0-9]/g, ''), 10) || 0;
+      const numB = parseInt(String(b.round).replace(/[^0-9]/g, ''), 10) || 0;
+      return numA - numB;
+    });
+  }
+
+  /**
    * データベースから取得したゲームデータをGameRecord型に変換
    */
   private static mapGameFromDb(game: any): GameRecord {
@@ -78,7 +90,7 @@ export class GameService {
       photoPath: game.photo_path || undefined,
       chipCounts: game.chip_counts || undefined,
       players: (game.player_records || []).map((p: any) => this.mapPlayerRecordFromDb(p)),
-      rounds: (game.round_records || []).map((r: any) => this.mapRoundRecordFromDb(r)),
+      rounds: this.sortRoundsByNumber(game.round_records || []).map((r: any) => this.mapRoundRecordFromDb(r)),
     };
   }
 
@@ -530,12 +542,11 @@ export class GameService {
         throw playersError;
       }
 
-      // 局記録を取得
+      // 局記録を取得（ソートはクライアント側の sortRoundsByNumber で行う）
       const roundsSelRes = await supabase
         .from('round_records')
         .select('*')
-        .eq('game_id', gameId)
-        .order('round');
+        .eq('game_id', gameId);
 
       const { data: rounds, error: roundsError } = roundsSelRes as any;
       if (roundsError) {
