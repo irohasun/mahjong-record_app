@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Shield, LogOut, Lock, Cloud } from 'lucide-react-native';
+import { User, Shield, LogOut, Lock, Cloud, Download } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AccountService } from '@/services/AccountService';
 import { DeletionService } from '@/services/DeletionService';
@@ -11,6 +11,8 @@ import { AuthService } from '@/services/AuthService';
 import { supabase } from '@/lib/supabase';
 import { LocalStorageService } from '@/services/LocalStorageService';
 import { StorageService } from '@/services/StorageService';
+import { GameService } from '@/services/GameService';
+import { ExportService } from '@/services/ExportService';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -19,6 +21,7 @@ export default function AccountScreen() {
   const [user, setUser] = useState<any>(null);
   const [avatarDisplayUrl, setAvatarDisplayUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const lastLoadTimeRef = React.useRef<number>(0);
   const isLoadingRef = React.useRef<boolean>(false);
 
@@ -125,6 +128,25 @@ export default function AccountScreen() {
         }
       ]
     );
+  };
+
+  const handleDataExport = async () => {
+    if (!user?.id) {
+      Alert.alert('エラー', 'データのエクスポートに失敗しました');
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const games = await GameService.getAllGames(user.id);
+      const fileUri = await ExportService.exportGamesAsExcel(games);
+      await ExportService.shareExportedFile(fileUri);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error('データエクスポートに失敗しました:', error);
+      Alert.alert('エラー', `データのエクスポートに失敗しました。\n\n詳細: ${detail}`);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const executeAccountDeletion = async () => {
@@ -308,6 +330,22 @@ export default function AccountScreen() {
           </TouchableOpacity>
 
           {/* 仕様変更: データ処理に関する案内リンクは削除 */}
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={handleDataExport}
+            disabled={isExporting}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIcon}>
+                <Download size={20} color="#CA8A04" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>データエクスポート</Text>
+              </View>
+            </View>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.menuItem}
