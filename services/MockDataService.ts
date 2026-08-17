@@ -19,7 +19,6 @@ export class MockDataService {
       avoidLastRate: 0,
       highestScore: 0,
       lowestScore: 0,
-      maxConsecutiveWins: 0,
       rankDistribution: {
         1: 0,
         2: 0,

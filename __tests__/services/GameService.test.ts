@@ -30,7 +30,6 @@ jest.mock('@/services/MockDataService', () => ({
       avoidLastRate: 0,
       highestScore: 0,
       lowestScore: 0,
-      maxConsecutiveWins: 0,
       rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
     }),
     generateChartData: jest.fn().mockReturnValue({ labels: [], scores: [], ranks: [] }),

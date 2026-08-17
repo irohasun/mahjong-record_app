@@ -162,7 +162,6 @@ export class GameService {
       avoidLastRate: 0,
       highestScore: 0,
       lowestScore: 0,
-      maxConsecutiveWins: 0,
       rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0 },
     };
   }
@@ -280,19 +279,7 @@ export class GameService {
     const firstPlaceCount = records.filter(r => r.rank === 1).length;
     const topTwoCount = records.filter(r => r.rank <= 2).length;
     const avoidLastCount = records.filter(r => r.rank < 4).length;
-    
-    // 最大連荘を計算
-    let maxConsecutiveWins = 0;
-    let currentConsecutiveWins = 0;
-    for (const record of records) {
-      if (record.rank === 1) {
-        currentConsecutiveWins++;
-        maxConsecutiveWins = Math.max(maxConsecutiveWins, currentConsecutiveWins);
-      } else {
-        currentConsecutiveWins = 0;
-      }
-    }
-    
+
     const rankDistribution = records.reduce((acc, r) => {
       acc[r.rank] = (acc[r.rank] || 0) + 1;
       return acc;
@@ -307,7 +294,6 @@ export class GameService {
       avoidLastRate: avoidLastCount / totalGames,
       highestScore,
       lowestScore,
-      maxConsecutiveWins,
       rankDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, ...rankDistribution },
     };
   }
@@ -829,15 +815,16 @@ export class GameService {
 
       const filteredGames = games.filter(game => {
         if (game.accountId !== accountId) return false;
-        if (!periodStart || !periodEnd) return true;
-        const gameDate = game.date.substring(0, 10);
-        if (gameDate < periodStart || gameDate > periodEnd) return false;
 
         // プレイヤー人数でフィルタ
         if (playerCount !== undefined) {
           const gamePlayerCount = game.rules?.playerCount ?? 4;
           if (gamePlayerCount !== playerCount) return false;
         }
+
+        if (!periodStart || !periodEnd) return true;
+        const gameDate = game.date.substring(0, 10);
+        if (gameDate < periodStart || gameDate > periodEnd) return false;
 
         return true;
       });
@@ -848,32 +835,26 @@ export class GameService {
       for (const game of filteredGames) {
         if (!game.rounds) continue;
         for (const round of game.rounds) {
-          totalRounds++;
           const points = round.points as number[];
-          const pc = game.rules?.playerCount || points.length;
+          const pc = game.rules?.playerCount || points?.length;
           if (!points || points.length < pc) continue;
+          totalRounds++;
 
-          // memoからtobiWinners情報を取得
-          let tobiWinners: number[] = [];
+          // memoから素点(rawScores)を取得し、メインプレイヤー(index 0)の素点がマイナスかどうかで飛びを判定
+          let rawScores: number[] | undefined;
           if (round.memo) {
             try {
               const memoData = JSON.parse(round.memo);
-              if (memoData.tobiWinners) {
-                tobiWinners = memoData.tobiWinners;
+              if (Array.isArray(memoData.rawScores)) {
+                rawScores = memoData.rawScores;
               }
             } catch {
               // memoがJSON形式でない場合はスキップ
             }
           }
 
-          // tobiWinnersがある = 誰かが飛んだ
-          // メインプレイヤー(index 0)がtobiWinnerでなく、最低スコアなら飛びと判定
-          if (tobiWinners.length > 0 && !tobiWinners.includes(0)) {
-            const mainScore = points[0];
-            const minScore = Math.min(...points);
-            if (mainScore === minScore) {
-              tobiCount++;
-            }
+          if (rawScores && typeof rawScores[0] === 'number' && rawScores[0] < 0) {
+            tobiCount++;
           }
         }
       }
@@ -922,7 +903,6 @@ export class GameService {
         avoidLastRate: data.avoidLastRate ?? 0,
         highestScore: data.highestScore ?? 0,
         lowestScore: data.lowestScore ?? 0,
-        maxConsecutiveWins: 0,
         totalChipScore: data.totalChipScore ?? 0,
         rankDistribution: {
           1: data.rankDistribution?.['1'] ?? 0,

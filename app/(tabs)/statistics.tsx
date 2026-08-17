@@ -26,11 +26,10 @@ export function buildStatsCacheKey(period: string, date: Date, playerCount: 3 | 
 }
 
 export default function StatisticsScreen() {
-  const [stats, setStats] = useState<any>({});
+  const [stats, setStats] = useState<any>(null);
   const [chartData, setChartData] = useState<any>(null);
   const [tobiStats, setTobiStats] = useState<{ tobiCount: number; totalRounds: number; tobiRate: number }>({ tobiCount: 0, totalRounds: 0, tobiRate: 0 });
-  const [loading, setLoading] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('month');
+  const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'all'>('all');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedPlayerCount, setSelectedPlayerCount] = useState<3 | 4>(4);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -42,28 +41,25 @@ export default function StatisticsScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const lastLoadTimeRef = useRef(0);
   const isInitialLoadRef = useRef(true);
+  const hasSyncedInitialScrollRef = useRef(false);
 
-  // Debounce period/date changes to prevent rapid-fire queries
-  const debouncedPeriod = useDebounce(selectedPeriod, 300);
+  // 日付のみdebounce（ピッカーで連続変化する可能性があるため）
+  // period/playerCountはボタンタップなので即時反応させる
   const debouncedDate = useDebounce(selectedDate, 300);
-  const debouncedPlayerCount = useDebounce(selectedPlayerCount, 300);
 
   const loadStats = useCallback(async () => {
-    const cacheKey = buildStatsCacheKey(debouncedPeriod, debouncedDate, debouncedPlayerCount);
+    const cacheKey = buildStatsCacheKey(selectedPeriod, debouncedDate, selectedPlayerCount);
 
-    // Show cached data immediately
+    // キャッシュがあれば即座に表示
     const cachedStats = await LocalStorageService.getStatsForPeriod(`stats-${cacheKey}`);
     const cachedChart = await LocalStorageService.getStatsForPeriod(`chart-${cacheKey}`);
-    if (cachedStats) {
-      setStats(cachedStats);
-    }
-    if (cachedChart) {
-      setChartData(cachedChart);
-    }
     if (cachedStats && cachedChart) {
-      setLoading(false);
+      setStats(cachedStats);
+      setChartData(cachedChart);
     } else {
-      setLoading(true);
+      // キャッシュなし: 古い期間のデータをクリアしてロード画面表示
+      setStats(null);
+      setChartData(null);
     }
 
     try {
@@ -72,24 +68,22 @@ export default function StatisticsScreen() {
       const range = await GameService.getYearRange(user.id);
       setYearRange(range);
 
-      const statsData = await GameService.getHanchanStats(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
-      const newChartData = await GameService.getChartData(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
-      const newTobiStats = await GameService.getTobiRate(user.id, debouncedPeriod, debouncedDate, debouncedPlayerCount);
+      const statsData = await GameService.getHanchanStats(user.id, selectedPeriod, debouncedDate, selectedPlayerCount);
+      const newChartData = await GameService.getChartData(user.id, selectedPeriod, debouncedDate, selectedPlayerCount);
+      const newTobiStats = await GameService.getTobiRate(user.id, selectedPeriod, debouncedDate, selectedPlayerCount);
 
       setStats(statsData);
       setChartData(newChartData);
       setTobiStats(newTobiStats);
       lastLoadTimeRef.current = Date.now();
 
-      // Cache fresh data in background
+      // 取得データをキャッシュ保存
       await LocalStorageService.saveStatsForPeriod(`stats-${cacheKey}`, statsData);
       await LocalStorageService.saveStatsForPeriod(`chart-${cacheKey}`, newChartData);
     } catch (error) {
-      // If we have cached data, keep showing it
-    } finally {
-      setLoading(false);
+      // キャッシュデータがあれば引き続き表示
     }
-  }, [debouncedPeriod, debouncedDate, debouncedPlayerCount]);
+  }, [selectedPeriod, debouncedDate, selectedPlayerCount]);
 
   // Load stats when debounced period/date changes (but not on initial mount)
   useEffect(() => {
@@ -154,14 +148,6 @@ export default function StatisticsScreen() {
     return { scrollableWidth, chartWidth };
   }, [chartData?.ranks?.length]);
 
-  if (!stats) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>統計を読み込み中...</Text>
-      </View>
-    );
-  }
-
   // 最高収支・平均収支（最終得点=収支）
   const highestRevenue: number | null =
     typeof stats?.highestScore === 'number' ? stats.highestScore : null;
@@ -224,6 +210,15 @@ export default function StatisticsScreen() {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        onLayout={() => {
+          if (hasSyncedInitialScrollRef.current) return;
+          hasSyncedInitialScrollRef.current = true;
+          const periods: ('month' | 'year' | 'all')[] = ['month', 'year', 'all'];
+          const initialIndex = periods.indexOf(selectedPeriod);
+          if (initialIndex > 0) {
+            scrollViewRef.current?.scrollTo({ x: screenWidth * initialIndex, animated: false });
+          }
+        }}
         onMomentumScrollEnd={(event) => {
           const { contentOffset } = event.nativeEvent;
           const pageWidth = screenWidth;
@@ -234,6 +229,11 @@ export default function StatisticsScreen() {
       >
         {(['month', 'year', 'all'] as const).map((period) => (
           <View key={period} style={styles.pageContainer}>
+            {!stats ? (
+              <View style={styles.contentLoadingContainer}>
+                <Text style={styles.loadingText}>統計を読み込み中...</Text>
+              </View>
+            ) : (
             <ScrollView
               style={styles.container}
               contentContainerStyle={{ flexGrow: 1 }}
@@ -373,12 +373,6 @@ export default function StatisticsScreen() {
                     </Text>
                   </View>
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>最大連荘</Text>
-                    <Text style={[styles.detailValue, styles.secondPlaceValue]}>
-                      {stats.maxConsecutiveWins || '-'}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>連対率</Text>
                     <Text style={[styles.detailValue, styles.thirdPlaceValue]}>
                       {stats.topTwoRate ? `${(stats.topTwoRate * 100).toFixed(1)}%` : '-'}
@@ -401,6 +395,7 @@ export default function StatisticsScreen() {
                 </View>
               </View>
             </ScrollView>
+            )}
           </View>
         ))}
       </ScrollView>
@@ -457,7 +452,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  loadingContainer: {
+  contentLoadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
